@@ -79,3 +79,18 @@ export {
   type AddGroupMemberInput,
   type UpdateGroupMemberInput,
 } from './group.schema.js';
+
+export {
+  pathSchema,
+  filenameSchema,
+  createEntrySchema,
+  renameSchema,
+  moveSchema,
+  deleteSchema,
+  updateContentSchema,
+  type CreateEntryInput,
+  type RenameInput,
+  type MoveInput,
+  type DeleteInput,
+  type UpdateContentInput,
+} from './workspace.schema.js';

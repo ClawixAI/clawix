@@ -10,7 +10,7 @@ describe('ContextBuilderService - skill summary integration', () => {
       buildSkillsSummary: vi
         .fn()
         .mockResolvedValue(
-          '<skills><skill><name>test</name><description>Test</description><location>/workspace/skills/builtin/test/SKILL.md</location><source>builtin</source></skill></skills>',
+          '<skills><skill><name>test</name><description>Test</description><location>/skills/builtin/test/SKILL.md</location><source>builtin</source></skill></skills>',
         ),
     };
 

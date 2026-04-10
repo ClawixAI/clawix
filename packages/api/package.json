@@ -24,6 +24,7 @@
     "@clawix/shared": "workspace:*",
     "@fastify/cors": "^11.2.0",
     "@fastify/helmet": "^13.0.2",
+    "@fastify/multipart": "^10.0.0",
     "@mozilla/readability": "^0.6.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/config": "^4.0.0",

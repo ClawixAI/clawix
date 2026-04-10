@@ -48,3 +48,17 @@ export type {
   ExecOptions,
   ExecResult,
 } from './container.js';
+
+export type {
+  FileType,
+  FileEntry,
+  DirectoryListing,
+  FileContent,
+  CreateEntryRequest,
+  RenameRequest,
+  MoveRequest,
+  DeleteRequest,
+  DeleteResponse,
+  UpdateContentRequest,
+  UpdateContentResponse,
+} from './workspace.js';

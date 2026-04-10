@@ -99,7 +99,7 @@ export class ContextBuilderService {
         '# Skills\n\n' +
           'Skills are NOT agents — do NOT use the spawn tool for skills.\n' +
           'To use a skill: call read_file on its SKILL.md location, then follow the instructions inside.\n' +
-          'To create new skills: write them under /workspace/skills/custom/ (writable). /workspace/skills/builtin/ is read-only.\n\n' +
+          'To create new skills: write them under /skills/custom/ (writable). /skills/builtin/ is read-only.\n\n' +
           skillsSummary,
       );
     }

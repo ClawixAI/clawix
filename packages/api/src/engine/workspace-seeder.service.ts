@@ -1,5 +1,4 @@
 import * as path from 'path';
-import * as url from 'url';
 
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '@clawix/shared';
@@ -13,8 +12,8 @@ const logger = createLogger('engine:workspace-seeder');
 /** Explicit list of bootstrap files to seed (matches BootstrapFileService). */
 const BOOTSTRAP_FILES = ['SOUL.md', 'USER.md'] as const;
 
-/** Directory containing .template files, resolved relative to this module. */
-const TEMPLATES_DIR = path.join(path.dirname(url.fileURLToPath(import.meta.url)), 'templates');
+/** Directory containing .template files — mounted via docker-compose or local dev fallback. */
+const TEMPLATES_DIR = process.env['TEMPLATES_DIR'] ?? path.resolve(process.cwd(), '../../infra/templates');
 
 export interface SeedParams {
   readonly workspacePath: string;
