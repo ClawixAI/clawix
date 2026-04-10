@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import multipart from '@fastify/multipart';
 import { createLogger } from '@clawix/shared';
 import { AppModule } from './app.module.js';
 import { registerSecurityPlugins } from './common/security.config.js';
@@ -40,6 +41,13 @@ async function bootstrap() {
 
   // Security plugins must be registered BEFORE Swagger routes
   await registerSecurityPlugins(app);
+
+  // Register multipart plugin for file uploads
+  await app.getHttpAdapter().getInstance().register(multipart as any, {
+    limits: {
+      fileSize: Number(process.env['WORKSPACE_UPLOAD_MAX_SIZE'] ?? 50 * 1024 * 1024), // 50 MB default
+    },
+  });
 
   if (process.env['NODE_ENV'] !== 'production') {
     const swaggerConfig = new DocumentBuilder()

@@ -38,7 +38,7 @@ describe('buildDockerRunArgs - skill mounts', () => {
       },
     });
     expect(args).toContain('-v');
-    const builtinMountIndex = args.indexOf('/host/skills/builtin:/workspace/skills/builtin:ro');
+    const builtinMountIndex = args.indexOf('/host/skills/builtin:/skills/builtin:ro');
     expect(builtinMountIndex).toBeGreaterThan(-1);
   });
 
@@ -52,7 +52,7 @@ describe('buildDockerRunArgs - skill mounts', () => {
         customHostPath: '/host/skills/custom/user1',
       },
     });
-    const customMountIndex = args.indexOf('/host/skills/custom/user1:/workspace/skills/custom');
+    const customMountIndex = args.indexOf('/host/skills/custom/user1:/skills/custom');
     expect(customMountIndex).toBeGreaterThan(-1);
   });
 
@@ -62,7 +62,7 @@ describe('buildDockerRunArgs - skill mounts', () => {
       containerName: 'test-container',
       validatedMounts: [],
     });
-    const skillMountArgs = args.filter((a) => a.includes('/workspace/skills/'));
+    const skillMountArgs = args.filter((a) => a.includes('/skills/'));
     expect(skillMountArgs).toHaveLength(0);
   });
 });

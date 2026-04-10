@@ -28,6 +28,7 @@ import { TasksModule } from './tasks/index.js';
 import { SystemSettingsModule } from './system-settings/index.js';
 import { TokensModule } from './tokens/index.js';
 import { ProviderConfigModule } from './provider-config/provider-config.module.js';
+import { WorkspaceModule } from './workspace/index.js';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { ProviderConfigModule } from './provider-config/provider-config.module.j
     HealthModule,
     SystemSettingsModule,
     ProviderConfigModule,
+    WorkspaceModule,
   ],
   providers: [
     {

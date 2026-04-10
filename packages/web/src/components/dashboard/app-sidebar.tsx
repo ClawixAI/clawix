@@ -11,6 +11,7 @@ import {
   ChevronsUpDown,
   Coins,
   CreditCard,
+  FolderOpen,
   GalleryVerticalEnd,
   LogOut,
   MessageSquare,
@@ -65,6 +66,11 @@ const platformItems = [
     title: 'Skills',
     icon: Wrench,
     href: '/skills',
+  },
+  {
+    title: 'Workspace',
+    icon: FolderOpen,
+    href: '/workspace',
   },
 ];
 

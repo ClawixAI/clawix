@@ -179,7 +179,7 @@ describe('SkillLoaderService', () => {
     expect(summary).toContain('<skills>');
     expect(summary).toContain('<name>summarize</name>');
     expect(summary).toContain('<description>Summarize text</description>');
-    expect(summary).toContain('<location>/workspace/skills/builtin/summarize/SKILL.md</location>');
+    expect(summary).toContain('<location>/skills/builtin/summarize/SKILL.md</location>');
     expect(summary).toContain('<source>builtin</source>');
     expect(summary).toContain('</skills>');
   });
