@@ -53,6 +53,10 @@ export interface ApiPolicy {
   maxMemoryItems: number;
   maxGroupsOwned: number;
   allowedProviders: string[];
+  cronEnabled: boolean;
+  maxScheduledTasks: number;
+  minCronIntervalSecs: number;
+  maxTokensPerCronRun: number | null;
   features: Record<string, unknown>;
   isActive: boolean;
   createdAt: string;

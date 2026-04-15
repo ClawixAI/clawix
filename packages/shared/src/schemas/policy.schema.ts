@@ -9,6 +9,10 @@ export const createPolicySchema = z.object({
   maxMemoryItems: z.number().int().positive().default(1000),
   maxGroupsOwned: z.number().int().positive().default(5),
   allowedProviders: z.array(z.string().min(1)).default([]),
+  cronEnabled: z.boolean().default(false),
+  maxScheduledTasks: z.number().int().positive().default(5),
+  minCronIntervalSecs: z.number().int().min(60).default(300),
+  maxTokensPerCronRun: z.number().int().positive().nullable().optional(),
   features: z.record(z.unknown()).default({}),
 });
 

@@ -192,6 +192,37 @@ describe('save_memory tool', () => {
     expect(result.output).toContain('Memory item not found');
   });
 
+  it('should store object content as-is (not wrapped in { text })', async () => {
+    const created = { id: 'mem-obj', ownerId: userId };
+    const prisma = makePrisma({
+      userFindUnique: vi.fn().mockResolvedValue({ id: userId, policy: { maxMemoryItems: 100 } }),
+      memoryItemCount: vi.fn().mockResolvedValue(0),
+      memoryItemCreate: vi.fn().mockResolvedValue(created),
+    });
+
+    const tool = createSaveMemoryTool(prisma, userId);
+    await tool.execute({
+      content: { key: 'preferred_language', value: 'TypeScript' },
+      tags: ['preference'],
+    });
+
+    expect((prisma as unknown as { memoryItem: { create: ReturnType<typeof vi.fn> } }).memoryItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        content: { key: 'preferred_language', value: 'TypeScript' },
+      }),
+    });
+  });
+
+  it('should reject object content that exceeds 2000 chars when serialized', async () => {
+    const prisma = makePrisma({});
+    const tool = createSaveMemoryTool(prisma, userId);
+    const largeObj = { data: 'x'.repeat(2000) };
+    const result = await tool.execute({ content: largeObj });
+
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('Content too long');
+  });
+
   it('rejects update for memory owned by another user', async () => {
     const existing = { id: 'mem-1', ownerId: 'other-user', content: { text: 'old' }, tags: [] };
     const prisma = makePrisma({

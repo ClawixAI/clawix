@@ -15,6 +15,10 @@ interface CreatePolicyData {
   readonly maxMemoryItems?: number;
   readonly maxGroupsOwned?: number;
   readonly allowedProviders?: string[];
+  readonly cronEnabled?: boolean;
+  readonly maxScheduledTasks?: number;
+  readonly minCronIntervalSecs?: number;
+  readonly maxTokensPerCronRun?: number | null;
   readonly features?: Prisma.InputJsonValue;
 }
 
@@ -77,6 +81,10 @@ export class PolicyRepository {
           ...(data.allowedProviders !== undefined
             ? { allowedProviders: data.allowedProviders }
             : {}),
+          ...(data.cronEnabled !== undefined ? { cronEnabled: data.cronEnabled } : {}),
+          ...(data.maxScheduledTasks !== undefined ? { maxScheduledTasks: data.maxScheduledTasks } : {}),
+          ...(data.minCronIntervalSecs !== undefined ? { minCronIntervalSecs: data.minCronIntervalSecs } : {}),
+          ...(data.maxTokensPerCronRun !== undefined ? { maxTokensPerCronRun: data.maxTokensPerCronRun } : {}),
           ...(data.features !== undefined ? { features: data.features } : {}),
         },
       });
@@ -100,6 +108,10 @@ export class PolicyRepository {
           ...(data.allowedProviders !== undefined
             ? { allowedProviders: data.allowedProviders }
             : {}),
+          ...(data.cronEnabled !== undefined ? { cronEnabled: data.cronEnabled } : {}),
+          ...(data.maxScheduledTasks !== undefined ? { maxScheduledTasks: data.maxScheduledTasks } : {}),
+          ...(data.minCronIntervalSecs !== undefined ? { minCronIntervalSecs: data.minCronIntervalSecs } : {}),
+          ...(data.maxTokensPerCronRun !== undefined ? { maxTokensPerCronRun: data.maxTokensPerCronRun } : {}),
           ...(data.features !== undefined ? { features: data.features } : {}),
           ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
         },

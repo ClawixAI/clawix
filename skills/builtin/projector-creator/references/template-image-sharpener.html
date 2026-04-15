@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Sharpener — Wallpaper Enhancer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px 30px; border-bottom: 1px solid #2a2a4a; }
+  .header h1 { font-size: 22px; color: #fff; }
+  .header h1 span { color: #e94560; }
+  .header .subtitle { color: #888; font-size: 13px; }
+
+  .main { display: flex; height: calc(100vh - 70px); }
+
+  .sidebar { width: 300px; min-width: 300px; background: #16213e; padding: 20px; overflow-y: auto; border-right: 1px solid #2a2a4a; }
+  .section { margin-bottom: 24px; }
+  .section h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #e94560; margin-bottom: 12px; }
+  .control { margin-bottom: 16px; }
+  .control label { display: flex; justify-content: space-between; font-size: 13px; color: #aaa; margin-bottom: 6px; }
+  .control label .val { color: #e94560; font-weight: 600; }
+  input[type="range"] { width: 100%; -webkit-appearance: none; height: 6px; background: #2a2a4a; border-radius: 3px; outline: none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #e94560; cursor: pointer; }
+
+  .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .preset-btn { padding: 10px 8px; border: 1px solid #2a2a4a; background: #1a1a2e; color: #ccc; border-radius: 8px; cursor: pointer; font-size: 12px; text-align: center; transition: all 0.2s; }
+  .preset-btn:hover { border-color: #e94560; color: #fff; }
+  .preset-btn.active { border-color: #e94560; background: rgba(233,69,96,0.15); color: #e94560; }
+
+  .action-btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-bottom: 8px; }
+  .btn-primary { background: #e94560; color: white; }
+  .btn-primary:hover { background: #ff6b81; }
+  .btn-secondary { background: #2a2a4a; color: #ccc; }
+  .btn-secondary:hover { background: #3a3a5a; color: #fff; }
+  .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .canvas-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .canvas-toolbar { padding: 10px 20px; background: #1a1a2e; border-bottom: 1px solid #2a2a4a; display: flex; align-items: center; gap: 16px; }
+  .canvas-toolbar .info { font-size: 12px; color: #888; }
+  .view-toggle { display: flex; gap: 4px; }
+  .view-toggle button { padding: 6px 12px; border: 1px solid #2a2a4a; background: transparent; color: #888; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .view-toggle button.active { background: #e94560; border-color: #e94560; color: white; }
+
+  .image-container { flex: 1; position: relative; overflow: auto; display: flex; justify-content: center; align-items: center; padding: 20px; }
+
+  #filteredImage { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; display: none; }
+  #originalImage { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; display: none; }
+
+  /* Compare view */
+  .compare-container { position: relative; display: none; max-width: 100%; max-height: 100%; }
+  .compare-container img { max-width: 100%; max-height: calc(100vh - 140px); display: block; }
+  .compare-clip { position: absolute; top: 0; left: 0; bottom: 0; overflow: hidden; }
+  .compare-clip img { max-height: calc(100vh - 140px); display: block; }
+  .compare-line { position: absolute; top: 0; bottom: 0; width: 3px; background: #e94560; cursor: ew-resize; z-index: 5; transform: translateX(-50%); }
+  .compare-line::after { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 32px; height: 32px; border-radius: 50%; background: #e94560; border: 2px solid white; }
+  .compare-line::before { content: '\u25C0  \u25B6'; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: white; font-size: 10px; z-index: 1; white-space: nowrap; }
+  .compare-label { position: absolute; top: 10px; padding: 4px 12px; background: rgba(0,0,0,0.7); color: white; font-size: 12px; font-weight: 600; border-radius: 4px; z-index: 6; pointer-events: none; }
+  .compare-label.left { left: 10px; }
+  .compare-label.right { right: 10px; }
+
+  /* Dropzone */
+  .dropzone-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(15,15,26,0.95); z-index: 10; cursor: pointer; }
+  .dropzone-overlay.hidden { display: none; }
+  .drop-icon { width: 80px; height: 80px; border: 3px dashed #e94560; border-radius: 50%; display: flex; justify-content: center; align-items: center; margin-bottom: 20px; }
+  .drop-icon svg { width: 36px; height: 36px; stroke: #e94560; fill: none; stroke-width: 2; }
+  .dropzone-overlay h2 { color: #fff; margin-bottom: 8px; }
+  .dropzone-overlay p { color: #888; font-size: 14px; }
+
+  .processing-badge { display: none; padding: 4px 10px; background: #e94560; color: white; font-size: 11px; border-radius: 4px; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  #fileInput { display: none; }
+</style>
+</head>
+<body>
+
+<!-- SVG filter definition for unsharp mask (GPU-accelerated) -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <filter id="unsharpMask" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="blurred"/>
+      <feComposite in="SourceGraphic" in2="blurred" operator="arithmetic"
+        k1="0" k2="3" k3="-2" k4="0" result="sharpened"/>
+    </filter>
+  </defs>
+</svg>
+
+<div class="header">
+  <div>
+    <h1><span>Image</span> Sharpener</h1>
+    <div class="subtitle">Wallpaper Enhancement Tool — GPU Accelerated</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="section">
+      <h3>Presets</h3>
+      <div class="preset-grid">
+        <button class="preset-btn" data-preset="light" onclick="applyPreset('light', this)">Light<br><small>Subtle clarity</small></button>
+        <button class="preset-btn" data-preset="medium" onclick="applyPreset('medium', this)">Medium<br><small>Balanced</small></button>
+        <button class="preset-btn" data-preset="strong" onclick="applyPreset('strong', this)">Strong<br><small>Max detail</small></button>
+        <button class="preset-btn" data-preset="wallpaper" onclick="applyPreset('wallpaper', this)">Wallpaper<br><small>Optimized</small></button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Sharpening</h3>
+      <div class="control">
+        <label>Amount <span class="val" id="amountVal">200%</span></label>
+        <input type="range" id="amount" min="0" max="500" value="200" oninput="onSliderChange()">
+      </div>
+      <div class="control">
+        <label>Radius <span class="val" id="radiusVal">1.2px</span></label>
+        <input type="range" id="radius" min="1" max="50" value="12" step="1" oninput="onSliderChange()">
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Enhancements</h3>
+      <div class="control">
+        <label>Contrast <span class="val" id="contrastVal">108%</span></label>
+        <input type="range" id="contrast" min="50" max="200" value="108" oninput="onSliderChange()">
+      </div>
+      <div class="control">
+        <label>Brightness <span class="val" id="brightnessVal">102%</span></label>
+        <input type="range" id="brightness" min="50" max="200" value="102" oninput="onSliderChange()">
+      </div>
+      <div class="control">
+        <label>Saturation <span class="val" id="saturationVal">112%</span></label>
+        <input type="range" id="saturation" min="0" max="300" value="112" oninput="onSliderChange()">
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Actions</h3>
+      <button class="action-btn btn-secondary" onclick="resetSettings()">Reset to Default</button>
+      <button class="action-btn btn-primary" onclick="downloadImage()">Download Result (PNG)</button>
+      <button class="action-btn btn-secondary" onclick="downloadJPEG()">Download Result (JPEG, smaller)</button>
+    </div>
+  </div>
+
+  <div class="canvas-area">
+    <div class="canvas-toolbar">
+      <div class="view-toggle">
+        <button class="active" id="viewResult" onclick="setView('result')">Result</button>
+        <button id="viewCompare" onclick="setView('compare')">Compare</button>
+        <button id="viewOriginal" onclick="setView('original')">Original</button>
+      </div>
+      <div class="info" id="imgInfo">No image loaded</div>
+      <div class="processing-badge" id="processingBadge">Rendering...</div>
+    </div>
+
+    <div class="image-container" id="imageContainer">
+      <div class="dropzone-overlay" id="dropzone" onclick="document.getElementById('fileInput').click()">
+        <div class="drop-icon">
+          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <h2>Drop your image here</h2>
+        <p>or click to browse — supports JPG, PNG, WebP</p>
+      </div>
+      <input type="file" id="fileInput" accept="image/*">
+
+      <!-- Filtered (sharpened) image -->
+      <img id="filteredImage">
+      <!-- Original image (for original view) -->
+      <img id="originalImage">
+
+      <!-- Compare view -->
+      <div class="compare-container" id="compareContainer">
+        <img id="compareSharpened">
+        <div class="compare-clip" id="compareClip">
+          <img id="compareOriginal">
+        </div>
+        <div class="compare-line" id="compareLine"></div>
+        <div class="compare-label left">Original</div>
+        <div class="compare-label right">Sharpened</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // State
+  let imageSrc = null;
+  let imageWidth = 0, imageHeight = 0;
+  let currentView = 'result';
+  let comparePos = 0.5;
+
+  // DOM elements
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const filteredImage = document.getElementById('filteredImage');
+  const originalImage = document.getElementById('originalImage');
+  const imgInfo = document.getElementById('imgInfo');
+  const svgFilter = document.querySelector('#unsharpMask');
+  const feBlur = svgFilter.querySelector('feGaussianBlur');
+  const feComposite = svgFilter.querySelector('feComposite');
+
+  // Compare elements
+  const compareContainer = document.getElementById('compareContainer');
+  const compareSharpened = document.getElementById('compareSharpened');
+  const compareOriginal = document.getElementById('compareOriginal');
+  const compareClip = document.getElementById('compareClip');
+  const compareLine = document.getElementById('compareLine');
+
+  // Presets
+  const presets = {
+    light:     { amount: 100, radius: 8,  contrast: 102, brightness: 100, saturation: 105 },
+    medium:    { amount: 200, radius: 12, contrast: 105, brightness: 101, saturation: 110 },
+    strong:    { amount: 350, radius: 18, contrast: 112, brightness: 100, saturation: 118 },
+    wallpaper: { amount: 200, radius: 12, contrast: 108, brightness: 102, saturation: 112 }
+  };
+
+  // File handling
+  document.addEventListener('dragover', e => e.preventDefault());
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+
+  function loadFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        imageSrc = e.target.result;
+        imageWidth = img.naturalWidth;
+        imageHeight = img.naturalHeight;
+
+        dropzone.classList.add('hidden');
+        imgInfo.textContent = `${imageWidth} x ${imageHeight}px — ${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`;
+
+        // Set src on all image elements
+        filteredImage.src = imageSrc;
+        originalImage.src = imageSrc;
+        compareSharpened.src = imageSrc;
+        compareOriginal.src = imageSrc;
+
+        // Auto-apply wallpaper preset
+        applyPreset('wallpaper');
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // Real-time filter update (GPU-accelerated, instant)
+  function updateFilters() {
+    const amount = parseInt(document.getElementById('amount').value);
+    const radius = parseFloat(document.getElementById('radius').value) / 10;
+    const contrast = parseInt(document.getElementById('contrast').value);
+    const brightness = parseInt(document.getElementById('brightness').value);
+    const saturation = parseInt(document.getElementById('saturation').value);
+
+    // Update SVG filter parameters for unsharp mask
+    // Unsharp mask = original + amount * (original - blurred)
+    // = (1 + amount) * original - amount * blurred
+    // feComposite arithmetic: k1*in*in2 + k2*in + k3*in2 + k4
+    // in = SourceGraphic, in2 = blurred
+    // k2 = (1 + amt), k3 = -amt
+    const amt = amount / 100;
+    feBlur.setAttribute('stdDeviation', radius);
+    feComposite.setAttribute('k2', (1 + amt).toFixed(2));
+    feComposite.setAttribute('k3', (-amt).toFixed(2));
+
+    // Build combined CSS filter string
+    const cssFilter = `url(#unsharpMask) contrast(${contrast}%) brightness(${brightness}%) saturate(${saturation}%)`;
+
+    filteredImage.style.filter = cssFilter;
+    compareSharpened.style.filter = cssFilter;
+
+    // Update slider labels
+    document.getElementById('amountVal').textContent = amount + '%';
+    document.getElementById('radiusVal').textContent = (radius).toFixed(1) + 'px';
+    document.getElementById('contrastVal').textContent = contrast + '%';
+    document.getElementById('brightnessVal').textContent = brightness + '%';
+    document.getElementById('saturationVal').textContent = saturation + '%';
+  }
+
+  function onSliderChange() {
+    updateFilters();
+  }
+
+  function setView(view) {
+    currentView = view;
+    document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+    document.getElementById('view' + view.charAt(0).toUpperCase() + view.slice(1)).classList.add('active');
+
+    filteredImage.style.display = 'none';
+    originalImage.style.display = 'none';
+    compareContainer.style.display = 'none';
+
+    if (view === 'result' && imageSrc) {
+      filteredImage.style.display = 'block';
+    } else if (view === 'original' && imageSrc) {
+      originalImage.style.display = 'block';
+    } else if (view === 'compare' && imageSrc) {
+      compareContainer.style.display = 'block';
+      updateCompare();
+    }
+  }
+
+  // Compare slider
+  function updateCompare() {
+    const rect = compareContainer.getBoundingClientRect();
+    const x = rect.width * comparePos;
+    compareClip.style.width = x + 'px';
+    compareLine.style.left = x + 'px';
+  }
+
+  let isDragging = false;
+  compareLine.addEventListener('mousedown', () => isDragging = true);
+  compareContainer.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    const rect = compareContainer.getBoundingClientRect();
+    comparePos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    updateCompare();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const rect = compareContainer.getBoundingClientRect();
+    comparePos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    updateCompare();
+  });
+  document.addEventListener('mouseup', () => isDragging = false);
+
+  function applyPreset(name, btnEl) {
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    const target = btnEl || document.querySelector(`.preset-btn[data-preset="${name}"]`);
+    if (target) target.classList.add('active');
+
+    const p = presets[name];
+    document.getElementById('amount').value = p.amount;
+    document.getElementById('radius').value = p.radius;
+    document.getElementById('contrast').value = p.contrast;
+    document.getElementById('brightness').value = p.brightness;
+    document.getElementById('saturation').value = p.saturation;
+
+    updateFilters();
+    if (currentView === 'result') {
+      filteredImage.style.display = imageSrc ? 'block' : 'none';
+    }
+  }
+
+  function resetSettings() {
+    document.getElementById('amount').value = 150;
+    document.getElementById('radius').value = 12;
+    document.getElementById('contrast').value = 100;
+    document.getElementById('brightness').value = 100;
+    document.getElementById('saturation').value = 100;
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    updateFilters();
+  }
+
+  // Download: render filtered image to canvas then export
+  function downloadImage() {
+    if (!imageSrc) return;
+    renderToCanvas('image/png', 'king_baldwin_sharpened.png');
+  }
+
+  function downloadJPEG() {
+    if (!imageSrc) return;
+    renderToCanvas('image/jpeg', 'king_baldwin_sharpened.jpg', 0.95);
+  }
+
+  function renderToCanvas(mimeType, filename, quality) {
+    const badge = document.getElementById('processingBadge');
+    badge.style.display = 'inline-block';
+    badge.textContent = 'Rendering for download...';
+
+    // Use requestAnimationFrame to let the badge show before heavy work
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          const amount = parseInt(document.getElementById('amount').value);
+          const radius = parseFloat(document.getElementById('radius').value) / 10;
+          const contrast = parseInt(document.getElementById('contrast').value) / 100;
+          const brightness = parseInt(document.getElementById('brightness').value) / 100;
+          const saturation = parseInt(document.getElementById('saturation').value) / 100;
+          const amt = amount / 100;
+
+          // Create source canvas from original image
+          const srcCanvas = document.createElement('canvas');
+          srcCanvas.width = imageWidth;
+          srcCanvas.height = imageHeight;
+          const srcCtx = srcCanvas.getContext('2d');
+          const srcImg = new Image();
+          srcImg.onload = () => {
+            srcCtx.drawImage(srcImg, 0, 0);
+
+            // Apply CSS filters (contrast, brightness, saturation) via canvas
+            const outCanvas = document.createElement('canvas');
+            outCanvas.width = imageWidth;
+            outCanvas.height = imageHeight;
+            const outCtx = outCanvas.getContext('2d');
+
+            // Step 1: Apply sharpening via convolution (simplified for download)
+            const srcData = srcCtx.getImageData(0, 0, imageWidth, imageHeight);
+            const sharpened = applySharpenKernel(srcData, amt, radius);
+            outCtx.putImageData(sharpened, 0, 0);
+
+            // Step 2: Apply CSS-like filters via canvas filter property
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = imageWidth;
+            finalCanvas.height = imageHeight;
+            const finalCtx = finalCanvas.getContext('2d');
+            finalCtx.filter = `contrast(${contrast}) brightness(${brightness}) saturate(${saturation})`;
+            finalCtx.drawImage(outCanvas, 0, 0);
+
+            // Download
+            const link = document.createElement('a');
+            link.download = filename;
+            if (quality) {
+              link.href = finalCanvas.toDataURL(mimeType, quality);
+            } else {
+              link.href = finalCanvas.toDataURL(mimeType);
+            }
+            link.click();
+            badge.style.display = 'none';
+          };
+          srcImg.src = imageSrc;
+        } catch(err) {
+          badge.textContent = 'Error: ' + err.message;
+          setTimeout(() => badge.style.display = 'none', 3000);
+        }
+      }, 50);
+    });
+  }
+
+  // Fast sharpening kernel for download rendering
+  // Uses a 3x3 sharpen convolution kernel scaled by amount
+  function applySharpenKernel(imageData, amount, radius) {
+    const { width, height, data } = imageData;
+    const result = new Uint8ClampedArray(data.length);
+
+    // Approximate unsharp mask with a weighted kernel
+    // center = 1 + 4*amount, neighbors = -amount
+    const a = Math.min(amount, 4); // cap for stability
+    const kernel = [
+      0,  -a,  0,
+      -a, 1+4*a, -a,
+      0,  -a,  0
+    ];
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        if (y === 0 || y === height-1 || x === 0 || x === width-1) {
+          result[idx] = data[idx];
+          result[idx+1] = data[idx+1];
+          result[idx+2] = data[idx+2];
+          result[idx+3] = data[idx+3];
+          continue;
+        }
+        for (let c = 0; c < 3; c++) {
+          let sum =
+            kernel[0] * data[((y-1)*width+(x-1))*4+c] +
+            kernel[1] * data[((y-1)*width+x)*4+c] +
+            kernel[2] * data[((y-1)*width+(x+1))*4+c] +
+            kernel[3] * data[(y*width+(x-1))*4+c] +
+            kernel[4] * data[(y*width+x)*4+c] +
+            kernel[5] * data[(y*width+(x+1))*4+c] +
+            kernel[6] * data[((y+1)*width+(x-1))*4+c] +
+            kernel[7] * data[((y+1)*width+x)*4+c] +
+            kernel[8] * data[((y+1)*width+(x+1))*4+c];
+          result[idx+c] = Math.max(0, Math.min(255, Math.round(sum)));
+        }
+        result[idx+3] = data[idx+3];
+      }
+    }
+    return new ImageData(result, width, height);
+  }
+</script>
+</body>
+</html>

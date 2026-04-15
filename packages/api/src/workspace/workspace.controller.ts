@@ -5,6 +5,7 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
   Patch,
   Post,
   Put,
@@ -24,6 +25,23 @@ import { createEntrySchema, renameSchema, moveSchema, deleteSchema, updateConten
 @Controller('api/v1/workspace')
 export class WorkspaceController {
   constructor(private readonly workspaceService: WorkspaceService) {}
+
+  @Get('projector')
+  async listProjectorItems(
+    @Req() req: { user: JwtPayload },
+  ): Promise<{ success: boolean; data: { name: string; path: string }[] }> {
+    const items = await this.workspaceService.listProjectorItems(req.user.sub);
+    return { success: true, data: items };
+  }
+
+  @Get('projector/:name')
+  async getProjectorItem(
+    @Req() req: { user: JwtPayload },
+    @Param('name') name: string,
+  ): Promise<{ success: boolean; data: { name: string; html: string } }> {
+    const data = await this.workspaceService.getProjectorItemHtml(req.user.sub, name);
+    return { success: true, data };
+  }
 
   @Get('files')
   async listFiles(

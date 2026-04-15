@@ -2,10 +2,13 @@ import anime from 'animejs';
 import type { AnimeParams } from 'animejs';
 import { EASING, DURATION, STAGGER } from './config';
 
+/** AnimeParams with targets guaranteed to be a string (CSS selector) */
+export type AnimePreset = AnimeParams & { targets: string };
+
 export function fadeUp(
   selector: string,
   options?: { distance?: number; duration?: number; delay?: number },
-): AnimeParams {
+): AnimePreset {
   return {
     targets: selector,
     opacity: [0, 1],
@@ -19,7 +22,7 @@ export function fadeUp(
 export function staggerFadeUp(
   selector: string,
   options?: { stagger?: number; distance?: number; duration?: number },
-): AnimeParams {
+): AnimePreset {
   return {
     targets: selector,
     opacity: [0, 1],
@@ -33,7 +36,7 @@ export function staggerFadeUp(
 export function drawPath(
   selector: string,
   options?: { duration?: number; delay?: number },
-): AnimeParams {
+): AnimePreset {
   return {
     targets: selector,
     strokeDashoffset: [anime.setDashoffset, 0],
@@ -47,7 +50,7 @@ export function fillWidth(
   selector: string,
   to: string,
   options?: { duration?: number },
-): AnimeParams {
+): AnimePreset {
   return {
     targets: selector,
     width: ['0%', to],
@@ -59,7 +62,7 @@ export function fillWidth(
 export function scalePress(
   selector: string,
   options?: { scale?: number; duration?: number },
-): AnimeParams {
+): AnimePreset {
   return {
     targets: selector,
     scale: options?.scale ?? 0.98,
@@ -71,7 +74,7 @@ export function scalePress(
 export function scalePop(
   selector: string,
   options?: { scale?: number; duration?: number },
-): AnimeParams {
+): AnimePreset {
   return {
     targets: selector,
     scale: [1, options?.scale ?? 1.15, 1],
@@ -83,7 +86,7 @@ export function scalePop(
 export function slideOut(
   selector: string,
   options?: { direction?: 'left' | 'right'; duration?: number },
-): AnimeParams {
+): AnimePreset {
   const x = options?.direction === 'left' ? -100 : 100;
   return {
     targets: selector,

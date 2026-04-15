@@ -14,6 +14,10 @@ import type { Tool, ToolResult } from '../tool.js';
 const logger = createLogger('engine:tools:file-io');
 
 const WORKSPACE_ROOT = '/workspace';
+const SKILLS_ROOT = '/skills';
+
+/** Directories the agent is allowed to access inside the container. */
+const ALLOWED_ROOTS = [WORKSPACE_ROOT, SKILLS_ROOT] as const;
 
 // ------------------------------------------------------------------ //
 //  Path validation                                                    //
@@ -21,19 +25,23 @@ const WORKSPACE_ROOT = '/workspace';
 
 /**
  * Normalize and validate a path for container use.
- * Uses posix normalization and ensures the resolved path remains within /workspace.
+ * Uses posix normalization and ensures the resolved path remains within
+ * an allowed root (/workspace or /skills).
  *
  * @param inputPath - The user-supplied path.
  * @returns The normalized absolute path.
- * @throws If the path escapes /workspace.
+ * @throws If the path escapes the allowed directories.
  */
 export function validateContainerPath(inputPath: string): string {
   const normalized = path.posix.normalize(inputPath);
 
-  // Ensure it starts with /workspace (covers /workspace and /workspace/...)
-  if (normalized !== WORKSPACE_ROOT && !normalized.startsWith(`${WORKSPACE_ROOT}/`)) {
+  const isAllowed = ALLOWED_ROOTS.some(
+    (root) => normalized === root || normalized.startsWith(`${root}/`),
+  );
+
+  if (!isAllowed) {
     throw new Error(
-      `Path "${inputPath}" is outside the allowed workspace directory (${WORKSPACE_ROOT})`,
+      `Path "${inputPath}" is outside the allowed directories (${ALLOWED_ROOTS.join(', ')})`,
     );
   }
 
@@ -56,7 +64,7 @@ export function createReadFileTool(containerId: string, containerRunner: IContai
       properties: {
         path: {
           type: 'string',
-          description: `Path to the file to read (must be within ${WORKSPACE_ROOT}).`,
+          description: `Path to the file to read (must be within ${WORKSPACE_ROOT} or ${SKILLS_ROOT}).`,
         },
       },
       required: ['path'],
@@ -105,7 +113,7 @@ export function createWriteFileTool(containerId: string, containerRunner: IConta
       properties: {
         path: {
           type: 'string',
-          description: `Path to the file to write (must be within ${WORKSPACE_ROOT}).`,
+          description: `Path to the file to write (must be within ${WORKSPACE_ROOT} or ${SKILLS_ROOT}).`,
         },
         content: {
           type: 'string',
@@ -177,7 +185,7 @@ export function createEditFileTool(containerId: string, containerRunner: IContai
       properties: {
         path: {
           type: 'string',
-          description: `Path to the file to edit (must be within ${WORKSPACE_ROOT}).`,
+          description: `Path to the file to edit (must be within ${WORKSPACE_ROOT} or ${SKILLS_ROOT}).`,
         },
         old_text: {
           type: 'string',
@@ -250,13 +258,13 @@ export function createListDirectoryTool(
 ): Tool {
   return {
     name: 'list_directory',
-    description: `List files and directories. Defaults to ${WORKSPACE_ROOT} if no path is given.`,
+    description: `List files and directories. Path must be within ${WORKSPACE_ROOT} or ${SKILLS_ROOT}. Defaults to ${WORKSPACE_ROOT}.`,
     parameters: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: `Directory to list (must be within ${WORKSPACE_ROOT}; defaults to ${WORKSPACE_ROOT}).`,
+          description: `Directory to list (must be within ${WORKSPACE_ROOT} or ${SKILLS_ROOT}; defaults to ${WORKSPACE_ROOT}).`,
         },
       },
     },

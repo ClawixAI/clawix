@@ -129,21 +129,6 @@ function LoginForm() {
               </Button>
             </form>
 
-            {/* Separator */}
-            <div className="relative flex items-center justify-center">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border" />
-              </div>
-              <span className="relative bg-background px-2 text-sm text-muted-foreground">
-                Or continue with
-              </span>
-            </div>
-
-            {/* Google login */}
-            <Button variant="outline" size="lg" className="w-full" disabled>
-              <Image src="/images/google-icon.svg" alt="Google" width={16} height={16} />
-              Login with Google
-            </Button>
           </div>
         </div>
       </div>

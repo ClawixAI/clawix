@@ -393,7 +393,7 @@ describe('AgentRunnerService', () => {
       {} as unknown as SearchProviderRegistry,
       { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
       {} as unknown as import('../../prisma/prisma.service.js').PrismaService,
-      {} as unknown as import('../../db/memory-item.repository.js').MemoryItemRepository,
+      { findVisibleToUser: vi.fn().mockResolvedValue([]) } as unknown as import('../../db/memory-item.repository.js').MemoryItemRepository,
       mocks.mockWorkspaceSeeder as unknown as import('../workspace-seeder.service.js').WorkspaceSeederService,
       mocks.mockPolicyRepo as unknown as import('../../db/policy.repository.js').PolicyRepository,
       {} as unknown as import('../../db/channel.repository.js').ChannelRepository,

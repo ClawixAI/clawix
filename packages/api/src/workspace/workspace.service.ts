@@ -322,6 +322,45 @@ export class WorkspaceService {
     };
   }
 
+  async listProjectorItems(userId: string): Promise<{ name: string; path: string }[]> {
+    const { fs: sfs } = await this.createScopedFs(userId);
+
+    // Ensure /projector directory exists
+    if (!(await sfs.exists('/projector'))) {
+      return [];
+    }
+
+    const stat = await sfs.stat('/projector');
+    if (!stat.isDirectory()) {
+      return [];
+    }
+
+    const dirents = await sfs.readdir('/projector');
+    const items: { name: string; path: string }[] = [];
+
+    for (const dirent of dirents) {
+      if (!dirent.isDirectory()) continue;
+      const indexPath = `/projector/${dirent.name}/index.html`;
+      if (await sfs.exists(indexPath)) {
+        items.push({ name: dirent.name, path: indexPath });
+      }
+    }
+
+    return items.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async getProjectorItemHtml(userId: string, name: string): Promise<{ name: string; html: string }> {
+    const { fs: sfs } = await this.createScopedFs(userId);
+    const indexPath = `/projector/${name}/index.html`;
+
+    if (!(await sfs.exists(indexPath))) {
+      throw new NotFoundException(`Projector item "${name}" not found`);
+    }
+
+    const html = await sfs.readFile(indexPath, 'utf-8') as string;
+    return { name, html };
+  }
+
   async uploadFile(userId: string, dirPath: string, filename: string, data: Buffer, overwrite = false): Promise<FileEntry> {
     const { fs: sfs, basePath } = await this.createScopedFs(userId);
     if (dirPath !== '/') {

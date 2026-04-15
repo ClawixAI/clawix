@@ -42,7 +42,7 @@ export default function ProfilePage() {
     try {
       const [data, channels] = await Promise.all([
         authFetch<Profile>('/api/v1/me'),
-        authFetch<{ data: Array<{ type: string; isActive: boolean }> }>('/admin/channels?limit=100')
+        authFetch<{ data: Array<{ type: string; isActive: boolean }> }>('/api/v1/channels')
           .catch(() => ({ data: [] })),
       ]);
       setProfile(data);
@@ -187,7 +187,7 @@ export default function ProfilePage() {
                 id="profile-telegram"
                 value={telegramId}
                 onChange={(e) => { setTelegramId(e.target.value); }}
-                placeholder="Your numeric Telegram ID (e.g. 925598150)"
+                placeholder="Your numeric Telegram ID"
                 pattern="\d*"
               />
               <p className="text-xs text-muted-foreground">

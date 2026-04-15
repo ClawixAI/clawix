@@ -735,10 +735,10 @@ describe('MemoryConsolidationService', () => {
   });
 
   // ---------------------------------------------------------------- //
-  //  consolidateIfNeeded — HISTORY.md container writes               //
+  //  consolidateIfNeeded — MEMORY.md writes                          //
   // ---------------------------------------------------------------- //
 
-  describe('consolidateIfNeeded — HISTORY.md container writes', () => {
+  describe('consolidateIfNeeded — MEMORY.md writes', () => {
     function bigMessages(count = 20, contentSize = 100) {
       return Array.from({ length: count }, (_, i) =>
         makeSessionMessage({
@@ -751,7 +751,7 @@ describe('MemoryConsolidationService', () => {
       );
     }
 
-    it('writes to HISTORY.md when container is available', async () => {
+    it('writes memory_update to MEMORY.md when container is available', async () => {
       const msgs = bigMessages(20, 100);
       mocks.mockSessionMessage.findMany
         .mockResolvedValueOnce(msgs)
@@ -774,12 +774,43 @@ describe('MemoryConsolidationService', () => {
 
       expect(mocks.mockContainerRunner.exec).toHaveBeenCalledWith(
         'container-1',
-        ['sh', '-c', 'cat >> /workspace/HISTORY.md'],
-        expect.objectContaining({ stdin: expect.stringContaining('history text') }),
+        ['sh', '-c', 'mkdir -p /workspace/memory && cat >> /workspace/memory/MEMORY.md'],
+        expect.objectContaining({
+          stdin: expect.stringContaining('memory update'),
+        }),
       );
     });
 
-    it('skips HISTORY.md when no container is available', async () => {
+    it('does not write to HISTORY.md', async () => {
+      const msgs = bigMessages(20, 100);
+      mocks.mockSessionMessage.findMany
+        .mockResolvedValueOnce(msgs)
+        .mockResolvedValueOnce(msgs)
+        .mockResolvedValueOnce([]);
+
+      mocks.mockProvider.chat.mockResolvedValue(
+        makeSaveMemoryResponse('history text', 'memory update'),
+      );
+      mocks.mockSessionMessage.updateMany.mockResolvedValue({ count: msgs.length });
+      mocks.mockSessionMessage.createMany.mockResolvedValue({ count: 1 });
+      mocks.mockSession.update.mockResolvedValue({});
+
+      await service.consolidateIfNeeded('session-1', {
+        ...defaultOptions,
+        contextWindowTokens: 100,
+        containerId: 'container-1',
+        containerRunner: mocks.mockContainerRunner as unknown as IContainerRunner,
+      });
+
+      const calls = mocks.mockContainerRunner.exec.mock.calls;
+      for (const call of calls) {
+        expect(call[1]).not.toEqual(
+          expect.arrayContaining([expect.stringContaining('HISTORY.md')]),
+        );
+      }
+    });
+
+    it('skips MEMORY.md when no container is available', async () => {
       const msgs = bigMessages(20, 100);
       mocks.mockSessionMessage.findMany
         .mockResolvedValueOnce(msgs)

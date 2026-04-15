@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +13,101 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { authFetch } from '@/lib/auth';
 import type { ApiAgent } from './agents-list';
+
+// ------------------------------------------------------------------ //
+//  Provider data                                                      //
+// ------------------------------------------------------------------ //
+
+interface ProviderInfo {
+  name: string;
+  displayName: string;
+  defaultModel: string;
+  models: string[];
+}
+
+function useProviders() {
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+
+  useEffect(() => {
+    void authFetch<{ data: ProviderInfo[] }>('/api/v1/agents/providers')
+      .then((res) => setProviders(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {});
+  }, []);
+
+  return providers;
+}
+
+// ------------------------------------------------------------------ //
+//  Provider + Model selects (linked)                                  //
+// ------------------------------------------------------------------ //
+
+function ProviderModelFields({
+  providers,
+  defaultProvider,
+  defaultModel,
+  idPrefix,
+}: {
+  providers: ProviderInfo[];
+  defaultProvider?: string;
+  defaultModel?: string;
+  idPrefix: string;
+}) {
+  const [selectedProvider, setSelectedProvider] = useState(defaultProvider ?? providers[0]?.name ?? '');
+  const currentProvider = providers.find((p) => p.name === selectedProvider);
+  const models = currentProvider?.models ?? [];
+
+  // Set default provider when providers load
+  useEffect(() => {
+    if (!selectedProvider && providers.length > 0) {
+      setSelectedProvider(defaultProvider ?? providers[0]!.name);
+    }
+  }, [providers, defaultProvider, selectedProvider]);
+
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={`${idPrefix}-provider`}>Provider</Label>
+        <select
+          name="provider"
+          id={`${idPrefix}-provider`}
+          className="rounded-md border bg-background px-3 py-2 text-sm"
+          value={selectedProvider}
+          onChange={(e) => setSelectedProvider(e.target.value)}
+        >
+          {providers.map((p) => (
+            <option key={p.name} value={p.name}>{p.displayName}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={`${idPrefix}-model`}>Model</Label>
+        {models.length > 0 ? (
+          <select
+            name="model"
+            id={`${idPrefix}-model`}
+            className="rounded-md border bg-background px-3 py-2 text-sm"
+            defaultValue={defaultModel ?? currentProvider?.defaultModel ?? ''}
+          >
+            {models.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        ) : (
+          <Input
+            id={`${idPrefix}-model`}
+            name="model"
+            placeholder={currentProvider?.defaultModel ?? 'model-name'}
+            defaultValue={defaultModel ?? currentProvider?.defaultModel ?? ''}
+            required
+          />
+        )}
+      </div>
+    </>
+  );
+}
 
 // ------------------------------------------------------------------ //
 //  Create Agent Dialog                                                //
@@ -29,6 +124,8 @@ export function CreateAgentDialog({
   saving: boolean;
   onSubmit: (form: FormData) => void;
 }) {
+  const providers = useProviders();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -47,12 +144,7 @@ export function CreateAgentDialog({
         >
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-name">Name</Label>
-            <Input
-              id="create-name"
-              name="name"
-              placeholder="Research Assistant"
-              required
-            />
+            <Input id="create-name" name="name" placeholder="Research Assistant" required />
           </div>
 
           <div className="flex flex-col gap-2">
@@ -91,29 +183,7 @@ export function CreateAgentDialog({
             </select>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="create-provider">Provider</Label>
-            <select
-              name="provider"
-              id="create-provider"
-              className="rounded-md border bg-background px-3 py-2 text-sm"
-            >
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
-              <option value="deepseek">DeepSeek</option>
-              <option value="ollama">Ollama</option>
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="create-model">Model</Label>
-            <Input
-              id="create-model"
-              name="model"
-              placeholder="claude-sonnet-4-20250514"
-              required
-            />
-          </div>
+          <ProviderModelFields providers={providers} idPrefix="create" />
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-apiBaseUrl">API Base URL</Label>
@@ -177,6 +247,8 @@ export function EditAgentDialog({
   saving: boolean;
   onSubmit: (id: string, form: FormData) => void;
 }) {
+  const providers = useProviders();
+
   if (!agent) return null;
 
   return (
@@ -197,12 +269,7 @@ export function EditAgentDialog({
         >
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-name">Name</Label>
-            <Input
-              id="edit-name"
-              name="name"
-              defaultValue={agent.name}
-              required
-            />
+            <Input id="edit-name" name="name" defaultValue={agent.name} required />
           </div>
 
           <div className="flex flex-col gap-2">
@@ -241,30 +308,12 @@ export function EditAgentDialog({
             </select>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-provider">Provider</Label>
-            <select
-              name="provider"
-              id="edit-provider"
-              className="rounded-md border bg-background px-3 py-2 text-sm"
-              defaultValue={agent.provider}
-            >
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
-              <option value="deepseek">DeepSeek</option>
-              <option value="ollama">Ollama</option>
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-model">Model</Label>
-            <Input
-              id="edit-model"
-              name="model"
-              defaultValue={agent.model}
-              required
-            />
-          </div>
+          <ProviderModelFields
+            providers={providers}
+            defaultProvider={agent.provider}
+            defaultModel={agent.model}
+            idPrefix="edit"
+          />
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-apiBaseUrl">API Base URL</Label>
@@ -285,19 +334,22 @@ export function EditAgentDialog({
               id="edit-maxTokensPerRun"
               name="maxTokensPerRun"
               type="number"
-              defaultValue={agent.maxTokensPerRun}
+              defaultValue={agent.maxTokensPerRun ?? 100000}
               min={1000}
             />
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-skillIds">Skill IDs</Label>
-            <Input
-              id="edit-skillIds"
-              name="skillIds"
-              defaultValue={agent.skillIds.join(', ')}
-              placeholder="Comma-separated skill IDs"
-            />
+            <Label htmlFor="edit-isActive">Status</Label>
+            <select
+              name="isActive"
+              id="edit-isActive"
+              className="rounded-md border bg-background px-3 py-2 text-sm"
+              defaultValue={agent.isActive ? 'true' : 'false'}
+            >
+              <option value="true">Active</option>
+              <option value="false">Inactive</option>
+            </select>
           </div>
 
           <DialogFooter>

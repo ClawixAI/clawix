@@ -222,6 +222,7 @@ export function FileList({
                     <Input
                       className="h-7 text-sm"
                       value={renameValue}
+                      onClick={(e) => e.stopPropagation()}
                       onChange={(e) => setRenameValue(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') confirmRename(entry);
@@ -256,25 +257,25 @@ export function FileList({
                         <MoreVertical className="size-4 text-muted-foreground" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                       {!entry.isDirectory && (
-                        <DropdownMenuItem onClick={() => onDownload?.(entry)}>
+                        <DropdownMenuItem onSelect={() => onDownload?.(entry)}>
                           <Download className="mr-2 size-4" />
                           Download
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem onClick={() => startRename(entry)}>
+                      <DropdownMenuItem onSelect={() => startRename(entry)}>
                         <Pencil className="mr-2 size-4" />
                         Rename
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onMove?.(entry)}>
+                      <DropdownMenuItem onSelect={() => onMove?.(entry)}>
                         <Move className="mr-2 size-4" />
                         Move to...
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         className="text-destructive focus:text-destructive"
-                        onClick={() => onDelete?.(entry)}
+                        onSelect={() => onDelete?.(entry)}
                       >
                         <Trash2 className="mr-2 size-4" />
                         Delete

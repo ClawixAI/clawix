@@ -5,7 +5,7 @@
  * - Estimates session token usage
  * - When over the context window threshold, calls an LLM to summarise the oldest messages
  * - Persists the summary as a synthetic `[MEMORY SUMMARY]` system message
- * - Optionally writes a HISTORY.md entry to the agent's container workspace
+ * - Optionally writes consolidated memory to the agent's container workspace (MEMORY.md)
  * - Falls back to raw archival after 3 consecutive LLM failures
  */
 
@@ -277,7 +277,7 @@ export class MemoryConsolidationService {
    * Up to MAX_CONSOLIDATION_ROUNDS are run. Each round:
    * 1. Loads messages and finds the chunk to consolidate.
    * 2. Calls the LLM with a save_memory tool.
-   * 3. On success: deletes old messages, upserts summary, writes HISTORY.md.
+   * 3. On success: deletes old messages, upserts summary, writes MEMORY.md.
    * 4. On 3 consecutive validation failures: falls back to raw archival.
    */
   private async doConsolidate(
@@ -517,7 +517,7 @@ export class MemoryConsolidationService {
       // Success — reset failure counter
       consecutiveFailures = 0;
       roundsUsed++;
-      const { history_entry, memory_update } = parseResult.data;
+      const { memory_update } = parseResult.data;
 
       // Persist: archive consolidated messages + old summary (if any), create new summary
       const idsToArchive = [...chunk.map((r) => r.id), ...(summaryRow ? [summaryRow.id] : [])];
@@ -539,14 +539,17 @@ export class MemoryConsolidationService {
         ],
       });
 
-      // Write to HISTORY.md if container available
+      // Write memory_update to MEMORY.md if container available
       if (options.containerId && options.containerRunner) {
+        const consolidated = `\n## Consolidated\n\n${memory_update}\n`;
         await options.containerRunner
-          .exec(options.containerId, ['sh', '-c', 'cat >> /workspace/HISTORY.md'], {
-            stdin: history_entry + '\n\n',
-          })
+          .exec(
+            options.containerId,
+            ['sh', '-c', 'mkdir -p /workspace/memory && cat >> /workspace/memory/MEMORY.md'],
+            { stdin: consolidated },
+          )
           .catch((err: unknown) => {
-            logger.warn({ err }, 'Failed to write HISTORY.md');
+            logger.warn({ err }, 'Failed to write to MEMORY.md');
           });
       }
 
@@ -601,31 +604,17 @@ export class MemoryConsolidationService {
 
   /**
    * Fallback when LLM consolidation repeatedly fails.
-   * Formats messages as plain text and writes to HISTORY.md, then archives in DB (soft-delete).
+   * Archives messages in DB (soft-delete) without writing to any file.
    */
   private async rawArchiveFallback(
     sessionId: string,
     chunk: MessageRow[],
-    options: ConsolidationOptions,
+    _options: ConsolidationOptions,
   ): Promise<void> {
     logger.warn(
       { sessionId, chunkSize: chunk.length },
-      'Falling back to raw archive consolidation',
+      'Falling back to raw archive consolidation (no file write)',
     );
-
-    const archiveText = chunk
-      .map((r) => `[${r.createdAt.toISOString()}] ${r.role}: ${r.content}`)
-      .join('\n');
-
-    if (options.containerId && options.containerRunner) {
-      await options.containerRunner
-        .exec(options.containerId, ['sh', '-c', 'cat >> /workspace/HISTORY.md'], {
-          stdin: archiveText + '\n\n',
-        })
-        .catch((err: unknown) => {
-          logger.warn({ err }, 'Failed to write raw archive to HISTORY.md');
-        });
-    }
 
     await this.prisma.sessionMessage.updateMany({
       where: { id: { in: chunk.map((r) => r.id) } },

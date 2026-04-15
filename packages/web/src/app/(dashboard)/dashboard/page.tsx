@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Activity, Bot, CalendarClock, Coins, Loader2 } from 'lucide-react';
-import { useAnimeOnMount, useCountUp, staggerFadeUp, STAGGER } from '@/lib/anime';
+import { useAnimeOnMount, staggerFadeUp, STAGGER } from '@/lib/anime';
 import { VantaBackground } from '@/components/ui/vanta-background';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -89,14 +89,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [animRuns, setAnimRuns] = useState(0);
-  const [animAgents, setAnimAgents] = useState(0);
-  const [animTokens, setAnimTokens] = useState(0);
-
   useAnimeOnMount(staggerFadeUp('[data-animate="stat-cards"] > div', { stagger: STAGGER.wide }));
-  useCountUp(stats?.totalRuns ?? 0, 600, setAnimRuns, [stats?.totalRuns]);
-  useCountUp(stats?.activeAgents ?? 0, 600, setAnimAgents, [stats?.activeAgents]);
-  useCountUp(stats?.tokenUsage.totalTokens ?? 0, 600, setAnimTokens, [stats?.tokenUsage.totalTokens]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -124,19 +117,19 @@ export default function DashboardPage() {
   const statCards = [
     {
       title: 'Total Runs',
-      value: stats ? formatNumber(animRuns) : '—',
+      value: stats ? formatNumber(stats.totalRuns) : '—',
       subtitle: 'all time',
       icon: Activity,
     },
     {
       title: 'Active Agents',
-      value: stats ? String(animAgents) : '—',
+      value: stats ? String(stats.activeAgents) : '—',
       subtitle: 'definitions',
       icon: Bot,
     },
     {
       title: 'Token Usage',
-      value: stats ? formatNumber(animTokens) : '—',
+      value: stats ? formatNumber(stats.tokenUsage.totalTokens) : '—',
       subtitle: stats ? `$${stats.tokenUsage.totalEstimatedCostUsd.toFixed(2)} this month` : '',
       icon: Coins,
     },

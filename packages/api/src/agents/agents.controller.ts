@@ -49,6 +49,12 @@ export class AgentsController {
     return this.agentsService.listAgents(query, validRole);
   }
 
+  @Get('providers')
+  async getProviders() {
+    const configured = await this.agentsService.listConfiguredProviders();
+    return { success: true, data: configured };
+  }
+
   // IMPORTANT: literal path routes must come before :id parameter routes
   @Get('user-agents')
   listUserAgents(@Req() req: AuthRequest) {

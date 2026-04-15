@@ -6,10 +6,12 @@ import type {
   PaginationInput,
   UpdateAgentDefinitionInput,
 } from '@clawix/shared';
+import { listProviders } from '@clawix/shared';
 import type { AgentDefinition, AgentRun } from '../generated/prisma/client.js';
 import { AgentDefinitionRepository } from '../db/agent-definition.repository.js';
 import { AgentRunRepository } from '../db/agent-run.repository.js';
 import { UserAgentRepository } from '../db/user-agent.repository.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class AgentsService {
@@ -17,6 +19,7 @@ export class AgentsService {
     private readonly agentDefRepo: AgentDefinitionRepository,
     private readonly agentRunRepo: AgentRunRepository,
     private readonly userAgentRepo: UserAgentRepository,
+    private readonly prisma: PrismaService,
   ) {}
 
   async listAgents(
@@ -135,5 +138,23 @@ export class AgentsService {
 
   async deleteUserAgent(id: string) {
     return this.userAgentRepo.delete(id);
+  }
+
+  async listConfiguredProviders() {
+    // Only return providers that have been configured with an API key
+    const configs = await this.prisma.providerConfig.findMany({
+      where: { isEnabled: true },
+      select: { provider: true },
+    });
+    const configuredNames = new Set(configs.map((c) => c.provider));
+
+    return listProviders()
+      .filter((p) => p.name !== 'custom' && configuredNames.has(p.name))
+      .map((p) => ({
+        name: p.name,
+        displayName: p.displayName,
+        defaultModel: p.defaultModel,
+        models: (p.pricing ?? []).map((m) => m.model),
+      }));
   }
 }

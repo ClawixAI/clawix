@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TOOL_TITLE</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px 30px; border-bottom: 1px solid #2a2a4a; }
+  .header h1 { font-size: 22px; color: #fff; }
+  .header h1 span { color: #e94560; }
+  .header .subtitle { color: #888; font-size: 13px; }
+
+  .main { display: flex; height: calc(100vh - 70px); }
+
+  .sidebar { width: 300px; min-width: 300px; background: #16213e; padding: 20px; overflow-y: auto; border-right: 1px solid #2a2a4a; }
+  .section { margin-bottom: 24px; }
+  .section h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #e94560; margin-bottom: 12px; }
+  .control { margin-bottom: 16px; }
+  .control label { display: flex; justify-content: space-between; font-size: 13px; color: #aaa; margin-bottom: 6px; }
+  .control label .val { color: #e94560; font-weight: 600; }
+
+  input[type="range"] { width: 100%; -webkit-appearance: none; height: 6px; background: #2a2a4a; border-radius: 3px; outline: none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #e94560; cursor: pointer; }
+  input[type="text"], input[type="number"], select, textarea { width: 100%; padding: 10px 12px; background: #2a2a4a; border: 1px solid #3a3a5a; border-radius: 8px; color: #e0e0e0; font-size: 14px; outline: none; }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus { border-color: #e94560; }
+
+  .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-bottom: 8px; }
+  .btn-primary { background: #e94560; color: white; }
+  .btn-primary:hover { background: #ff6b81; }
+  .btn-secondary { background: #2a2a4a; color: #ccc; }
+  .btn-secondary:hover { background: #3a3a5a; color: #fff; }
+  .btn-save-workspace { background: #16213e; color: #e94560; border: 1px solid #e94560; }
+  .btn-save-workspace:hover { background: rgba(233,69,96,0.15); }
+
+  .content-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .content-toolbar { padding: 10px 20px; background: #1a1a2e; border-bottom: 1px solid #2a2a4a; display: flex; align-items: center; gap: 16px; }
+  .content-toolbar .info { font-size: 12px; color: #888; }
+  .content-main { flex: 1; overflow: auto; padding: 20px; display: flex; justify-content: center; align-items: flex-start; }
+  /* For simple tools without sidebar, center content vertically */
+  .centered-layout { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: calc(100vh - 70px); padding: 40px 20px; gap: 24px; }
+
+  .result-card { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 12px; padding: 24px; min-width: 300px; }
+  .result-card h2 { color: #e94560; font-size: 16px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+  .result-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2a2a4a; }
+  .result-row:last-child { border-bottom: none; }
+  .result-label { color: #888; font-size: 13px; }
+  .result-value { color: #e94560; font-weight: 600; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>TOOL</span> TITLE</h1>
+  <div class="subtitle">TOOL_SUBTITLE</div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <!-- SIDEBAR SECTIONS GO HERE -->
+    <div class="section">
+      <h3>Actions</h3>
+      <button class="btn btn-primary" onclick="calculate()">Calculate</button>
+      <button class="btn btn-secondary" onclick="resetForm()">Reset</button>
+    </div>
+  </div>
+
+  <div class="content-area">
+    <div class="content-toolbar">
+      <div class="info" id="statusInfo">Ready</div>
+    </div>
+    <div class="content-main" id="contentMain">
+      <!-- MAIN CONTENT GOES HERE -->
+      <div class="result-card" id="resultCard" style="display:none">
+        <h2>Results</h2>
+        <div id="resultRows"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // TOOL_TITLE — JavaScript
+  // Replace these placeholder functions with real implementations.
+
+  function calculate() {
+    // TODO: implement
+  }
+
+  function resetForm() {
+    // TODO: implement
+  }
+
+  // Save to workspace helper
+  function saveToWorkspace(filename, textContent) {
+    window.parent.postMessage({ type: 'projector:save', filename: filename, content: textContent, encoding: 'text' }, '*');
+  }
+  function saveBinaryToWorkspace(filename, canvas) {
+    canvas.toBlob(function(blob) {
+      var reader = new FileReader();
+      reader.onload = function() { window.parent.postMessage({ type: 'projector:save', filename: filename, content: reader.result.split(',')[1], encoding: 'base64' }, '*'); };
+      reader.readAsDataURL(blob);
+    });
+  }
+</script>
+</body>
+</html>

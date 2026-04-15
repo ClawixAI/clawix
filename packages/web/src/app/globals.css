@@ -129,3 +129,42 @@
 .animate-pop {
   animation: badge-pop 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* TV turn-on effect — horizontal line expands to full size */
+@keyframes tv-on {
+  0% {
+    scale: 0.3 0.005;
+    opacity: 0.8;
+  }
+  40% {
+    scale: 1 0.005;
+    opacity: 1;
+  }
+  100% {
+    scale: 1 1;
+    opacity: 1;
+  }
+}
+
+@keyframes tv-off {
+  0% {
+    scale: 1 1;
+    opacity: 1;
+  }
+  60% {
+    scale: 1 0.005;
+    opacity: 1;
+  }
+  100% {
+    scale: 0 0.005;
+    opacity: 0;
+  }
+}
+
+[data-slot="dialog-content"].tv-effect[data-state="open"] {
+  animation: tv-on 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+[data-slot="dialog-content"].tv-effect[data-state="closed"] {
+  animation: tv-off 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+}

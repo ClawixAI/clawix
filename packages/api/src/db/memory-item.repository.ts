@@ -87,4 +87,47 @@ export class MemoryItemRepository {
 
     return filtered.slice(0, maxResults);
   }
+
+  /**
+   * Find daily note memory items for the last N days, owned by the user.
+   * Daily notes are tagged with `daily:YYYY-MM-DD`.
+   *
+   * Scoped to ownerId only (not group/org-shared) — daily notes are per-user private by design.
+   */
+  async findDailyNotes(userId: string, days: number): Promise<readonly MemoryItem[]> {
+    if (days <= 0) {
+      return [];
+    }
+
+    const tags: string[] = [];
+    for (let i = 0; i < days; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      tags.push(`daily:${date.toISOString().slice(0, 10)}`);
+    }
+
+    return this.prisma.memoryItem.findMany({
+      where: {
+        ownerId: userId,
+        tags: { hasSome: tags },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Return all unique tags across visible memory items, excluding daily: tags.
+   */
+  async findDistinctTags(userId: string): Promise<readonly string[]> {
+    const items = await this.findVisibleToUser(userId);
+    const tagSet = new Set<string>();
+    for (const item of items) {
+      for (const tag of item.tags) {
+        if (!tag.startsWith('daily:')) {
+          tagSet.add(tag);
+        }
+      }
+    }
+    return [...tagSet].sort();
+  }
 }

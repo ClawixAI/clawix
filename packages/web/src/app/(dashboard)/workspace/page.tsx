@@ -3,8 +3,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { FolderOpen, Loader2 } from 'lucide-react';
-import { authFetch } from '@/lib/auth';
+import { authFetch, getAccessToken } from '@/lib/auth';
 import { ApiError } from '@/lib/api';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useAnimeOnMount } from '@/lib/anime/use-anime';
 import { staggerFadeUp, STAGGER } from '@/lib/anime';
 import { WorkspaceBreadcrumbs } from './breadcrumbs';
@@ -174,9 +179,28 @@ export default function WorkspacePage() {
     }
   }, [moveTarget, currentPath, fetchDirectory]);
 
-  const handleDownload = useCallback((entry: FileEntry) => {
-    const url = `/api/v1/workspace/files/download?path=${encodeURIComponent(entry.path)}`;
-    window.open(url, '_blank');
+  const handleDownload = useCallback(async (entry: FileEntry) => {
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) return;
+
+      const apiBase = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001';
+      const res = await fetch(
+        `${apiBase}/api/v1/workspace/files/download?path=${encodeURIComponent(entry.path)}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!res.ok) throw new Error('Download failed');
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = entry.name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download file');
+    }
   }, []);
 
   const handleEdit = useCallback(() => {
@@ -352,21 +376,12 @@ export default function WorkspacePage() {
           {/* Preview panel */}
           {(selectedFile || isLoadingFile) && (
             <div className="w-2/5">
-              {editing && selectedFile ? (
-                <FileEditor
-                  file={selectedFile}
-                  onSave={handleSave}
-                  onCancel={handleCancelEdit}
-                  onDirtyChange={setEditingDirty}
-                />
-              ) : (
-                <FilePreview
-                  file={selectedFile}
-                  isLoading={isLoadingFile}
-                  onClose={handleClosePreview}
-                  onEdit={handleEdit}
-                />
-              )}
+              <FilePreview
+                file={selectedFile}
+                isLoading={isLoadingFile}
+                onClose={handleClosePreview}
+                onEdit={handleEdit}
+              />
             </div>
           )}
         </div>
@@ -414,6 +429,29 @@ export default function WorkspacePage() {
         onOverwrite={handleOverwrite}
         onReload={handleReloadFile}
       />
+
+      {/* Editor modal */}
+      <Dialog
+        open={editing && selectedFile !== null}
+        onOpenChange={(open) => { if (!open) handleCancelEdit(); }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="tv-effect flex h-[85vh] !w-[40vw] !max-w-none flex-col gap-0 p-0 overflow-hidden [&>*]:h-full"
+        >
+          <DialogTitle className="sr-only">
+            Edit {selectedFile?.name ?? 'file'}
+          </DialogTitle>
+          {editing && selectedFile && (
+            <FileEditor
+              file={selectedFile}
+              onSave={handleSave}
+              onCancel={handleCancelEdit}
+              onDirtyChange={setEditingDirty}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
