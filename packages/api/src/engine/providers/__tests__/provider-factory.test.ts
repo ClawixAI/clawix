@@ -28,6 +28,7 @@ vi.mock('@clawix/shared', async (importOriginal) => {
 import { createProvider } from '../provider-factory.js';
 import { OpenAIProvider } from '../openai-provider.js';
 import { AnthropicProvider } from '../anthropic-provider.js';
+import { OpenAIResponsesProvider } from '../openai-responses-provider.js';
 
 describe('createProvider', () => {
   const API_KEY = 'test-api-key';
@@ -68,5 +69,29 @@ describe('createProvider', () => {
     expect(() => createProvider('my-custom-llm', API_KEY)).toThrow(
       'baseURL is required for provider "my-custom-llm"',
     );
+  });
+
+  it('returns OpenAIResponsesProvider for codex models', () => {
+    const provider = createProvider('openai', API_KEY, undefined, 'gpt-5.1-codex-mini');
+    expect(provider).toBeInstanceOf(OpenAIResponsesProvider);
+    expect(provider.name).toBe('openai-responses');
+  });
+
+  it('returns OpenAIProvider for standard openai models', () => {
+    const provider = createProvider('openai', API_KEY, undefined, 'gpt-4.1');
+    expect(provider).toBeInstanceOf(OpenAIProvider);
+    expect(provider.name).toBe('openai');
+  });
+
+  it('returns OpenAIProvider when no model specified', () => {
+    const provider = createProvider('openai', API_KEY);
+    expect(provider).toBeInstanceOf(OpenAIProvider);
+    expect(provider.name).toBe('openai');
+  });
+
+  it('returns OpenAIResponsesProvider for gpt-5.x models', () => {
+    const provider = createProvider('openai', API_KEY, undefined, 'gpt-5.4');
+    expect(provider).toBeInstanceOf(OpenAIResponsesProvider);
+    expect(provider.name).toBe('openai-responses');
   });
 });

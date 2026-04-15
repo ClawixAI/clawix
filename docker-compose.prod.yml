@@ -1,0 +1,95 @@
+# Clawix Production Docker Compose
+# Usage:
+#   Build:  docker compose -f docker-compose.prod.yml build
+#   Start:  docker compose -f docker-compose.prod.yml up -d
+#   Logs:   docker compose -f docker-compose.prod.yml logs -f
+#   Stop:   docker compose -f docker-compose.prod.yml down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clawix-postgres
+    restart: unless-stopped
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clawix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clawix_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-clawix}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-clawix}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: clawix-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api/Dockerfile
+    image: clawix-api:latest
+    container_name: clawix-api
+    restart: unless-stopped
+    ports:
+      - '3001:3001'
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-clawix}:${POSTGRES_PASSWORD:-clawix_dev}@postgres:5432/${POSTGRES_DB:-clawix}?schema=public
+      REDIS_URL: redis://redis:6379
+      PORT: '3001'
+      HOST: '0.0.0.0'
+      LOG_LEVEL: info
+      TEMPLATES_DIR: /app/infra/templates
+      WORKSPACE_BASE_PATH: /data
+      WORKSPACE_HOST_BASE_PATH: ${CLAWIX_HOST_DATA_DIR:-${PWD}/data}
+      SKILLS_BUILTIN_DIR: /app/skills/builtin
+      SKILLS_BUILTIN_HOST_DIR: ${CLAWIX_HOST_SKILLS_DIR:-${PWD}/skills/builtin}
+      SKILLS_CUSTOM_DIR: /app/skills/custom
+      SKILLS_CUSTOM_HOST_DIR: ${CLAWIX_HOST_SKILLS_DIR:-${PWD}/skills/custom}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
+      - ./skills:/app/skills:ro
+      - ./infra/templates:/app/infra/templates:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+    image: clawix-web:latest
+    container_name: clawix-web
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  redis_data:

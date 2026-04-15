@@ -10,6 +10,10 @@ export interface ReasoningLoopConfig {
   readonly tokenBudget?: number;
   /** Grace window as a percentage before hard kill. Default: 10 (= 10%). */
   readonly tokenGracePercent?: number;
+  /** Wall-clock timeout in milliseconds. Loop aborts if exceeded. */
+  readonly timeoutMs?: number;
+  /** External abort signal — loop checks this before each iteration. */
+  readonly abortSignal?: AbortSignal;
 }
 
 /** Result of a completed reasoning loop. */
@@ -21,4 +25,6 @@ export interface LoopResult {
   readonly hitMaxIterations: boolean;
   /** True when the loop stopped because the token budget grace limit was exceeded. */
   readonly hitTokenBudget: boolean;
+  /** True when the loop stopped because the wall-clock timeout was exceeded. */
+  readonly hitTimeout: boolean;
 }

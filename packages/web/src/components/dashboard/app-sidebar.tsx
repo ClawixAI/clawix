@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-provider';
 import {
@@ -11,7 +11,8 @@ import {
   ChevronsUpDown,
   Coins,
   CreditCard,
-  GalleryVerticalEnd,
+  FolderOpen,
+  MonitorPlay,
   LogOut,
   MessageSquare,
   Moon,
@@ -60,6 +61,16 @@ const platformItems = [
     title: 'Conversations',
     icon: MessageSquare,
     href: '/conversations',
+  },
+  {
+    title: 'Workspace',
+    icon: FolderOpen,
+    href: '/workspace',
+  },
+  {
+    title: 'Projector',
+    icon: MonitorPlay,
+    href: '/projector',
   },
   {
     title: 'Skills',
@@ -204,6 +215,7 @@ export function AppSidebar() {
                 }
               }}
             >
+              {user?.role === 'admin' && (
               <SidebarMenuItem>
                 <CollapsibleTrigger asChild>
                   <SidebarMenuButton isActive={pathname.startsWith('/settings')} tooltip="Settings">
@@ -232,6 +244,7 @@ export function AppSidebar() {
                   </SidebarMenuSub>
                 </CollapsibleContent>
               </SidebarMenuItem>
+              )}
             </Collapsible>
           </SidebarMenu>
         </SidebarGroup>

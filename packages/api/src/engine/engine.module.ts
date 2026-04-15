@@ -21,6 +21,7 @@ import { TaskExecutorService } from './task-executor.service.js';
 import { ContextBuilderService } from './context-builder.service.js';
 import { BootstrapFileService } from './bootstrap-file.service.js';
 import { WorkspaceSeederService } from './workspace-seeder.service.js';
+import { StaleRunReaperService } from './stale-run-reaper.service.js';
 import { SearchProviderRegistry } from './tools/web/search-provider.js';
 import { BraveSearchProvider } from './tools/web/providers/brave.js';
 import { DuckDuckGoProvider } from './tools/web/providers/duckduckgo.js';
@@ -46,6 +47,7 @@ import { DuckDuckGoProvider } from './tools/web/providers/duckduckgo.js';
     CronGuardService,
     CronTaskProcessorService,
     CronSchedulerService,
+    StaleRunReaperService,
     {
       provide: SkillLoaderService,
       useFactory: () => {
@@ -93,6 +95,7 @@ import { DuckDuckGoProvider } from './tools/web/providers/duckduckgo.js';
     SearchProviderRegistry,
     WorkspaceSeederService,
     CronGuardService,
+    SkillLoaderService,
   ],
 })
 export class EngineModule {}

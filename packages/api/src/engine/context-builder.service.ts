@@ -1,3 +1,5 @@
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '@clawix/shared';
 import type { ChatMessage } from '@clawix/shared';
@@ -8,7 +10,12 @@ import { SkillLoaderService } from './skill-loader.service.js';
 import { PolicyRepository } from '../db/policy.repository.js';
 import { UserRepository } from '../db/user.repository.js';
 import type { ContextBuildParams, WorkerSummary } from './context-builder.types.js';
-import { MEMORY_TOKEN_BUDGET, MEMORY_ITEM_MAX_CHARS } from './context-builder.types.js';
+import {
+  MEMORY_FILE_TOKEN_BUDGET,
+  DAILY_NOTES_TOKEN_BUDGET,
+  DAILY_NOTES_DAYS,
+  MEMORY_ITEM_MAX_CHARS,
+} from './context-builder.types.js';
 
 const logger = createLogger('engine:context-builder');
 
@@ -99,7 +106,7 @@ export class ContextBuilderService {
         '# Skills\n\n' +
           'Skills are NOT agents — do NOT use the spawn tool for skills.\n' +
           'To use a skill: call read_file on its SKILL.md location, then follow the instructions inside.\n' +
-          'To create new skills: write them under /workspace/skills/custom/ (writable). /workspace/skills/builtin/ is read-only.\n\n' +
+          'To create new skills: write them under /skills/custom/ (writable). /skills/builtin/ is read-only.\n\n' +
           skillsSummary,
       );
     }
@@ -113,7 +120,7 @@ export class ContextBuilderService {
     }
 
     // 8. Memory (optional)
-    const memorySection = await this.buildMemorySection(userId);
+    const memorySection = await this.buildMemorySection(userId, workspacePath);
     if (memorySection) {
       sections.push(memorySection);
     }
@@ -181,12 +188,43 @@ export class ContextBuilderService {
       '- Use the read_file, write_file, edit_file, list_directory, and shell tools to interact with files.',
       '- All file paths must be under /workspace.',
       '',
+      '## Container Environment',
+      '',
+      'You run inside an isolated container with:',
+      '- **Python 3.12** (stdlib only — no pip packages pre-installed, no pip install available)',
+      '- **git**, **jq** available in shell',
+      '- **No direct internet access** — curl, wget, and network commands will fail',
+      '',
+      'To access the internet, use ONLY the **web_search** and **web_fetch** tools.',
+      'Never write scripts that make HTTP requests — use these tools directly instead.',
+      'When writing Python scripts, use only the standard library (json, csv, os, re, etc.).',
+      'If a user asks for a script requiring external packages, write it but note they must run it outside the container.',
+      '',
+      '## Projector',
+      '',
+      'You can create interactive tools for the user as projector items (calculators, converters, editors, visualizers).',
+      '**Before any projector task**: read_file("/skills/builtin/projector-creator/SKILL.md") for the workflow and guidelines.',
+      'Projectors run in sandboxed iframes with NO network access — fetch data yourself first if needed.',
+      '',
+      '## Time Limits',
+      '',
+      'Each agent run has a wall-clock timeout (default 5 minutes).',
+      'If a task might take longer, break it into smaller steps or use cron scheduling for recurring work.',
+      'Do not attempt more than 3 web_fetch calls in a single run — fetch only the most relevant URLs.',
+      '',
       '## Memory',
       '',
-      'You can save and search persistent memories using the save_memory and search_memory tools.',
-      '- Memories you save are private by default',
-      '- Use tags to organize: preference, project, person, decision, fact',
-      '- To share a memory, the user must explicitly ask. Use list_groups then share_memory.',
+      'Your persistent memory is at `/workspace/memory/MEMORY.md`.',
+      '- Update it when you learn something worth remembering long-term about the user, their preferences, or ongoing work',
+      '- Read it to recall context from previous sessions',
+      '- Keep it concise and well-organized — you own this file completely',
+      '',
+      'For daily activity notes, use `save_memory` with a `daily:YYYY-MM-DD` tag (e.g., `daily:' + new Date().toISOString().slice(0, 10) + '`).',
+      '- The last 3 days of daily notes are automatically loaded into your context',
+      '- Use `search_memory` to look up older daily notes or tagged memories',
+      '',
+      'Your available memory tags are listed in the Memory section of your context.',
+      'Use `search_memory` with specific tags to retrieve their content.',
     ].join('\n');
   }
 
@@ -218,47 +256,83 @@ export class ContextBuilderService {
     ].join('\n');
   }
 
-  private async buildMemorySection(userId: string): Promise<string | null> {
-    let items: readonly { content: unknown }[];
+  private async buildMemorySection(
+    userId: string,
+    workspacePath?: string,
+  ): Promise<string | null> {
+    const sections: string[] = [];
+
+    // 1. MEMORY.md — read from workspace
+    if (workspacePath) {
+      try {
+        const memoryFilePath = path.join(workspacePath, 'memory', 'MEMORY.md');
+        const content = await fs.readFile(memoryFilePath, 'utf-8');
+        if (content.trim()) {
+          const truncated = truncate(content.trim(), MEMORY_FILE_TOKEN_BUDGET * 4);
+          sections.push(`## Long-term Memory\n\n${truncated}`);
+        }
+      } catch {
+        // File doesn't exist or unreadable — skip
+      }
+    }
+
+    // 2. Daily notes — last N days
     try {
-      items = await this.memoryItemRepo.findVisibleToUser(userId);
+      const dailyItems = await this.memoryItemRepo.findDailyNotes(userId, DAILY_NOTES_DAYS);
+      if (dailyItems.length > 0) {
+        const grouped = this.groupDailyNotesByDate(dailyItems);
+        let tokenEstimate = 0;
+        const dateLines: string[] = [];
+
+        for (const [date, items] of grouped) {
+          const dateSectionLines = [`### ${date}`];
+          for (const item of items) {
+            const text = formatMemoryItem(item.content);
+            const tokens = Math.ceil(text.length / 4);
+            if (tokenEstimate + tokens > DAILY_NOTES_TOKEN_BUDGET) break;
+            dateSectionLines.push(`- ${text}`);
+            tokenEstimate += tokens;
+          }
+          dateLines.push(dateSectionLines.join('\n'));
+          if (tokenEstimate >= DAILY_NOTES_TOKEN_BUDGET) break;
+        }
+
+        if (dateLines.length > 0) {
+          sections.push(`## Recent Activity\n\n${dateLines.join('\n\n')}`);
+        }
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.warn(
-        { userId, error: message },
-        'Failed to load memory items, continuing without memory',
-      );
-      return null;
+      logger.warn({ userId, error: message }, 'Failed to load daily notes');
     }
 
-    if (items.length === 0) {
-      return null;
-    }
-
-    const lines: string[] = [];
-    let tokenEstimate = 0;
-
-    for (const item of items) {
-      const formatted = formatMemoryItem(item.content);
-      const itemTokens = Math.ceil(formatted.length / 4);
-
-      if (tokenEstimate + itemTokens > MEMORY_TOKEN_BUDGET) {
-        logger.debug(
-          { userId, included: lines.length, total: items.length },
-          'Memory token budget reached, truncating',
-        );
-        break;
+    // 3. Tag index
+    try {
+      const tags = await this.memoryItemRepo.findDistinctTags(userId);
+      if (tags.length > 0) {
+        sections.push(`## Available Memory Tags\n\n${tags.join(', ')}`);
       }
-
-      lines.push(`- ${formatted}`);
-      tokenEstimate += itemTokens;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn({ userId, error: message }, 'Failed to load tag index');
     }
 
-    if (lines.length === 0) {
-      return null;
-    }
+    if (sections.length === 0) return null;
+    return `# Memory\n\n${sections.join('\n\n')}`;
+  }
 
-    return `# Memory\n\n${lines.join('\n')}`;
+  private groupDailyNotesByDate(
+    items: readonly { content: unknown; tags: readonly string[]; createdAt: Date }[],
+  ): Map<string, readonly { content: unknown }[]> {
+    const grouped = new Map<string, { content: unknown }[]>();
+    for (const item of items) {
+      const dailyTag = item.tags.find((t) => t.startsWith('daily:'));
+      const date = dailyTag ? dailyTag.slice(6) : item.createdAt.toISOString().slice(0, 10);
+      const existing = grouped.get(date) ?? [];
+      existing.push(item);
+      grouped.set(date, existing);
+    }
+    return new Map([...grouped.entries()].sort((a, b) => b[0].localeCompare(a[0])));
   }
 
   private buildUserMessage(

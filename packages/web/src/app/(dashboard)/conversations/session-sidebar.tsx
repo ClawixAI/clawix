@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2, MessageSquarePlus, Search } from 'lucide-react';
+import { Archive, Loader2, MessageSquarePlus, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import type { ChatSession } from './use-chat';
@@ -106,12 +106,16 @@ export function SessionSidebar({
                     onSelect(session.id);
                   }}
                   className={cn(
-                    'mx-2 flex w-[calc(100%-16px)] items-center rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50',
+                    'mx-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50',
                     selectedId === session.id && 'bg-muted',
+                    !session.isActive && 'opacity-60',
                   )}
                 >
+                  {!session.isActive && (
+                    <Archive className="size-3 shrink-0 text-muted-foreground" />
+                  )}
                   <span className="truncate">
-                    Session &mdash; {formatShortDate(session.createdAt)}
+                    {session.isActive ? 'Session' : 'Archived'} &mdash; {formatShortDate(session.createdAt)}
                   </span>
                 </button>
               ))}

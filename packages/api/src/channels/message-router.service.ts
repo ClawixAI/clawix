@@ -25,7 +25,8 @@ export class MessageRouterService {
   ) {}
 
   async handleInbound(message: InboundMessage, channel: ChannelAdapter): Promise<void> {
-    const { senderId, senderName, text } = message;
+    const { senderId, senderName } = message;
+    let text = message.text;
 
     // 1. Look up user by channel-appropriate method
     const user = await this.lookupUser(message.channelType, senderId);
@@ -67,8 +68,14 @@ export class MessageRouterService {
         agentDefinitionId: userAgent.agentDefinitionId,
       });
 
-      await channel.sendMessage({ recipientId: senderId, text: result.text });
-      return;
+      // Some commands (e.g. /create-skill) rewrite the input and forward to the agent.
+      if (result.forwardToAgent) {
+        text = result.forwardToAgent;
+        // Fall through to agent execution below
+      } else {
+        await channel.sendMessage({ recipientId: senderId, text: result.text });
+        return;
+      }
     }
 
     // 4. Concurrency check
@@ -118,6 +125,11 @@ export class MessageRouterService {
           sessionId: session.id,
         },
       });
+
+      // 9. Send typing stop
+      if (channel.sendTypingStop) {
+        await channel.sendTypingStop(senderId).catch(() => {});
+      }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ userId: user.id, error: errorMessage }, 'Agent execution failed');
@@ -126,6 +138,11 @@ export class MessageRouterService {
         recipientId: senderId,
         text: 'Something went wrong while processing your message. Please try again.',
       });
+
+      // Send typing stop on error too
+      if (channel.sendTypingStop) {
+        await channel.sendTypingStop(senderId).catch(() => {});
+      }
     }
   }
 

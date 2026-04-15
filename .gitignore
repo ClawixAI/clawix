@@ -1,4 +1,4 @@
-references/
+/references/
 .worktrees/
 
 # preferences
@@ -32,6 +32,8 @@ test-results/
 # prisma generated client
 packages/api/src/generated/
 
+.superpowers
+docs/superpowers
 seed.ts
 data
 

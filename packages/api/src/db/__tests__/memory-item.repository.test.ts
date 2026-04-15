@@ -166,4 +166,177 @@ describe('MemoryItemRepository', () => {
       expect(result).toHaveLength(1);
     });
   });
+
+  describe('findDailyNotes', () => {
+    it('should return items with daily: tags from the last N days', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const dailyItem = {
+        id: 'mem-daily-1',
+        ownerId: 'user-1',
+        content: { text: 'Daily note for today' },
+        tags: [`daily:${today}`],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      mockPrisma.memoryItem.findMany.mockResolvedValue([dailyItem]);
+
+      const result = await repo.findDailyNotes('user-1', 3);
+
+      expect(mockPrisma.memoryItem.findMany).toHaveBeenCalledWith({
+        where: {
+          ownerId: 'user-1',
+          tags: {
+            hasSome: expect.arrayContaining([`daily:${today}`]),
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      expect(result).toEqual([dailyItem]);
+      expect(result).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            tags: expect.arrayContaining([`daily:${today}`]),
+          }),
+        ]),
+      );
+    });
+
+    it('should generate tags for the correct number of days', async () => {
+      mockPrisma.memoryItem.findMany.mockResolvedValue([]);
+
+      await repo.findDailyNotes('user-1', 5);
+
+      const call = mockPrisma.memoryItem.findMany.mock.calls[0]![0] as {
+        where: { tags: { hasSome: string[] } };
+      };
+      const tags = call.where.tags.hasSome;
+
+      expect(tags).toHaveLength(5);
+      for (const tag of tags) {
+        expect(tag).toMatch(/^daily:\d{4}-\d{2}-\d{2}$/);
+      }
+    });
+
+    it('should return empty array when no daily notes exist', async () => {
+      mockPrisma.memoryItem.findMany.mockResolvedValue([]);
+
+      const result = await repo.findDailyNotes('user-1', 3);
+
+      expect(result).toEqual([]);
+    });
+
+    it('should return empty array when days <= 0', async () => {
+      const resultZero = await repo.findDailyNotes('user-1', 0);
+      const resultNegative = await repo.findDailyNotes('user-1', -5);
+
+      expect(resultZero).toEqual([]);
+      expect(resultNegative).toEqual([]);
+      expect(mockPrisma.memoryItem.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findDistinctTags', () => {
+    it('should return unique non-daily tags visible to user', async () => {
+      const items = [
+        {
+          id: 'mem-1',
+          ownerId: 'user-1',
+          content: { text: 'Preference item' },
+          tags: ['preference', 'ui'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 'mem-2',
+          ownerId: 'user-1',
+          content: { text: 'Daily note' },
+          tags: ['daily:2026-04-10', 'preference'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 'mem-3',
+          ownerId: 'user-1',
+          content: { text: 'Project decision' },
+          tags: ['project', 'decision'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      mockPrisma.groupMember.findMany.mockResolvedValue([]);
+      mockPrisma.memoryItem.findMany.mockResolvedValue(items);
+
+      const tags = await repo.findDistinctTags('user-1');
+
+      expect(tags).toContain('preference');
+      expect(tags).toContain('ui');
+      expect(tags).toContain('project');
+      expect(tags).toContain('decision');
+      expect(tags).not.toContain('daily:2026-04-10');
+      // Should not contain any daily: tags
+      for (const tag of tags) {
+        expect(tag).not.toMatch(/^daily:/);
+      }
+    });
+
+    it('should return tags sorted alphabetically', async () => {
+      const items = [
+        {
+          id: 'mem-1',
+          ownerId: 'user-1',
+          content: { text: 'Item' },
+          tags: ['zebra', 'alpha', 'middle'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      mockPrisma.groupMember.findMany.mockResolvedValue([]);
+      mockPrisma.memoryItem.findMany.mockResolvedValue(items);
+
+      const tags = await repo.findDistinctTags('user-1');
+
+      expect(tags).toEqual(['alpha', 'middle', 'zebra']);
+    });
+
+    it('should deduplicate tags across items', async () => {
+      const items = [
+        {
+          id: 'mem-1',
+          ownerId: 'user-1',
+          content: { text: 'Item 1' },
+          tags: ['preference'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 'mem-2',
+          ownerId: 'user-1',
+          content: { text: 'Item 2' },
+          tags: ['preference'],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      mockPrisma.groupMember.findMany.mockResolvedValue([]);
+      mockPrisma.memoryItem.findMany.mockResolvedValue(items);
+
+      const tags = await repo.findDistinctTags('user-1');
+
+      expect(tags).toEqual(['preference']);
+    });
+
+    it('should return empty array when no items exist', async () => {
+      mockPrisma.groupMember.findMany.mockResolvedValue([]);
+      mockPrisma.memoryItem.findMany.mockResolvedValue([]);
+
+      const tags = await repo.findDistinctTags('user-1');
+
+      expect(tags).toEqual([]);
+    });
+  });
 });

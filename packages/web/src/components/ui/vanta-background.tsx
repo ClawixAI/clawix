@@ -22,7 +22,7 @@ export function VantaBackground({ effect, children, className }: VantaBackground
       try {
         if (effect === 'net') {
           const THREE = await import('three');
-          (window as unknown as Record<string, unknown>).THREE = THREE;
+          (window as unknown as Record<string, unknown>)['THREE'] = THREE;
           const mod = await import('vanta/dist/vanta.net.min');
 
           if (cancelled || !bgRef.current) return;
@@ -48,7 +48,7 @@ export function VantaBackground({ effect, children, className }: VantaBackground
           // Topology uses p5.js, not THREE
           const p5Module = await import('p5');
           const p5 = p5Module.default;
-          (window as unknown as Record<string, unknown>).p5 = p5;
+          (window as unknown as Record<string, unknown>)['p5'] = p5;
           const mod = await import('vanta/dist/vanta.topology.min');
 
           if (cancelled || !bgRef.current) return;

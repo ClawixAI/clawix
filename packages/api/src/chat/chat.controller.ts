@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, Query, Req } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Post, Query, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import { SessionRepository } from '../db/session.repository.js';
@@ -13,21 +13,91 @@ export class ChatController {
     private readonly prisma: PrismaService,
   ) {}
 
+  @Get('channel')
+  async getWebChannel() {
+    const channel = await this.prisma.channel.findFirst({
+      where: { type: 'web', isActive: true },
+      select: { id: true, type: true, isActive: true },
+    });
+    return { success: true, data: channel };
+  }
+
   @Get('sessions')
   async listSessions(
     @Req() req: { user: JwtPayload },
-    @Query() query: { page?: number; limit?: number; channelId?: string },
+    @Query() query: { page?: number; limit?: number; channelId?: string; includeArchived?: string },
   ) {
     const page = Number(query.page) || 1;
     const limit = Math.min(Number(query.limit) || 20, 100);
+    const includeArchived = query.includeArchived === 'true';
 
-    const result = await this.sessionRepo.findByUserId(req.user.sub, { page, limit }, query.channelId);
+    const result = await this.sessionRepo.findByUserId(req.user.sub, { page, limit }, query.channelId, includeArchived);
 
     return {
       success: true,
       data: result.data,
       meta: { total: result.meta.total, page, limit },
     };
+  }
+
+  @Get('agent-runs')
+  async listAgentRuns(
+    @Req() req: { user: JwtPayload },
+    @Query() query: { limit?: number },
+  ) {
+    const limit = Math.min(Number(query.limit) || 20, 100);
+
+    const runs = await this.prisma.agentRun.findMany({
+      where: {
+        session: { userId: req.user.sub },
+      },
+      orderBy: { startedAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        status: true,
+        input: true,
+        output: true,
+        tokenUsage: true,
+        startedAt: true,
+        completedAt: true,
+        parentAgentRunId: true,
+        agentDefinition: {
+          select: { id: true, name: true, role: true },
+        },
+      },
+    });
+
+    return { success: true, data: runs };
+  }
+
+  @Post('agent-runs/stop')
+  async stopRunningAgentRuns(@Req() req: { user: JwtPayload }) {
+    const result = await this.prisma.agentRun.updateMany({
+      where: {
+        status: 'running',
+        session: { userId: req.user.sub },
+      },
+      data: {
+        status: 'failed',
+        error: 'Stopped by user',
+        completedAt: new Date(),
+      },
+    });
+    return { success: true, stopped: result.count };
+  }
+
+  @Post('sessions/:id/deactivate')
+  async deactivateSession(
+    @Req() req: { user: JwtPayload },
+    @Param('id') sessionId: string,
+  ) {
+    const session = await this.sessionRepo.findById(sessionId);
+    if (session.userId !== req.user.sub) {
+      throw new NotFoundException('Session not found');
+    }
+    await this.sessionRepo.update(sessionId, { isActive: false });
+    return { success: true };
   }
 
   @Get('sessions/:id/messages')

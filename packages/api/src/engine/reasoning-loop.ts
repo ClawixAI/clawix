@@ -68,7 +68,29 @@ export class ReasoningLoop {
     let iterations = 0;
     let lastResponse: LLMResponse | null = null;
     let hitTokenBudget = false;
+    let hitTimeout = false;
     let graceInjected = false;
+
+    // Abort controller for timeout and external signal
+    const abortController = new AbortController();
+    const externalSignal = config?.abortSignal;
+
+    // Link external signal
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        return { content: null, messages, totalUsage, iterations: 0, hitMaxIterations: false, hitTokenBudget: false, hitTimeout: true };
+      }
+      externalSignal.addEventListener('abort', () => { hitTimeout = true; abortController.abort(); }, { once: true });
+    }
+
+    // Wall-clock timeout
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    if (config?.timeoutMs) {
+      timeoutHandle = setTimeout(() => {
+        hitTimeout = true;
+        abortController.abort();
+      }, config.timeoutMs);
+    }
 
     // Pre-compute budget limits (if configured)
     const tokenBudget = config?.tokenBudget;
@@ -82,7 +104,13 @@ export class ReasoningLoop {
       ...(config?.settings ? { settings: config.settings } : {}),
     };
 
+    try {
     while (iterations < maxIterations) {
+      if (abortController.signal.aborted) {
+        logger.warn({ iteration: iterations }, 'Reasoning loop aborted (timeout or external signal)');
+        break;
+      }
+
       iterations += 1;
 
       logger.debug({ iteration: iterations, maxIterations }, 'Starting iteration');
@@ -156,6 +184,9 @@ export class ReasoningLoop {
         });
       }
     }
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
 
     const hitMaxIterations =
       iterations >= maxIterations && lastResponse !== null && lastResponse.toolCalls.length > 0;
@@ -163,7 +194,7 @@ export class ReasoningLoop {
     const content = lastResponse?.content ?? null;
 
     logger.info(
-      { iterations, hitMaxIterations, hitTokenBudget, totalUsage },
+      { iterations, hitMaxIterations, hitTokenBudget, hitTimeout, totalUsage },
       'Reasoning loop completed',
     );
 
@@ -174,6 +205,7 @@ export class ReasoningLoop {
       iterations,
       hitMaxIterations,
       hitTokenBudget,
+      hitTimeout,
     };
   }
 }

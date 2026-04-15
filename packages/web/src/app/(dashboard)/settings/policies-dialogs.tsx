@@ -43,6 +43,12 @@ function buildPolicyData(form: FormData): Record<string, unknown> {
   }
   data['allowedProviders'] = providers;
 
+  // Cron settings
+  data['cronEnabled'] = form.get('cronEnabled') === 'on';
+  data['maxScheduledTasks'] = parseInt(form.get('maxScheduledTasks') as string, 10) || 5;
+  data['minCronIntervalSecs'] = parseInt(form.get('minCronIntervalSecs') as string, 10) || 300;
+  data['maxTokensPerCronRun'] = parseIntOrNull(form.get('maxTokensPerCronRun') as string);
+
   return data;
 }
 
@@ -63,7 +69,7 @@ export function CreatePolicyDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Policy</DialogTitle>
           <DialogDescription>Define a new governance policy with quotas and limits.</DialogDescription>
@@ -110,7 +116,7 @@ export function EditPolicyDialog({
 
   return (
     <Dialog open={policy !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Policy</DialogTitle>
           <DialogDescription>
@@ -248,6 +254,54 @@ function PolicyFormFields({ policy }: { policy?: ApiPolicy }) {
         <p className="text-xs text-muted-foreground">
           Select which AI providers users on this policy can access.
         </p>
+      </div>
+
+      {/* Cron Scheduling */}
+      <div className="flex flex-col gap-2">
+        <Label>Scheduled Tasks (Cron)</Label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="cronEnabled"
+            className="size-4 rounded border"
+            defaultChecked={policy?.cronEnabled ?? false}
+          />
+          Enable cron scheduling
+        </label>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="policy-maxScheduledTasks">Max Tasks</Label>
+          <Input
+            id="policy-maxScheduledTasks"
+            name="maxScheduledTasks"
+            type="number"
+            min="1"
+            defaultValue={policy?.maxScheduledTasks ?? 5}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="policy-minCronIntervalSecs">Min Interval (s)</Label>
+          <Input
+            id="policy-minCronIntervalSecs"
+            name="minCronIntervalSecs"
+            type="number"
+            min="60"
+            defaultValue={policy?.minCronIntervalSecs ?? 300}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="policy-maxTokensPerCronRun">Max Tokens/Run</Label>
+          <Input
+            id="policy-maxTokensPerCronRun"
+            name="maxTokensPerCronRun"
+            type="number"
+            min="0"
+            placeholder="Unlimited"
+            defaultValue={policy?.maxTokensPerCronRun ?? ''}
+          />
+        </div>
       </div>
     </>
   );

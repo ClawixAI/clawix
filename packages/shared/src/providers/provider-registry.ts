@@ -32,24 +32,40 @@ const ANTHROPIC_SPEC: ProviderSpec = {
   supportsTools: true,
   supportsThinking: true,
   pricing: [
-    { model: 'claude-opus-4', inputPerMillion: 15, outputPerMillion: 75 },
-    { model: 'claude-sonnet-4', inputPerMillion: 3, outputPerMillion: 15 },
-    { model: 'claude-haiku-4', inputPerMillion: 0.8, outputPerMillion: 4 },
+    { model: 'claude-opus-4-6', inputPerMillion: 15, outputPerMillion: 75 },
+    { model: 'claude-sonnet-4-6', inputPerMillion: 3, outputPerMillion: 15 },
+    { model: 'claude-sonnet-4-5', inputPerMillion: 3, outputPerMillion: 15 },
+    { model: 'claude-haiku-4-5', inputPerMillion: 0.8, outputPerMillion: 4 },
   ],
 };
 
 const OPENAI_SPEC: ProviderSpec = {
   name: 'openai',
   displayName: 'OpenAI',
-  modelPrefixes: ['gpt-', 'o1-', 'o3-', 'o4-'],
+  modelPrefixes: ['gpt-', 'o1-', 'o3-', 'o4-', 'codex-'],
   envKey: 'OPENAI_API_KEY',
   defaultModel: 'gpt-4o',
   supportsTools: true,
   supportsThinking: false,
   pricing: [
-    { model: 'gpt-4o-mini', inputPerMillion: 0.15, outputPerMillion: 0.6 },
+    // Chat Completions API compatible models
+    { model: 'gpt-4.1', inputPerMillion: 2, outputPerMillion: 8 },
+    { model: 'gpt-4.1-mini', inputPerMillion: 0.4, outputPerMillion: 1.6 },
+    { model: 'gpt-4.1-nano', inputPerMillion: 0.1, outputPerMillion: 0.4 },
     { model: 'gpt-4o', inputPerMillion: 2.5, outputPerMillion: 10 },
+    { model: 'gpt-4o-mini', inputPerMillion: 0.15, outputPerMillion: 0.6 },
+    { model: 'o3', inputPerMillion: 10, outputPerMillion: 40 },
     { model: 'o3-mini', inputPerMillion: 1.1, outputPerMillion: 4.4 },
+    { model: 'o4-mini', inputPerMillion: 1.1, outputPerMillion: 4.4 },
+    // Responses API models (auto-detected by provider factory)
+    { model: 'gpt-5-codex', inputPerMillion: 2, outputPerMillion: 8 },
+    { model: 'gpt-5.3-codex', inputPerMillion: 2, outputPerMillion: 8 },
+    { model: 'gpt-5.2-codex', inputPerMillion: 2, outputPerMillion: 8 },
+    { model: 'gpt-5.1-codex', inputPerMillion: 1.5, outputPerMillion: 6 },
+    { model: 'gpt-5.1-codex-mini', inputPerMillion: 0.3, outputPerMillion: 1.2 },
+    { model: 'gpt-5.4', inputPerMillion: 5, outputPerMillion: 15 },
+    { model: 'gpt-5.2', inputPerMillion: 4, outputPerMillion: 14 },
+    { model: 'gpt-5.1', inputPerMillion: 3, outputPerMillion: 12 },
   ],
 };
 

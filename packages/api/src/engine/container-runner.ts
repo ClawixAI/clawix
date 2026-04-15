@@ -395,8 +395,8 @@ export function buildDockerRunArgs(params: DockerRunArgsParams): string[] {
 
   // Mount skill directories (trusted system mounts, not validated through mount-security)
   if (params.skillMounts !== undefined) {
-    args.push('-v', `${params.skillMounts.builtinHostPath}:/workspace/skills/builtin:ro`);
-    args.push('-v', `${params.skillMounts.customHostPath}:/workspace/skills/custom`);
+    args.push('-v', `${params.skillMounts.builtinHostPath}:/skills/builtin:ro`);
+    args.push('-v', `${params.skillMounts.customHostPath}:/skills/custom`);
   }
 
   for (const mount of validatedMounts) {

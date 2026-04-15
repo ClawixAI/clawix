@@ -54,26 +54,48 @@ describe('validateContainerPath', () => {
 
   it('blocks traversal paths', () => {
     expect(() => validateContainerPath('../../etc/passwd')).toThrow(
-      'outside the allowed workspace',
+      'outside the allowed directories',
     );
   });
 
   it('blocks workspace escape via parent traversal', () => {
     expect(() => validateContainerPath('/workspace/../etc/shadow')).toThrow(
-      'outside the allowed workspace',
+      'outside the allowed directories',
     );
   });
 
   it('blocks paths outside workspace', () => {
-    expect(() => validateContainerPath('/tmp/evil')).toThrow('outside the allowed workspace');
+    expect(() => validateContainerPath('/tmp/evil')).toThrow('outside the allowed directories');
   });
 
   it('blocks prefix trick (/workspacefoo)', () => {
-    expect(() => validateContainerPath('/workspacefoo')).toThrow('outside the allowed workspace');
+    expect(() => validateContainerPath('/workspacefoo')).toThrow('outside the allowed directories');
   });
 
   it('blocks empty string', () => {
-    expect(() => validateContainerPath('')).toThrow('outside the allowed workspace');
+    expect(() => validateContainerPath('')).toThrow('outside the allowed directories');
+  });
+
+  it('allows /skills root', () => {
+    expect(validateContainerPath('/skills')).toBe('/skills');
+  });
+
+  it('allows /skills/builtin paths', () => {
+    expect(validateContainerPath('/skills/builtin/skill-creator/SKILL.md')).toBe(
+      '/skills/builtin/skill-creator/SKILL.md',
+    );
+  });
+
+  it('allows /skills/custom paths', () => {
+    expect(validateContainerPath('/skills/custom/my-skill/SKILL.md')).toBe(
+      '/skills/custom/my-skill/SKILL.md',
+    );
+  });
+
+  it('blocks /skills escape via traversal', () => {
+    expect(() => validateContainerPath('/skills/../etc/passwd')).toThrow(
+      'outside the allowed directories',
+    );
   });
 });
 

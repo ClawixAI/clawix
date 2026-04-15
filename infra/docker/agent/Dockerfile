@@ -8,10 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Create workspace directories (including skill mount points so Docker
-# does not auto-create them as root-owned dirs on the host volume)
-RUN mkdir -p /workspace/skills/builtin /workspace/skills/custom /app \
-    && chown -R 1000:1000 /workspace
+# Create workspace and skill directories (skills are separate from /workspace
+# to avoid polluting the user's workspace bind mount on the host)
+RUN mkdir -p /workspace /skills/builtin /skills/custom /app \
+    && chown -R 1000:1000 /workspace /skills
 
 # Non-root user (uid 1000 — matches --user 1000:1000 from container runner)
 USER 1000:1000

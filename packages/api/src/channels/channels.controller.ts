@@ -1,31 +1,36 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { ChannelRepository } from '../db/channel.repository.js';
+
+/**
+ * Public channels endpoint for authenticated users (non-admin).
+ * Returns basic channel info without sensitive config.
+ * Admin operations (create, update, delete) remain in AdminController.
+ */
 @ApiTags('channels')
 @Controller('api/v1/channels')
+@UseGuards(JwtAuthGuard)
 export class ChannelsController {
+  constructor(private readonly channelRepo: ChannelRepository) {}
+
+  /**
+   * List all channels with basic info (no sensitive config).
+   * Any authenticated user can access this endpoint.
+   */
   @Get()
-  findAll() {
-    return { message: 'Not implemented' };
-  }
-
-  @Get(':id')
-  findOne(@Param('id') _id: string) {
-    return { message: 'Not implemented' };
-  }
-
-  @Post()
-  create(@Body() _body: unknown) {
-    return { message: 'Not implemented' };
-  }
-
-  @Patch(':id')
-  update(@Param('id') _id: string, @Body() _body: unknown) {
-    return { message: 'Not implemented' };
-  }
-
-  @Delete(':id')
-  remove(@Param('id') _id: string) {
-    return { message: 'Not implemented' };
+  async findAll() {
+    const channels = await this.channelRepo.findAll({ page: 1, limit: 100 });
+    // Return only public fields, exclude sensitive config
+    const data = channels.data.map((ch) => ({
+      id: ch.id,
+      type: ch.type,
+      name: ch.name,
+      isActive: ch.isActive,
+      createdAt: ch.createdAt,
+      updatedAt: ch.updatedAt,
+    }));
+    return { success: true, data, total: channels.meta.total };
   }
 }

@@ -9,6 +9,8 @@ export interface SessionCommandContext {
 
 export interface SessionCommandResult {
   readonly text: string;
+  /** If set, the router forwards this text to the agent instead of replying directly. */
+  readonly forwardToAgent?: string;
 }
 
 export interface SessionCommand {

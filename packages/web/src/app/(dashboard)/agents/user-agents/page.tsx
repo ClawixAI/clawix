@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Bot, ChevronRight, Loader2, MoreHorizontal, Plus } from 'lucide-react';
+import { Bot, ChevronRight, Clock, GitBranch, Loader2, MoreHorizontal, Plus, Square } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -364,6 +364,127 @@ function ChangeAgentDialog({
   );
 }
 
+interface AgentRunEntry {
+  id: string;
+  status: string;
+  input: string;
+  output: string | null;
+  tokenUsage: Record<string, unknown>;
+  startedAt: string;
+  completedAt: string | null;
+  parentAgentRunId: string | null;
+  agentDefinition: { id: string; name: string; role: string };
+}
+
+function formatDuration(start: string, end: string | null): string {
+  const endTime = end ? new Date(end).getTime() : Date.now();
+  const ms = endTime - new Date(start).getTime();
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function RecentRuns({ userId }: { userId: string }) {
+  const [runs, setRuns] = useState<AgentRunEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchRuns = () => {
+      void authFetch<{ data: AgentRunEntry[] }>('/api/v1/chat/agent-runs?limit=20')
+        .then((res) => setRuns(Array.isArray(res.data) ? res.data : []))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    };
+
+    fetchRuns();
+    const interval = setInterval(fetchRuns, 15_000);
+    return () => clearInterval(interval);
+  }, [userId]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-4">
+        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (runs.length === 0) {
+    return (
+      <div className="rounded-md border bg-background/30 backdrop-blur-sm p-4 text-center text-sm text-muted-foreground">
+        No agent runs yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border bg-background/30 backdrop-blur-sm">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Agent</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Input</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Duration</TableHead>
+            <TableHead>Time</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {runs.map((run) => (
+            <TableRow key={run.id}>
+              <TableCell className="font-medium">
+                <div className="flex items-center gap-2">
+                  <Bot className="size-4 shrink-0" />
+                  {run.agentDefinition.name}
+                </div>
+              </TableCell>
+              <TableCell>
+                {run.parentAgentRunId ? (
+                  <Badge variant="outline" className="gap-1">
+                    <GitBranch className="size-3" />
+                    sub-agent
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">{run.agentDefinition.role}</Badge>
+                )}
+              </TableCell>
+              <TableCell className="max-w-[200px]">
+                <p className="truncate text-xs text-muted-foreground">
+                  {run.input.slice(0, 100)}
+                </p>
+              </TableCell>
+              <TableCell>
+                <Badge
+                  variant={
+                    run.status === 'completed' ? 'default' :
+                    run.status === 'running' ? 'secondary' :
+                    'destructive'
+                  }
+                >
+                  {run.status}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {formatDuration(run.startedAt, run.completedAt)}
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">
+                {formatTime(run.startedAt)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 function UserSection({
   userId,
   userName,
@@ -444,6 +565,28 @@ function UserSection({
               onDelete={setDeleteTarget}
             />
           )}
+
+          {/* Recent Agent Runs */}
+          <div className="flex items-center justify-between pt-2">
+            <div className="flex items-center gap-2">
+              <Clock className="size-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Recent Agent Runs</h3>
+            </div>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 gap-1 text-xs"
+              onClick={() => {
+                void authFetch('/api/v1/chat/agent-runs/stop', { method: 'POST' })
+                  .then(() => onRefresh())
+                  .catch(() => {});
+              }}
+            >
+              <Square className="size-3" />
+              Stop All
+            </Button>
+          </div>
+          <RecentRuns userId={userId} />
         </div>
       </CollapsibleContent>
       <CreateSubAgentDialog

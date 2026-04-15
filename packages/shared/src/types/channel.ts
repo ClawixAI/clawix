@@ -48,6 +48,7 @@ export interface ChannelAdapter {
 
   sendMessage(message: OutboundMessage): Promise<void>;
   sendTyping?(recipientId: string): Promise<void>;
+  sendTypingStop?(recipientId: string): Promise<void>;
 
   onMessage(handler: MessageHandler): void;
 }

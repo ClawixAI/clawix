@@ -233,6 +233,7 @@ export class AgentRunnerService {
         agentDef.provider,
         resolved.apiKey,
         agentDef.apiBaseUrl ?? resolved.apiBaseUrl ?? undefined,
+        agentDef.model,
       );
       const provider = new ResilientLLMProvider(baseProvider);
 
@@ -244,23 +245,29 @@ export class AgentRunnerService {
         containerConfig: agentDef.containerConfig as unknown as ContainerConfig,
       } as SharedAgentDefinition;
 
-      // Ensure the local workspace directory exists and is owned by the
+      // Ensure the local workspace directory exists and is writable by the
       // container user (1000:1000) so the agent process can write to /workspace.
+      // Files uploaded via UI or created manually are owned by the host user,
+      // so we use chmod to make them world-writable (acceptable for single-org self-hosted).
       if (workspacePaths !== undefined) {
         await fs.promises.mkdir(workspacePaths.localPath, { recursive: true });
-        await fs.promises.chown(workspacePaths.localPath, 1000, 1000).catch(() => {
-          // chown may fail when API runs as non-root on the host — that's fine
-          // as long as the directory is already writable by uid 1000.
-          logger.debug({ path: workspacePaths.localPath }, 'chown skipped (non-root)');
-        });
+        await this.makeWorkspaceWritable(workspacePaths.localPath);
       }
 
-      // Seed bootstrap files (SOUL.md, USER.md) if they don't exist yet
+      // Seed bootstrap files (SOUL.md, USER.md) and MEMORY.md if they don't exist yet
       if (workspacePaths !== undefined) {
         const userForSeeding = await this.userRepo.findById(userId);
+
+        // Fetch existing non-daily memory items for seeding
+        const existingItems = await this.memoryItemRepo.findVisibleToUser(userId);
+        const nonDailyItems = existingItems.filter(
+          (item) => !item.tags.some((t) => t.startsWith('daily:')),
+        );
+
         await this.workspaceSeeder.seedWorkspace({
           workspacePath: workspacePaths.localPath,
           templateVars: { 'user.name': userForSeeding.name },
+          existingMemoryItems: nonDailyItems,
         });
       }
 
@@ -281,9 +288,7 @@ export class AgentRunnerService {
 
       // Ensure user's custom skills directory exists and is writable by container user (1000:1000)
       await fs.promises.mkdir(skillsCustomUserLocalDir, { recursive: true });
-      await fs.promises.chown(skillsCustomUserLocalDir, 1000, 1000).catch(() => {
-        logger.debug({ path: skillsCustomUserLocalDir }, 'chown skipped (non-root)');
-      });
+      await this.makeWorkspaceWritable(skillsCustomUserLocalDir);
 
       const skillMounts = {
         builtinHostPath: skillsBuiltinHostDir,
@@ -342,12 +347,16 @@ export class AgentRunnerService {
       const loop = new ReasoningLoop(provider, registry);
 
       // Step 15: Run loop
+      // No default wall-clock timeout — let the model finish. The stale run reaper (10 min) is the safety net.
+      const timeoutMs = options.timeoutMs;
+
       logger.info({ agentRunId: agentRun.id }, 'Starting reasoning loop');
       const loopResult = await loop.run(initialMessages, {
         model: agentDef.model,
         onProgress,
         tokenBudget: options.tokenBudget,
         tokenGracePercent: options.tokenGracePercent,
+        timeoutMs,
       });
 
       // Step 16: Save loop-generated messages (skip for sub-agents — they don't own the session)
@@ -395,13 +404,23 @@ export class AgentRunnerService {
         model: agentDef.model,
       });
 
-      // Step 19: Update AgentRun to completed (or failed if token budget was hit)
-      const runStatus = loopResult.hitTokenBudget ? 'failed' : 'completed';
-      const finalOutput = ((loopResult.content ?? '') + contextWarning) || null;
+      // Step 19: Update AgentRun to completed (or failed if timeout/token budget was hit)
+      const runStatus = loopResult.hitTimeout
+        ? 'failed'
+        : loopResult.hitTokenBudget
+          ? 'failed'
+          : 'completed';
+
+      const timeoutSuffix = loopResult.hitTimeout
+        ? '\n\n---\nAgent run timed out. Try a simpler request or break it into smaller tasks.'
+        : '';
+
+      const finalOutput = ((loopResult.content ?? '') + contextWarning + timeoutSuffix) || null;
       await this.agentRunRepo.update(agentRun.id, {
         status: runStatus,
         output: finalOutput ?? '',
         completedAt: new Date(),
+        ...(loopResult.hitTimeout ? { error: 'Agent run timed out' } : {}),
       });
 
       logger.info(
@@ -424,6 +443,7 @@ export class AgentRunnerService {
           estimatedCostUsd: 0, // actual cost tracked by tokenCounter
         },
         ...(loopResult.hitTokenBudget ? { error: 'token_budget_exceeded' } : {}),
+        ...(loopResult.hitTimeout ? { error: 'Agent run timed out' } : {}),
       };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -448,6 +468,29 @@ export class AgentRunnerService {
       } else if (!isSubAgent) {
         this.containerPool.release(session.id);
       }
+    }
+  }
+
+  /**
+   * Make workspace directory recursively writable by all users.
+   * This ensures the container user (1000:1000) can write to files
+   * created by the host user (uploads, manual creation).
+   */
+  private async makeWorkspaceWritable(workspacePath: string): Promise<void> {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+
+    try {
+      // chmod -R a+rwX makes all files/dirs readable and writable by all users
+      // Capital X adds execute for directories (needed for traversal) but not files
+      // This is acceptable for single-org self-hosted deployments
+      await execAsync(`chmod -R a+rwX "${workspacePath}"`);
+      logger.debug({ path: workspacePath }, 'Workspace made writable');
+    } catch (err: unknown) {
+      // chmod may fail on some filesystems or if permissions are restricted
+      const message = err instanceof Error ? err.message : String(err);
+      logger.debug({ path: workspacePath, error: message }, 'chmod failed, continuing anyway');
     }
   }
 }

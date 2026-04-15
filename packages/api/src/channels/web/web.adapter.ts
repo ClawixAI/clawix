@@ -91,6 +91,14 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
       sendToUser(recipientId, payload);
     },
 
+    async sendTypingStop(recipientId: string): Promise<void> {
+      const payload = serializeServerMessage({
+        type: 'typing.stop',
+        payload: {},
+      });
+      sendToUser(recipientId, payload);
+    },
+
     onMessage(handler: MessageHandler): void {
       messageHandler = handler;
     },

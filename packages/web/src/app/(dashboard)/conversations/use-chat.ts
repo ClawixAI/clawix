@@ -10,7 +10,7 @@ import { authFetch, getAccessToken } from '@/lib/auth';
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   createdAt: string;
 }
@@ -74,6 +74,7 @@ export function useChat() {
   const [isTyping, setIsTyping] = useState(false);
   const pendingCountRef = useRef(0);
   const [hasPending, setHasPending] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState('');
   const [loadingSessions, setLoadingSessions] = useState(true);
@@ -94,10 +95,11 @@ export function useChat() {
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(
     undefined,
   );
+  const pongReceivedRef = useRef(true);
   const reconnectAttemptsRef = useRef(0);
   const currentSessionIdRef = useRef<string | null>(null);
 
-  const fetchSessionsRef = useRef<() => Promise<void>>();
+  const fetchSessionsRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   // Keep refs in sync with state so WebSocket callbacks read the latest value.
   useEffect(() => {
@@ -109,7 +111,7 @@ export function useChat() {
     setLoadingSessions(true);
     try {
       const channelParam = webChannelId ? `&channelId=${webChannelId}` : '';
-      const url = `/api/v1/chat/sessions?limit=50${channelParam}`;
+      const url = `/api/v1/chat/sessions?limit=50&includeArchived=true${channelParam}`;
       const res = await authFetch<PaginatedSessions>(url);
       setSessions(Array.isArray(res.data) ? res.data : []);
     } catch {
@@ -143,7 +145,7 @@ export function useChat() {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsBase =
-      process.env.NEXT_PUBLIC_WS_URL ??
+      process.env['NEXT_PUBLIC_WS_URL'] ??
       `${protocol}//${window.location.hostname}:3001`;
     const wsUrl = `${wsBase}/ws/chat?token=${token}`;
     const ws = new WebSocket(wsUrl);
@@ -153,10 +155,17 @@ export function useChat() {
       setError('');
       reconnectAttemptsRef.current = 0;
 
-      // Keepalive ping every 30s to prevent proxy idle disconnect.
+      // Keepalive ping every 30s with pong timeout detection.
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      pongReceivedRef.current = true;
       pingIntervalRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
+          if (!pongReceivedRef.current) {
+            // No pong received since last ping — connection is dead
+            ws.close(4000, 'pong_timeout');
+            return;
+          }
+          pongReceivedRef.current = false;
           ws.send(JSON.stringify({ type: 'ping', payload: {} }));
         }
       }, 30_000);
@@ -233,9 +242,22 @@ export function useChat() {
           // For new chats the session ID isn't known until the server responds.
           if (!currentSessionIdRef.current) {
             setCurrentSessionId(sessionId);
+            setIsInitializing(false);
           }
 
-          void fetchSessionsRef.current?.();
+          // Auto-clear after /reset command response
+          if (content.includes('Session reset')) {
+            setTimeout(() => {
+              setCurrentSessionId(null);
+              setMessages([]);
+              setIsTyping(false);
+              setHasPending(false);
+              pendingCountRef.current = 0;
+              void fetchSessionsRef.current?.();
+            }, 1500);
+          } else {
+            void fetchSessionsRef.current?.();
+          }
           break;
         }
 
@@ -249,16 +271,24 @@ export function useChat() {
 
         case 'error':
           setError(parsed.payload.message);
+          setIsInitializing(false);
           break;
 
         case 'pong':
+          pongReceivedRef.current = true;
           break;
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
       setIsConnected(false);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+
+      // Auth failure — don't reconnect, redirect to login
+      if (event.code === 4001) {
+        setError('Session expired. Please log in again.');
+        return;
+      }
 
       // Exponential backoff: 3s, 6s, 12s, ... capped at 30s. Stop after 10 attempts.
       const attempt = reconnectAttemptsRef.current;
@@ -274,7 +304,7 @@ export function useChat() {
     };
 
     ws.onerror = () => {
-      setError('WebSocket connection failed');
+      // Don't show error during reconnect — onclose handles it
     };
 
     wsRef.current = ws;
@@ -345,10 +375,10 @@ export function useChat() {
   }, [messagePage, loadingMore, hasMore]);
 
   /* ---- send message ---- */
-  const sendMessage = useCallback((content: string) => {
+  const sendMessage = useCallback((content: string): boolean => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      setError('Not connected');
-      return;
+      setError('Not connected — message not sent. Try again.');
+      return false;
     }
 
     const optimistic: ChatMessage = {
@@ -358,6 +388,11 @@ export function useChat() {
       createdAt: new Date().toISOString(),
     };
 
+    // First message in a new session — show initializing overlay
+    if (!currentSessionIdRef.current) {
+      setIsInitializing(true);
+    }
+
     setMessages((prev) => [...prev, optimistic]);
     wsRef.current.send(
       JSON.stringify({ type: 'message.send', payload: { content } }),
@@ -365,28 +400,35 @@ export function useChat() {
     pendingCountRef.current += 1;
     setHasPending(true);
     setIsTyping(true);
+    return true;
   }, []);
 
   /* ---- start new chat ---- */
-  const startNewChat = useCallback(() => {
+  const startNewChat = useCallback(async () => {
+    // Archive current session if one is active
+    const sid = currentSessionIdRef.current;
+    if (sid) {
+      try {
+        await authFetch(`/api/v1/chat/sessions/${sid}/deactivate`, { method: 'POST' });
+      } catch {
+        // Proceed even if deactivation fails
+      }
+    }
     setCurrentSessionId(null);
     setMessages([]);
     setIsTyping(false);
     setHasPending(false);
     pendingCountRef.current = 0;
     setError('');
+    // Refresh sessions to show the archived one in sidebar
+    void fetchSessionsRef.current?.();
   }, []);
 
   /* ---- resolve web channel ID ---- */
   useEffect(() => {
-    void authFetch<{ data: Array<{ id: string; type: string; isActive: boolean }> }>(
-      '/admin/channels?limit=100',
-    )
+    void authFetch<{ data: { id: string } | null }>('/api/v1/chat/channel')
       .then((res) => {
-        const webChannel = Array.isArray(res.data)
-          ? res.data.find((ch) => ch.type.toLowerCase() === 'web' && ch.isActive)
-          : undefined;
-        if (webChannel) setWebChannelId(webChannel.id);
+        if (res.data) setWebChannelId(res.data.id);
       })
       .catch(() => { /* proceed without filter */ })
       .finally(() => { setChannelResolved(true); });
@@ -441,6 +483,44 @@ export function useChat() {
     return () => { clearInterval(interval); };
   }, [isTyping, hasPending]);
 
+  /* ---- background sync: catch missed messages every 10s ---- */
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const sid = currentSessionIdRef.current;
+      if (!sid) return;
+      void authFetch<PaginatedMessages>(
+        `/api/v1/chat/sessions/${sid}/messages?limit=${MESSAGE_LIMIT}`,
+      ).then((res) => {
+        const fetched: ChatMessage[] = (
+          Array.isArray(res.data) ? res.data : []
+        ).map((m) => ({
+          id: m.id,
+          role: m.role as ChatMessage['role'],
+          content: m.content,
+          createdAt: m.createdAt,
+        }));
+        setMessages((prev) => {
+          // Only update if server has messages we don't (skip temp/optimistic)
+          const realPrev = prev.filter((m) => !m.id.startsWith('tmp-'));
+          if (fetched.length > realPrev.length) {
+            const prevIds = new Set(realPrev.map((m) => m.id));
+            const newAssistant = fetched.filter((m) => m.role === 'assistant' && !prevIds.has(m.id));
+            if (newAssistant.length > 0) {
+              pendingCountRef.current = Math.max(0, pendingCountRef.current - newAssistant.length);
+              if (pendingCountRef.current === 0) {
+                setIsTyping(false);
+                setHasPending(false);
+              }
+              return fetched;
+            }
+          }
+          return prev;
+        });
+      }).catch(() => { /* silent */ });
+    }, 10_000);
+    return () => clearInterval(interval);
+  }, []);
+
   /* ---- lifecycle: fetch sessions when channel ID resolves ---- */
   useEffect(() => {
     if (!channelResolved) return;
@@ -452,6 +532,7 @@ export function useChat() {
     currentSessionId,
     messages,
     isTyping,
+    isInitializing,
     isConnected,
     error,
     loadingSessions,

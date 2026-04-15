@@ -1,41 +1,20 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Controller, Get, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+
+import { SkillLoaderService } from '../engine/skill-loader.service.js';
+import type { JwtPayload } from '../auth/auth.types.js';
 
 @ApiTags('skills')
 @Controller('api/v1/skills')
 export class SkillsController {
+  constructor(private readonly skillLoader: SkillLoaderService) {}
+
   @Get()
-  findAll() {
-    return { message: 'Not implemented' };
-  }
-
-  @Get(':id')
-  findOne(@Param('id') _id: string) {
-    return { message: 'Not implemented' };
-  }
-
-  @Post()
-  create(@Body() _body: unknown) {
-    return { message: 'Not implemented' };
-  }
-
-  @Patch(':id')
-  update(@Param('id') _id: string, @Body() _body: unknown) {
-    return { message: 'Not implemented' };
-  }
-
-  @Delete(':id')
-  remove(@Param('id') _id: string) {
-    return { message: 'Not implemented' };
-  }
-
-  @Post(':id/approve')
-  approve(@Param('id') _id: string, @Body() _body: unknown) {
-    return { message: 'Not implemented' };
-  }
-
-  @Post(':id/reject')
-  reject(@Param('id') _id: string, @Body() _body: unknown) {
-    return { message: 'Not implemented' };
+  async findAll(@Req() req: { user: JwtPayload }) {
+    const skills = await this.skillLoader.listSkills(req.user.sub);
+    return {
+      success: true,
+      data: skills,
+    };
   }
 }

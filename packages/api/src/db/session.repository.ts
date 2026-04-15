@@ -68,9 +68,11 @@ export class SessionRepository {
     userId: string,
     pagination: PaginationInput,
     channelId?: string,
+    includeArchived?: boolean,
   ): Promise<PaginatedResponse<Session>> {
     const { skip, take } = buildPaginationArgs(pagination);
-    const where: { userId: string; channelId?: string; isActive: boolean } = { userId, isActive: true };
+    const where: { userId: string; channelId?: string; isActive?: boolean } = { userId };
+    if (!includeArchived) where.isActive = true;
     if (channelId) where.channelId = channelId;
 
     const [data, total] = await Promise.all([

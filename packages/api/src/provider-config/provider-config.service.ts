@@ -99,10 +99,15 @@ export class ProviderConfigService {
       orderBy: [{ isDefault: 'desc' }, { sortOrder: 'asc' }],
     });
 
-    return configs.map((c) => ({
-      ...c,
-      apiKey: maskApiKey(decrypt(c.apiKey)),
-    }));
+    return configs.map((c) => {
+      let maskedKey: string;
+      try {
+        maskedKey = maskApiKey(decrypt(c.apiKey));
+      } catch {
+        maskedKey = '****';
+      }
+      return { ...c, apiKey: maskedKey };
+    });
   }
 
   /**
@@ -115,7 +120,13 @@ export class ProviderConfigService {
 
     if (!config) return null;
 
-    return { ...config, apiKey: maskApiKey(decrypt(config.apiKey)) };
+    let maskedKey: string;
+    try {
+      maskedKey = maskApiKey(decrypt(config.apiKey));
+    } catch {
+      maskedKey = '****';
+    }
+    return { ...config, apiKey: maskedKey };
   }
 
   /**

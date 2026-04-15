@@ -190,6 +190,10 @@ export class AdminService {
       readonly maxMemoryItems?: number;
       readonly maxGroupsOwned?: number;
       readonly allowedProviders?: string[];
+      readonly cronEnabled?: boolean;
+      readonly maxScheduledTasks?: number;
+      readonly minCronIntervalSecs?: number;
+      readonly maxTokensPerCronRun?: number | null;
       readonly features?: Record<string, unknown>;
       readonly isActive?: boolean;
     },

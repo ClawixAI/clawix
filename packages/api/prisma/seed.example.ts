@@ -68,6 +68,7 @@ async function main(): Promise<void> {
       maxMemoryItems: 100,
       maxGroupsOwned: 2,
       allowedProviders: ['openai'],
+      cronEnabled: true,
       features: {},
     },
   });
@@ -85,6 +86,7 @@ async function main(): Promise<void> {
       maxMemoryItems: 5000,
       maxGroupsOwned: 10,
       allowedProviders: ['openai', 'anthropic'],
+      cronEnabled: true,
       features: { swarmOrchestration: true },
     },
   });
@@ -102,6 +104,7 @@ async function main(): Promise<void> {
       maxMemoryItems: 50000,
       maxGroupsOwned: 50,
       allowedProviders: ['openai', 'anthropic', 'azure', 'deepseek', 'gemini'],
+      cronEnabled: true,
       features: { swarmOrchestration: true, heartbeat: true, customProviders: true },
     },
   });
@@ -177,12 +180,12 @@ async function main(): Promise<void> {
   const coderAgent = await prisma.agentDefinition.create({
     data: {
       name: 'coder',
-      description: 'Writes, reviews, and tests code',
+      description: 'Writes, reviews, and tests code — optimized for code generation',
       systemPrompt:
-        'You are a skilled software engineer. Write clean, well-tested code. Use the tools available to read, write, and execute code in the workspace.',
+        'You are a skilled software engineer. Write clean, complete, functional code. Never use placeholders or TODO comments. Always verify your output is complete. Use the tools available to read, write, and execute code in the workspace.',
       role: 'worker',
       provider: 'openai',
-      model: 'gpt-4o',
+      model: 'gpt-4.1',
       maxTokensPerRun: 100000,
       containerConfig: {
         image: 'clawix-agent:latest',
@@ -242,6 +245,7 @@ async function main(): Promise<void> {
   });
   console.log(`  Agent: ${defaultWorker.name} (worker, openai/gpt-4o)`);
 
+
   // --- User Agents (bind users to primary agent) ---
   await prisma.userAgent.create({
     data: {
@@ -267,7 +271,7 @@ async function main(): Promise<void> {
     create: {
       provider: 'openai',
       displayName: 'OpenAI',
-      apiKey: encrypt(process.env['OPENAI_API_KEY'] ?? 'replace-me'),
+      apiKey: encrypt('__OPENAI_API_KEY__'),
       isDefault: true,
     },
   });
@@ -279,7 +283,7 @@ async function main(): Promise<void> {
     create: {
       provider: 'zai-coding',
       displayName: 'Zai Coding',
-      apiKey: encrypt(process.env['ZAI_API_KEY'] ?? 'replace-me'),
+      apiKey: encrypt('__ZAI_API_KEY__'),
       apiBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
       isDefault: false,
     },
@@ -301,7 +305,7 @@ async function main(): Promise<void> {
     data: {
       type: 'telegram',
       name: 'Telegram Bot',
-      config: encryptChannelConfig('telegram', { bot_token: process.env['TELEGRAM_BOT_TOKEN'] ?? 'replace-me' }) as Record<string, string>,
+      config: encryptChannelConfig('telegram', { bot_token: '__TELEGRAM_BOT_TOKEN__' }) as Record<string, string>,
       isActive: true,
     },
   });

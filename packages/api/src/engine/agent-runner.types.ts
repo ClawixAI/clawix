@@ -25,6 +25,8 @@ export interface RunOptions {
   readonly tokenBudget?: number;
   /** Grace window as a percentage before hard kill. Default: 10. */
   readonly tokenGracePercent?: number;
+  /** Wall-clock timeout for the entire agent run in milliseconds. Default: 300000 (5 min). */
+  readonly timeoutMs?: number;
 }
 
 /** Result returned after an agent run completes (or fails). */

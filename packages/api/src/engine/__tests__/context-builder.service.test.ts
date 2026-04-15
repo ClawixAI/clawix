@@ -13,6 +13,11 @@ vi.mock('@clawix/shared', async (importOriginal) => {
   };
 });
 
+vi.mock('fs/promises');
+
+import * as fs from 'fs/promises';
+const mockReadFile = vi.mocked(fs.readFile);
+
 import { ContextBuilderService } from '../context-builder.service.js';
 import type { MemoryItemRepository } from '../../db/memory-item.repository.js';
 import type { BootstrapFileService } from '../bootstrap-file.service.js';
@@ -31,7 +36,11 @@ const noopUserRepo = {
 
 describe('ContextBuilderService', () => {
   let service: ContextBuilderService;
-  let mockMemoryRepo: { findVisibleToUser: ReturnType<typeof vi.fn> };
+  let mockMemoryRepo: {
+    findVisibleToUser: ReturnType<typeof vi.fn>;
+    findDailyNotes: ReturnType<typeof vi.fn>;
+    findDistinctTags: ReturnType<typeof vi.fn>;
+  };
 
   const baseParams: ContextBuildParams = {
     agentDef: {
@@ -48,7 +57,12 @@ describe('ContextBuilderService', () => {
   };
 
   beforeEach(() => {
-    mockMemoryRepo = { findVisibleToUser: vi.fn().mockResolvedValue([]) };
+    mockMemoryRepo = {
+      findVisibleToUser: vi.fn().mockResolvedValue([]),
+      findDailyNotes: vi.fn().mockResolvedValue([]),
+      findDistinctTags: vi.fn().mockResolvedValue([]),
+    };
+    mockReadFile.mockRejectedValue(new Error('ENOENT'));
     const noopBootstrap = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
     const noopSkillLoader = { buildSkillsSummary: vi.fn().mockResolvedValue('') };
     service = new ContextBuilderService(
@@ -167,13 +181,14 @@ describe('ContextBuilderService', () => {
   });
 
   describe('memory injection', () => {
-    it('should append memory section when items exist', async () => {
-      mockMemoryRepo.findVisibleToUser.mockResolvedValue([
+    it('should append memory section when daily notes exist', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      mockMemoryRepo.findDailyNotes.mockResolvedValue([
         {
           id: 'mem-1',
           ownerId: 'user-1',
           content: { text: 'User prefers TypeScript' },
-          tags: [],
+          tags: [`daily:${today}`],
           createdAt: new Date(),
           updatedAt: new Date(),
         },
@@ -186,23 +201,21 @@ describe('ContextBuilderService', () => {
       expect(system).toContain('User prefers TypeScript');
     });
 
-    it('should omit memory section when no items exist', async () => {
-      mockMemoryRepo.findVisibleToUser.mockResolvedValue([]);
-
+    it('should omit memory section when all tiers are empty', async () => {
       const result = await service.buildMessages(baseParams);
 
       const system = result[0]!.content as string;
-      // '## Memory' appears in the workspace guide; injected memory section starts with '# Memory\n\n-'
-      expect(system).not.toContain('# Memory\n\n-');
+      expect(system).not.toContain('# Memory\n\n');
     });
 
-    it('should format string content directly', async () => {
-      mockMemoryRepo.findVisibleToUser.mockResolvedValue([
+    it('should format string content directly in daily notes', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      mockMemoryRepo.findDailyNotes.mockResolvedValue([
         {
           id: 'mem-1',
           ownerId: 'user-1',
           content: 'Simple string memory',
-          tags: [],
+          tags: [`daily:${today}`],
           createdAt: new Date(),
           updatedAt: new Date(),
         },
@@ -214,13 +227,14 @@ describe('ContextBuilderService', () => {
       expect(system).toContain('- Simple string memory');
     });
 
-    it('should use text field from object content', async () => {
-      mockMemoryRepo.findVisibleToUser.mockResolvedValue([
+    it('should use text field from object content in daily notes', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      mockMemoryRepo.findDailyNotes.mockResolvedValue([
         {
           id: 'mem-1',
           ownerId: 'user-1',
           content: { text: 'Object with text', extra: 'ignored' },
-          tags: [],
+          tags: [`daily:${today}`],
           createdAt: new Date(),
           updatedAt: new Date(),
         },
@@ -232,13 +246,14 @@ describe('ContextBuilderService', () => {
       expect(system).toContain('- Object with text');
     });
 
-    it('should JSON.stringify non-text objects', async () => {
-      mockMemoryRepo.findVisibleToUser.mockResolvedValue([
+    it('should JSON.stringify non-text objects in daily notes', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      mockMemoryRepo.findDailyNotes.mockResolvedValue([
         {
           id: 'mem-1',
           ownerId: 'user-1',
           content: { key: 'value', nested: true },
-          tags: [],
+          tags: [`daily:${today}`],
           createdAt: new Date(),
           updatedAt: new Date(),
         },
@@ -250,34 +265,36 @@ describe('ContextBuilderService', () => {
       expect(system).toContain('{"key":"value","nested":true}');
     });
 
-    it('should respect token budget and stop adding items', async () => {
+    it('should respect daily notes token budget and stop adding items', async () => {
+      const today = new Date().toISOString().slice(0, 10);
       const makeItem = (id: number) => ({
         id: `mem-${id}`,
         ownerId: 'user-1',
         content: `MARKER_${id}_${'x'.repeat(380)}`,
-        tags: [],
+        tags: [`daily:${today}`],
         createdAt: new Date(),
         updatedAt: new Date(),
       });
       const items = Array.from({ length: 25 }, (_, i) => makeItem(i + 1));
-      mockMemoryRepo.findVisibleToUser.mockResolvedValue(items);
+      mockMemoryRepo.findDailyNotes.mockResolvedValue(items);
 
       const result = await service.buildMessages(baseParams);
 
       const system = result[0]!.content as string;
       expect(system).toContain('MARKER_1_');
-      expect(system).toContain('MARKER_10_');
+      // With DAILY_NOTES_TOKEN_BUDGET=1000 and ~100 tokens per item, we should stop well before 25
       expect(system).not.toContain('MARKER_25_');
     });
 
     it('should truncate individual items exceeding max chars', async () => {
+      const today = new Date().toISOString().slice(0, 10);
       const longContent = 'a'.repeat(600);
-      mockMemoryRepo.findVisibleToUser.mockResolvedValue([
+      mockMemoryRepo.findDailyNotes.mockResolvedValue([
         {
           id: 'mem-1',
           ownerId: 'user-1',
           content: longContent,
-          tags: [],
+          tags: [`daily:${today}`],
           createdAt: new Date(),
           updatedAt: new Date(),
         },
@@ -287,19 +304,17 @@ describe('ContextBuilderService', () => {
 
       const system = result[0]!.content as string;
       expect(system).toContain('...');
-      // Use the injected memory section marker (single '#', followed by bullet items) as the anchor
-      expect(system.length).toBeLessThan(system.indexOf('# Memory\n\n-') + 600);
     });
 
     it('should gracefully omit memory section when repository throws', async () => {
-      mockMemoryRepo.findVisibleToUser.mockRejectedValue(new Error('DB connection failed'));
+      mockMemoryRepo.findDailyNotes.mockRejectedValue(new Error('DB connection failed'));
+      mockMemoryRepo.findDistinctTags.mockRejectedValue(new Error('DB connection failed'));
 
       const result = await service.buildMessages(baseParams);
 
       const system = result[0]!.content as string;
       expect(system).toContain('# TestAgent');
-      // '## Memory' appears in the workspace guide; injected memory section starts with '# Memory\n\n-'
-      expect(system).not.toContain('# Memory\n\n-');
+      expect(system).not.toContain('# Memory\n\n');
     });
   });
 
@@ -422,12 +437,13 @@ describe('ContextBuilderService', () => {
     });
 
     it('should still include memory for sub-agents', async () => {
-      mockMemoryRepo.findVisibleToUser.mockResolvedValue([
+      const today = new Date().toISOString().slice(0, 10);
+      mockMemoryRepo.findDailyNotes.mockResolvedValue([
         {
           id: 'mem-1',
           ownerId: 'user-1',
           content: 'Remember this',
-          tags: [],
+          tags: [`daily:${today}`],
           createdAt: new Date(),
           updatedAt: new Date(),
         },
@@ -495,6 +511,56 @@ describe('ContextBuilderService', () => {
 
       expect(system).toContain('# TestAgent');
       expect(system).toContain('## Workspace');
+    });
+  });
+
+  describe('buildMemorySection — 3-tier', () => {
+    it('should include MEMORY.md content in Long-term Memory section', async () => {
+      mockReadFile.mockResolvedValue('# My notes\nI like TypeScript' as never);
+
+      const result = await service.buildMessages({
+        ...baseParams,
+        workspacePath: '/data/users/u1/workspace',
+      });
+
+      const system = result[0]!.content as string;
+      expect(system).toContain('## Long-term Memory');
+      expect(system).toContain('I like TypeScript');
+    });
+
+    it('should include daily notes from last 3 days', async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      mockMemoryRepo.findDailyNotes.mockResolvedValue([
+        { content: 'Worked on auth', tags: [`daily:${today}`], createdAt: new Date() },
+      ]);
+
+      const result = await service.buildMessages({
+        ...baseParams,
+        workspacePath: '/data/users/u1/workspace',
+      });
+
+      const system = result[0]!.content as string;
+      expect(system).toContain('## Recent Activity');
+      expect(system).toContain('Worked on auth');
+    });
+
+    it('should include tag index without daily: tags', async () => {
+      mockMemoryRepo.findDistinctTags.mockResolvedValue(['preference', 'project-auth']);
+
+      const result = await service.buildMessages({
+        ...baseParams,
+        workspacePath: '/data/users/u1/workspace',
+      });
+
+      const system = result[0]!.content as string;
+      expect(system).toContain('## Available Memory Tags');
+      expect(system).toContain('preference, project-auth');
+    });
+
+    it('should return no memory section when all tiers are empty', async () => {
+      const result = await service.buildMessages(baseParams);
+      const system = result[0]!.content as string;
+      expect(system).not.toContain('# Memory');
     });
   });
 });

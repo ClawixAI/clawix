@@ -98,14 +98,14 @@ export class SkillLoaderService {
     const customSkills = await this.scanDirectory(
       path.join(this.customDir, userId),
       'custom',
-      '/workspace/skills/custom',
+      '/skills/custom',
       this.maxSkillsPerUser,
     );
     const customDirNames = new Set(customSkills.map((s) => s.dirName));
     const builtinSkills = await this.scanDirectory(
       this.builtinDir,
       'builtin',
-      '/workspace/skills/builtin',
+      '/skills/builtin',
     );
     const filteredBuiltins = builtinSkills.filter((s) => !customDirNames.has(s.dirName));
     return [

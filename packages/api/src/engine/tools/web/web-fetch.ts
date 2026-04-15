@@ -63,7 +63,9 @@ export function createWebFetchTool(): Tool {
         const dispatcher = new Agent({
           connect: {
             lookup: (_hostname, _options, callback) => {
-              callback(null, validated.resolvedIp, validated.resolvedIp.includes(':') ? 6 : 4);
+              callback(null, [
+                { address: validated.resolvedIp, family: validated.resolvedIp.includes(':') ? 6 : 4 },
+              ]);
             },
           },
         });

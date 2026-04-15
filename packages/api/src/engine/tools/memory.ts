@@ -6,6 +6,7 @@
  */
 import { createLogger } from '@clawix/shared';
 
+import type { Prisma } from '../../generated/prisma/client.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 import type { MemoryItemRepository } from '../../db/memory-item.repository.js';
 import { extractText } from '../memory-utils.js';
@@ -53,7 +54,9 @@ export function createSaveMemoryTool(prisma: PrismaService, userId: string): Too
     parameters: {
       type: 'object',
       properties: {
-        content: { type: 'string', description: 'Text content to store (max 2000 chars).' },
+        content: {
+          description: 'Content to store. Can be a string or a JSON object/array (max 2000 chars when serialized).',
+        },
         tags: {
           type: 'array',
           items: { type: 'string' },
@@ -68,13 +71,19 @@ export function createSaveMemoryTool(prisma: PrismaService, userId: string): Too
     },
 
     async execute(params: Record<string, unknown>): Promise<ToolResult> {
-      const content = params['content'] as string;
+      const content = params['content'];
       const tags = (params['tags'] as string[] | undefined) ?? [];
       const memoryId = params['memoryId'] as string | undefined;
 
+      // --- Null/undefined guard ---
+      if (content === undefined || content === null) {
+        return err('Content is required.');
+      }
+
       // --- Validation ---
-      if (content.length > MAX_CONTENT_LENGTH) {
-        return err('Content too long (max 2000 characters).');
+      const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
+      if (contentStr.length > MAX_CONTENT_LENGTH) {
+        return err('Content too long (max 2000 characters when serialized).');
       }
 
       if (tags.length > MAX_TAGS || tags.some((t) => t.length > MAX_TAG_LENGTH)) {
@@ -97,7 +106,7 @@ export function createSaveMemoryTool(prisma: PrismaService, userId: string): Too
 
         const updated = (await prisma.memoryItem.update({
           where: { id: memoryId },
-          data: { content: { text: content }, tags },
+          data: { content: content as Prisma.InputJsonValue, tags },
         })) as { readonly id: string };
 
         logger.info({ memoryId: updated.id, userId }, 'Memory item updated');
@@ -120,7 +129,7 @@ export function createSaveMemoryTool(prisma: PrismaService, userId: string): Too
       const created = (await prisma.memoryItem.create({
         data: {
           ownerId: userId,
-          content: { text: content },
+          content: content as Prisma.InputJsonValue,
           tags,
         },
       })) as { readonly id: string };
