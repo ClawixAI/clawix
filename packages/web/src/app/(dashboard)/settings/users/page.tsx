@@ -231,20 +231,38 @@ export default function UsersPage() {
   const [deleteUser, setDeleteUser] = useState<ApiUser | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Agent assignment state (for post-create flow)
+  // Agent assignment state
   const [agentDefs, setAgentDefs] = useState<{ id: string; name: string }[]>([]);
   const [assigningAgent, setAssigningAgent] = useState(false);
+  // User agent assignments (userId -> { userAgentId, agentDefinitionId })
+  const [userAgentMap, setUserAgentMap] = useState<
+    Map<string, { userAgentId: string; agentDefinitionId: string }>
+  >(new Map());
+  const [editUserAgentId, setEditUserAgentId] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [usersRes, policiesRes] = await Promise.all([
+      const [usersRes, policiesRes, agentsRes, userAgentsRes] = await Promise.all([
         authFetch<PaginatedUsers>('/admin/users?limit=100'),
         authFetch<PaginatedPolicies>('/admin/policies?limit=100'),
+        authFetch<{ data: { id: string; name: string; role: string }[] }>(
+          '/api/v1/agents?role=primary&limit=100',
+        ),
+        authFetch<{ id: string; userId: string; agentDefinitionId: string }[]>(
+          '/api/v1/agents/user-agents',
+        ),
       ]);
       setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
       setPolicies(Array.isArray(policiesRes.data) ? policiesRes.data : []);
+      setAgentDefs(agentsRes.data.filter((a) => a.role === 'primary'));
+      // Build user -> userAgent mapping
+      const map = new Map<string, { userAgentId: string; agentDefinitionId: string }>();
+      for (const ua of userAgentsRes) {
+        map.set(ua.userId, { userAgentId: ua.id, agentDefinitionId: ua.agentDefinitionId });
+      }
+      setUserAgentMap(map);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -319,15 +337,42 @@ export default function UsersPage() {
     setSelectedAgentId('');
   }
 
-  async function handleUpdate(id: string, data: Record<string, unknown>) {
+  function openEditUser(user: ApiUser) {
+    setEditUser(user);
+    const existing = userAgentMap.get(user.id);
+    setEditUserAgentId(existing?.agentDefinitionId ?? '');
+  }
+
+  async function handleUpdate(id: string, data: Record<string, unknown>, agentDefId: string) {
     setSaving(true);
     setError('');
     try {
+      // Update user data
       await authFetch(`/admin/users/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
       });
+
+      // Handle primary agent assignment
+      const existing = userAgentMap.get(id);
+      if (agentDefId && agentDefId !== existing?.agentDefinitionId) {
+        if (existing) {
+          // Update existing user-agent assignment
+          await authFetch(`/api/v1/agents/user-agents/${existing.userAgentId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ agentDefinitionId: agentDefId }),
+          });
+        } else {
+          // Create new user-agent assignment
+          await authFetch('/api/v1/agents/user-agents', {
+            method: 'POST',
+            body: JSON.stringify({ userId: id, agentDefinitionId: agentDefId }),
+          });
+        }
+      }
+
       setEditUser(null);
+      setEditUserAgentId('');
       await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update user');
@@ -550,7 +595,7 @@ export default function UsersPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
                               onSelect={() => {
-                                setEditUser(user);
+                                openEditUser(user);
                               }}
                             >
                               Edit
@@ -842,12 +887,16 @@ export default function UsersPage() {
               onSubmit={(e) => {
                 e.preventDefault();
                 const form = new FormData(e.currentTarget);
-                void handleUpdate(editUser.id, {
-                  name: form.get('name'),
-                  role: form.get('role'),
-                  policyId: form.get('policyId'),
-                  isActive: form.get('isActive') === 'true',
-                });
+                void handleUpdate(
+                  editUser.id,
+                  {
+                    name: form.get('name'),
+                    role: form.get('role'),
+                    policyId: form.get('policyId'),
+                    isActive: form.get('isActive') === 'true',
+                  },
+                  editUserAgentId,
+                );
               }}
               className="flex flex-col gap-4"
             >
@@ -896,6 +945,27 @@ export default function UsersPage() {
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
                 </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-agent">Primary Agent</Label>
+                <select
+                  id="edit-agent"
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  value={editUserAgentId}
+                  onChange={(e) => {
+                    setEditUserAgentId(e.target.value);
+                  }}
+                >
+                  <option value="">No agent assigned</option>
+                  {agentDefs.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  The primary agent allows this user to start conversations.
+                </p>
               </div>
               <DialogFooter>
                 <Button

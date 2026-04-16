@@ -184,9 +184,13 @@ export default function AgentDetailPage() {
             {agent.provider}/{agent.model}
           </Badge>
           <Badge variant={agent.role === 'primary' ? 'default' : 'secondary'}>{agent.role}</Badge>
-          <Badge variant={agent.isActive ? 'secondary' : 'outline'}>
-            {agent.isActive ? 'Active' : 'Inactive'}
-          </Badge>
+          {agent.role === 'primary' ? (
+            <Badge variant="secondary">Always on</Badge>
+          ) : (
+            <Badge variant={agent.isActive ? 'secondary' : 'outline'}>
+              {agent.isActive ? 'Active' : 'Inactive'}
+            </Badge>
+          )}
         </div>
       </div>
 

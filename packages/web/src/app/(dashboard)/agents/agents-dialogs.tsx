@@ -180,18 +180,8 @@ export function CreateAgentDialog({
             />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="create-role">Role</Label>
-            <select
-              name="role"
-              id="create-role"
-              className="rounded-md border bg-background px-3 py-2 text-sm"
-              defaultValue="primary"
-            >
-              <option value="primary">Primary</option>
-              <option value="worker">Worker (Sub-Agent)</option>
-            </select>
-          </div>
+          {/* Role is always worker for user-created agents; primary is system-only */}
+          <input type="hidden" name="role" value="worker" />
 
           <ProviderModelFields providers={providers} idPrefix="create" />
 
@@ -305,17 +295,13 @@ export function EditAgentDialog({
             />
           </div>
 
+          {/* Role cannot be changed; primary is system-only, workers stay workers */}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-role">Role</Label>
-            <select
-              name="role"
-              id="edit-role"
-              className="rounded-md border bg-background px-3 py-2 text-sm"
-              defaultValue={agent.role}
-            >
-              <option value="primary">Primary</option>
-              <option value="worker">Worker (Sub-Agent)</option>
-            </select>
+            <Label>Role</Label>
+            <p className="text-sm text-muted-foreground">
+              {agent.role === 'primary' ? 'Primary (system)' : 'Worker (Sub-Agent)'}
+            </p>
+            <input type="hidden" name="role" value={agent.role} />
           </div>
 
           <ProviderModelFields
@@ -349,18 +335,20 @@ export function EditAgentDialog({
             />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-isActive">Status</Label>
-            <select
-              name="isActive"
-              id="edit-isActive"
-              className="rounded-md border bg-background px-3 py-2 text-sm"
-              defaultValue={agent.isActive ? 'true' : 'false'}
-            >
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
-            </select>
-          </div>
+          {agent.role !== 'primary' && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-isActive">Status</Label>
+              <select
+                name="isActive"
+                id="edit-isActive"
+                className="rounded-md border bg-background px-3 py-2 text-sm"
+                defaultValue={agent.isActive ? 'true' : 'false'}
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
+          )}
 
           <DialogFooter>
             <Button

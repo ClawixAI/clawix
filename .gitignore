@@ -34,7 +34,6 @@ packages/api/src/generated/
 
 .superpowers
 docs/superpowers
-seed.ts
 data
 
 # Custom skills (runtime data, per-user)

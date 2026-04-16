@@ -170,10 +170,7 @@ export function PoliciesTab() {
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Manage governance policies — quotas, limits, and feature access.
-        </p>
+      <div className="mb-4 flex items-center justify-end">
         <Button
           size="sm"
           onClick={() => {
