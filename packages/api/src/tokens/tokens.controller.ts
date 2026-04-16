@@ -38,7 +38,8 @@ export class TokensController {
     @Query('userId') userId?: string,
   ) {
     const { user } = req;
-    const validPeriod = period === 'daily' || period === 'weekly' || period === 'monthly' ? period : 'daily';
+    const validPeriod =
+      period === 'daily' || period === 'weekly' || period === 'monthly' ? period : 'daily';
     const targetUserId = user.role === 'admin' ? userId : user.sub;
     return this.tokensService.getUsageOverTime(validPeriod, targetUserId);
   }

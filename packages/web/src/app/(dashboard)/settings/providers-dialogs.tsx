@@ -29,7 +29,9 @@ function PasswordInput(props: React.ComponentProps<typeof Input>) {
         variant="ghost"
         size="icon"
         className="absolute right-0 top-0 size-9 text-muted-foreground hover:text-foreground"
-        onClick={() => setVisible((v) => !v)}
+        onClick={() => {
+          setVisible((v) => !v);
+        }}
         tabIndex={-1}
         aria-label={visible ? 'Hide password' : 'Show password'}
       >
@@ -92,21 +94,11 @@ export function CreateProviderDialog({
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-displayName">Display Name</Label>
-            <Input
-              id="create-displayName"
-              name="displayName"
-              placeholder="OpenAI"
-              required
-            />
+            <Input id="create-displayName" name="displayName" placeholder="OpenAI" required />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-apiKey">API Key</Label>
-            <PasswordInput
-              id="create-apiKey"
-              name="apiKey"
-              placeholder="sk-..."
-              required
-            />
+            <PasswordInput id="create-apiKey" name="apiKey" placeholder="sk-..." required />
             <p className="text-xs text-muted-foreground">
               Encrypted at rest. Never displayed in full after saving.
             </p>
@@ -133,7 +125,13 @@ export function CreateProviderDialog({
             <Label htmlFor="create-isDefault">Set as default provider</Label>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
@@ -169,9 +167,7 @@ export function EditProviderDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Edit Provider</DialogTitle>
-          <DialogDescription>
-            Update settings for {provider.displayName}.
-          </DialogDescription>
+          <DialogDescription>Update settings for {provider.displayName}.</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -223,7 +219,13 @@ export function EditProviderDialog({
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>

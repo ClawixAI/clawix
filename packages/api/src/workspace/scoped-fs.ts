@@ -6,7 +6,12 @@ import * as path from 'path';
 import { BadRequestException } from '@nestjs/common';
 
 export class ScopedFs {
-  constructor(private readonly basePath: string) {}
+  private readonly basePath: string;
+
+  constructor(basePath: string) {
+    // Resolve symlinks in basePath to ensure consistent comparison with realpathSync
+    this.basePath = fsSync.existsSync(basePath) ? fsSync.realpathSync(basePath) : basePath;
+  }
 
   resolve(userPath: string): string {
     if (/[\x00-\x1f]/.test(userPath)) {

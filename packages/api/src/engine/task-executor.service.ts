@@ -73,7 +73,7 @@ export class TaskExecutorService implements OnModuleInit {
   private readonly maxPending: number;
   private readonly maxReinvocations: number;
   private readonly pendingQueue: QueueItem[] = [];
-  private activeCount_: number = 0;
+  private activeCount_ = 0;
 
   constructor(
     @Inject('AgentRunnerService')
@@ -370,7 +370,6 @@ export class TaskExecutorService implements OnModuleInit {
     const processingKey = KEY_PREFIXES.agentProcessing + parentSessionId;
     const reinvokeCountKey = KEY_PREFIXES.agentReinvokeCount + parentSessionId;
 
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       // Atomically move one item from results queue to processing list
       const raw = await this.redis.lmove(queueKey, processingKey, 'RIGHT', 'LEFT');
@@ -488,7 +487,7 @@ export class TaskExecutorService implements OnModuleInit {
           logger.info({ parentSessionId }, 'Recovering processing results');
 
           // Move all items back to result queue
-          // eslint-disable-next-line no-constant-condition
+
           while (true) {
             const item = await this.redis.lmove(processingKey, queueKey, 'RIGHT', 'LEFT');
             if (item === null) break;

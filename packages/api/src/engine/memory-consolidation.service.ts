@@ -174,7 +174,7 @@ export function isToolChoiceUnsupported(message: string | null | undefined): boo
   return hasKeyword && hasRejection;
 }
 
-type MessageRow = {
+interface MessageRow {
   readonly id: string;
   readonly sessionId: string;
   readonly role: string;
@@ -183,7 +183,7 @@ type MessageRow = {
   readonly toolCalls: unknown;
   readonly ordering: number;
   readonly createdAt: Date;
-};
+}
 
 // ------------------------------------------------------------------ //
 //  MemoryConsolidationService                                         //
@@ -320,9 +320,7 @@ export class MemoryConsolidationService {
       // Find existing summary row (ordering 0, system role, starts with MEMORY_SUMMARY_PREFIX)
       const summaryRow = rows.find(
         (r) =>
-          r.ordering === 0 &&
-          r.role === 'system' &&
-          r.content.startsWith(MEMORY_SUMMARY_PREFIX),
+          r.ordering === 0 && r.role === 'system' && r.content.startsWith(MEMORY_SUMMARY_PREFIX),
       );
 
       // Messages eligible for consolidation: everything after the summary row (or all if none)
@@ -338,9 +336,7 @@ export class MemoryConsolidationService {
       const chunk: MessageRow[] = [];
       let chunkTokens = 0;
       const rawOverBy = estimated - target;
-      const overBy = options.force
-        ? Math.max(rawOverBy, Math.floor(estimated / 2))
-        : rawOverBy;
+      const overBy = options.force ? Math.max(rawOverBy, Math.floor(estimated / 2)) : rawOverBy;
       let seenAssistant = false;
 
       for (const row of afterSummary) {
@@ -391,7 +387,11 @@ export class MemoryConsolidationService {
         break;
       }
 
-      const provider = createProvider(providerName, resolved.apiKey, resolved.apiBaseUrl ?? undefined);
+      const provider = createProvider(
+        providerName,
+        resolved.apiKey,
+        resolved.apiBaseUrl ?? undefined,
+      );
 
       let response;
       let usedAutoFallback = false;

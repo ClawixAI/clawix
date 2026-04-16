@@ -46,11 +46,19 @@ export function FilePreview({ file, isLoading, onClose, onEdit }: FilePreviewPro
           </span>
         </div>
         <div className="flex items-center gap-1">
-          {onEdit && ['text', 'code', 'markdown', 'json'].includes(file.type) && file.content !== null && (
-            <Button variant="ghost" size="icon" className="size-7 shrink-0" onClick={onEdit} title="Edit file">
-              <Pencil className="size-3.5" />
-            </Button>
-          )}
+          {onEdit &&
+            ['text', 'code', 'markdown', 'json'].includes(file.type) &&
+            file.content !== null && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0"
+                onClick={onEdit}
+                title="Edit file"
+              >
+                <Pencil className="size-3.5" />
+              </Button>
+            )}
           <Button variant="ghost" size="icon" className="size-7 shrink-0" onClick={onClose}>
             <X className="size-4" />
           </Button>

@@ -222,7 +222,9 @@ export class AgentRunnerService {
 
       // Step 9: Save user message to session (skip for sub-agents — they don't own the session)
       if (!isSubAgent) {
-        await this.sessionManager.saveMessages(session.id, [{ role: 'user', content: input, senderId: userId }]);
+        await this.sessionManager.saveMessages(session.id, [
+          { role: 'user', content: input, senderId: userId },
+        ]);
       }
 
       // Step 10: Resolve provider credentials (DB first, env var fallback)
@@ -415,7 +417,7 @@ export class AgentRunnerService {
         ? '\n\n---\nAgent run timed out. Try a simpler request or break it into smaller tasks.'
         : '';
 
-      const finalOutput = ((loopResult.content ?? '') + contextWarning + timeoutSuffix) || null;
+      const finalOutput = (loopResult.content ?? '') + contextWarning + timeoutSuffix || null;
       await this.agentRunRepo.update(agentRun.id, {
         status: runStatus,
         output: finalOutput ?? '',

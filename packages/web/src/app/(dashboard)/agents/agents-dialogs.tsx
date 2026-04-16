@@ -32,7 +32,9 @@ function useProviders() {
 
   useEffect(() => {
     void authFetch<{ data: ProviderInfo[] }>('/api/v1/agents/providers')
-      .then((res) => setProviders(Array.isArray(res.data) ? res.data : []))
+      .then((res) => {
+        setProviders(Array.isArray(res.data) ? res.data : []);
+      })
       .catch(() => {});
   }, []);
 
@@ -54,7 +56,9 @@ function ProviderModelFields({
   defaultModel?: string;
   idPrefix: string;
 }) {
-  const [selectedProvider, setSelectedProvider] = useState(defaultProvider ?? providers[0]?.name ?? '');
+  const [selectedProvider, setSelectedProvider] = useState(
+    defaultProvider ?? providers[0]?.name ?? '',
+  );
   const currentProvider = providers.find((p) => p.name === selectedProvider);
   const models = currentProvider?.models ?? [];
 
@@ -74,10 +78,14 @@ function ProviderModelFields({
           id={`${idPrefix}-provider`}
           className="rounded-md border bg-background px-3 py-2 text-sm"
           value={selectedProvider}
-          onChange={(e) => setSelectedProvider(e.target.value)}
+          onChange={(e) => {
+            setSelectedProvider(e.target.value);
+          }}
         >
           {providers.map((p) => (
-            <option key={p.name} value={p.name}>{p.displayName}</option>
+            <option key={p.name} value={p.name}>
+              {p.displayName}
+            </option>
           ))}
         </select>
       </div>
@@ -92,7 +100,9 @@ function ProviderModelFields({
             defaultValue={defaultModel ?? currentProvider?.defaultModel ?? ''}
           >
             {models.map((m) => (
-              <option key={m} value={m}>{m}</option>
+              <option key={m} value={m}>
+                {m}
+              </option>
             ))}
           </select>
         ) : (
@@ -210,15 +220,17 @@ export function CreateAgentDialog({
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-skillIds">Skill IDs</Label>
-            <Input
-              id="create-skillIds"
-              name="skillIds"
-              placeholder="Comma-separated skill IDs"
-            />
+            <Input id="create-skillIds" name="skillIds" placeholder="Comma-separated skill IDs" />
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
@@ -256,9 +268,7 @@ export function EditAgentDialog({
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Agent</DialogTitle>
-          <DialogDescription>
-            Update settings for {agent.name}.
-          </DialogDescription>
+          <DialogDescription>Update settings for {agent.name}.</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -353,7 +363,13 @@ export function EditAgentDialog({
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>

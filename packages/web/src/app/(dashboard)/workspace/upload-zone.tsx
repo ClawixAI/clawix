@@ -30,9 +30,7 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const updateUpload = useCallback((index: number, patch: Partial<UploadItem>) => {
-    setUploads((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, ...patch } : item)),
-    );
+    setUploads((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
   }, []);
 
   const uploadFile = useCallback(

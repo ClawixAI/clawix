@@ -145,13 +145,13 @@ export class TokenUsageRepository {
     startDate: Date,
     endDate: Date,
   ): Promise<
-    Array<{
+    {
       userId: string;
       totalInputTokens: number;
       totalOutputTokens: number;
       totalTokens: number;
       totalEstimatedCostUsd: number;
-    }>
+    }[]
   > {
     const results = await this.prisma.tokenUsage.groupBy({
       by: ['userId'],
@@ -180,22 +180,22 @@ export class TokenUsageRepository {
     startDate: Date,
     endDate: Date,
   ): Promise<
-    Array<{
+    {
       agentDefinitionId: string;
       totalInputTokens: number;
       totalOutputTokens: number;
       totalTokens: number;
       totalEstimatedCostUsd: number;
-    }>
+    }[]
   > {
     const results = await this.prisma.$queryRaw<
-      Array<{
+      {
         agent_definition_id: string;
         total_input: bigint;
         total_output: bigint;
         total_tokens: bigint;
         total_cost: number;
-      }>
+      }[]
     >`
       SELECT
         ar."agentDefinitionId" as agent_definition_id,
@@ -226,19 +226,19 @@ export class TokenUsageRepository {
     endDate: Date,
     userId?: string,
   ): Promise<
-    Array<{
+    {
       date: string;
       totalTokens: number;
       totalEstimatedCostUsd: number;
-    }>
+    }[]
   > {
     if (userId) {
       const results = await this.prisma.$queryRaw<
-        Array<{
+        {
           date: string;
           total_tokens: bigint;
           total_cost: number;
-        }>
+        }[]
       >`
         SELECT
           TO_CHAR("createdAt", 'YYYY-MM-DD') as date,
@@ -259,11 +259,11 @@ export class TokenUsageRepository {
     }
 
     const results = await this.prisma.$queryRaw<
-      Array<{
+      {
         date: string;
         total_tokens: bigint;
         total_cost: number;
-      }>
+      }[]
     >`
       SELECT
         TO_CHAR("createdAt", 'YYYY-MM-DD') as date,

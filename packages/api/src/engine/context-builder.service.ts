@@ -219,7 +219,9 @@ export class ContextBuilderService {
       '- Read it to recall context from previous sessions',
       '- Keep it concise and well-organized — you own this file completely',
       '',
-      'For daily activity notes, use `save_memory` with a `daily:YYYY-MM-DD` tag (e.g., `daily:' + new Date().toISOString().slice(0, 10) + '`).',
+      'For daily activity notes, use `save_memory` with a `daily:YYYY-MM-DD` tag (e.g., `daily:' +
+        new Date().toISOString().slice(0, 10) +
+        '`).',
       '- The last 3 days of daily notes are automatically loaded into your context',
       '- Use `search_memory` to look up older daily notes or tagged memories',
       '',
@@ -256,10 +258,7 @@ export class ContextBuilderService {
     ].join('\n');
   }
 
-  private async buildMemorySection(
-    userId: string,
-    workspacePath?: string,
-  ): Promise<string | null> {
+  private async buildMemorySection(userId: string, workspacePath?: string): Promise<string | null> {
     const sections: string[] = [];
 
     // 1. MEMORY.md — read from workspace

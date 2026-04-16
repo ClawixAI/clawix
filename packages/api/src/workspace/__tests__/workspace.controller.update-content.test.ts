@@ -20,7 +20,9 @@ describe('WorkspaceController.updateFileContent', () => {
     updateFileContent: ReturnType<typeof vi.fn>;
   };
 
-  const mockReq = { user: { sub: 'user-1', email: 'test@test.com', role: 'admin' as const, policyName: 'default' } };
+  const mockReq = {
+    user: { sub: 'user-1', email: 'test@test.com', role: 'admin' as const, policyName: 'default' },
+  };
 
   beforeEach(() => {
     mockService = {

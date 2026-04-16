@@ -4,10 +4,7 @@ import { useEffect, useRef } from 'react';
 import anime from 'animejs';
 import { EASING } from '@/lib/anime';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 function AnimatedCheckmark() {
   const pathRef = useRef<SVGPathElement>(null);
@@ -46,7 +43,9 @@ function AnimatedCheckmark() {
     <svg viewBox="0 0 52 52" className="size-8">
       <circle
         ref={circleRef}
-        cx="26" cy="26" r="24"
+        cx="26"
+        cy="26"
+        r="24"
         fill="none"
         stroke="currentColor"
         strokeWidth="2"
@@ -97,19 +96,18 @@ export function SuccessDialog({
           </div>
           <div className="text-center">
             <h3 className="text-lg font-semibold">{title}</h3>
-            {description && (
-              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-            )}
+            {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => { onOpenChange(false); }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               {dismissLabel}
             </Button>
-            {action && (
-              <Button onClick={action.onClick}>
-                {action.label}
-              </Button>
-            )}
+            {action && <Button onClick={action.onClick}>{action.label}</Button>}
           </div>
         </div>
       </DialogContent>

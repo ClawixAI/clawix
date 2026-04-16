@@ -74,7 +74,7 @@ vi.mock('fs', async (importOriginal) => {
 import { AgentRunnerService } from '../agent-runner.service.js';
 import type { RunOptions } from '../agent-runner.types.js';
 import type { SessionManagerService } from '../session-manager.service.js';
-import { ContainerRunner } from '../container-runner.js';
+import type { ContainerRunner } from '../container-runner.js';
 import type { TokenCounterService } from '../token-counter.service.js';
 import type { AgentRunRepository } from '../../db/agent-run.repository.js';
 import type { AgentDefinitionRepository } from '../../db/agent-definition.repository.js';
@@ -393,7 +393,9 @@ describe('AgentRunnerService', () => {
       {} as unknown as SearchProviderRegistry,
       { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
       {} as unknown as import('../../prisma/prisma.service.js').PrismaService,
-      { findVisibleToUser: vi.fn().mockResolvedValue([]) } as unknown as import('../../db/memory-item.repository.js').MemoryItemRepository,
+      {
+        findVisibleToUser: vi.fn().mockResolvedValue([]),
+      } as unknown as import('../../db/memory-item.repository.js').MemoryItemRepository,
       mocks.mockWorkspaceSeeder as unknown as import('../workspace-seeder.service.js').WorkspaceSeederService,
       mocks.mockPolicyRepo as unknown as import('../../db/policy.repository.js').PolicyRepository,
       {} as unknown as import('../../db/channel.repository.js').ChannelRepository,

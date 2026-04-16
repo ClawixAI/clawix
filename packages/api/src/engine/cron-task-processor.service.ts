@@ -65,7 +65,9 @@ export class CronTaskProcessorService {
       // Race agent run against timeout (clear timer on resolution to prevent leak)
       let timeoutHandle: ReturnType<typeof setTimeout>;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => reject(new Error('execution_timeout')), effectiveTimeout);
+        timeoutHandle = setTimeout(() => {
+          reject(new Error('execution_timeout'));
+        }, effectiveTimeout);
       });
 
       let result;

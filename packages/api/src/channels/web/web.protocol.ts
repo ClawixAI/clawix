@@ -14,10 +14,7 @@ const pingSchema = z.object({
   payload: z.object({}).passthrough(),
 });
 
-const clientMessageSchema = z.discriminatedUnion('type', [
-  messageSendSchema,
-  pingSchema,
-]);
+const clientMessageSchema = z.discriminatedUnion('type', [messageSendSchema, pingSchema]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 

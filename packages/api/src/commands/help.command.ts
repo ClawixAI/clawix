@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { SessionCommand, SessionCommandContext, SessionCommandResult } from './session-command.js';
+import type {
+  SessionCommand,
+  SessionCommandContext,
+  SessionCommandResult,
+} from './session-command.js';
 
 /**
  * HelpCommand — lists all registered session commands.
@@ -13,11 +17,11 @@ export class HelpCommand implements SessionCommand {
   readonly name = 'help';
   readonly description = 'Show available commands';
 
-  private getCommands: () => ReadonlyArray<{ readonly name: string; readonly description: string }> =
+  private getCommands: () => readonly { readonly name: string; readonly description: string }[] =
     () => [];
 
   setCommandListGetter(
-    getter: () => ReadonlyArray<{ readonly name: string; readonly description: string }>,
+    getter: () => readonly { readonly name: string; readonly description: string }[],
   ): void {
     this.getCommands = getter;
   }

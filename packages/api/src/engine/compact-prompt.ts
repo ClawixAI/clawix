@@ -14,9 +14,7 @@
 export function buildConsolidationSystemPrompt(existingSummary: string): string {
   return [
     'You are a memory consolidation assistant. Your job is to summarise old conversation messages into compact working memory.',
-    existingSummary
-      ? `Current memory context:\n${existingSummary}`
-      : 'No prior memory context.',
+    existingSummary ? `Current memory context:\n${existingSummary}` : 'No prior memory context.',
   ].join('\n\n');
 }
 

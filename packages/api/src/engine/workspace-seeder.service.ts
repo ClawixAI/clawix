@@ -14,7 +14,8 @@ const logger = createLogger('engine:workspace-seeder');
 const BOOTSTRAP_FILES = ['SOUL.md', 'USER.md'] as const;
 
 /** Directory containing .template files — mounted via docker-compose or local dev fallback. */
-const TEMPLATES_DIR = process.env['TEMPLATES_DIR'] ?? path.resolve(process.cwd(), '../../infra/templates');
+const TEMPLATES_DIR =
+  process.env['TEMPLATES_DIR'] ?? path.resolve(process.cwd(), '../../infra/templates');
 
 export interface SeedParams {
   readonly workspacePath: string;

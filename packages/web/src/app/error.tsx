@@ -30,9 +30,7 @@ export default function GlobalError({
         <Button variant="outline" onClick={reset}>
           Try again
         </Button>
-        <Button onClick={() => (window.location.href = '/conversations')}>
-          Go to Home
-        </Button>
+        <Button onClick={() => (window.location.href = '/conversations')}>Go to Home</Button>
       </div>
     </div>
   );

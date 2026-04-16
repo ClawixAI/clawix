@@ -2,7 +2,12 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { createLogger } from '@clawix/shared';
 
 import { UserAgentRepository } from '../db/user-agent.repository.js';
@@ -16,41 +21,78 @@ const MAX_FILE_SIZE = 1024 * 1024; // 1 MB
 
 const FILE_TYPE_MAP: Record<string, FileType> = {
   // code
-  '.ts': 'code', '.tsx': 'code', '.js': 'code', '.jsx': 'code',
-  '.py': 'code', '.go': 'code', '.rs': 'code', '.java': 'code',
-  '.c': 'code', '.cpp': 'code', '.h': 'code', '.css': 'code',
-  '.scss': 'code', '.html': 'code', '.vue': 'code', '.svelte': 'code',
-  '.sh': 'code', '.bash': 'code', '.zsh': 'code', '.sql': 'code',
-  '.yaml': 'code', '.yml': 'code', '.toml': 'code', '.xml': 'code',
-  '.rb': 'code', '.php': 'code', '.swift': 'code', '.kt': 'code',
+  '.ts': 'code',
+  '.tsx': 'code',
+  '.js': 'code',
+  '.jsx': 'code',
+  '.py': 'code',
+  '.go': 'code',
+  '.rs': 'code',
+  '.java': 'code',
+  '.c': 'code',
+  '.cpp': 'code',
+  '.h': 'code',
+  '.css': 'code',
+  '.scss': 'code',
+  '.html': 'code',
+  '.vue': 'code',
+  '.svelte': 'code',
+  '.sh': 'code',
+  '.bash': 'code',
+  '.zsh': 'code',
+  '.sql': 'code',
+  '.yaml': 'code',
+  '.yml': 'code',
+  '.toml': 'code',
+  '.xml': 'code',
+  '.rb': 'code',
+  '.php': 'code',
+  '.swift': 'code',
+  '.kt': 'code',
   '.dockerfile': 'code',
   // markdown
-  '.md': 'markdown', '.mdx': 'markdown',
+  '.md': 'markdown',
+  '.mdx': 'markdown',
   // json
-  '.json': 'json', '.jsonc': 'json', '.json5': 'json',
+  '.json': 'json',
+  '.jsonc': 'json',
+  '.json5': 'json',
   // text
-  '.txt': 'text', '.log': 'text', '.env': 'text', '.gitignore': 'text',
-  '.editorconfig': 'text', '.dockerignore': 'text', '.csv': 'text',
+  '.txt': 'text',
+  '.log': 'text',
+  '.env': 'text',
+  '.gitignore': 'text',
+  '.editorconfig': 'text',
+  '.dockerignore': 'text',
+  '.csv': 'text',
   // image
-  '.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.gif': 'image',
-  '.svg': 'image', '.webp': 'image', '.ico': 'image',
+  '.png': 'image',
+  '.jpg': 'image',
+  '.jpeg': 'image',
+  '.gif': 'image',
+  '.svg': 'image',
+  '.webp': 'image',
+  '.ico': 'image',
   // video
-  '.mp4': 'video', '.webm': 'video', '.mov': 'video',
+  '.mp4': 'video',
+  '.webm': 'video',
+  '.mov': 'video',
   // audio
-  '.mp3': 'audio', '.wav': 'audio', '.ogg': 'audio',
+  '.mp3': 'audio',
+  '.wav': 'audio',
+  '.ogg': 'audio',
   // pdf
   '.pdf': 'pdf',
   // archive
-  '.zip': 'archive', '.tar': 'archive', '.gz': 'archive', '.rar': 'archive',
+  '.zip': 'archive',
+  '.tar': 'archive',
+  '.gz': 'archive',
+  '.rar': 'archive',
 };
 
-const BINARY_TYPES: ReadonlySet<FileType> = new Set([
-  'image', 'video', 'audio', 'pdf', 'archive',
-]);
+const BINARY_TYPES: ReadonlySet<FileType> = new Set(['image', 'video', 'audio', 'pdf', 'archive']);
 
-const EDITABLE_TYPES: ReadonlySet<FileType> = new Set([
-  'text', 'code', 'markdown', 'json',
-]);
+const EDITABLE_TYPES: ReadonlySet<FileType> = new Set(['text', 'code', 'markdown', 'json']);
 
 @Injectable()
 export class WorkspaceService {
@@ -111,7 +153,7 @@ export class WorkspaceService {
           size,
           modifiedAt,
           isDirectory,
-          type: isDirectory ? 'directory' as const : WorkspaceService.detectFileType(dirent.name),
+          type: isDirectory ? ('directory' as const) : WorkspaceService.detectFileType(dirent.name),
         };
       }),
     );
@@ -124,9 +166,8 @@ export class WorkspaceService {
     const relativePath = '/' + path.relative(basePath, resolved);
     const normalizedPath = relativePath === '/.' ? '/' : relativePath;
 
-    const parent = normalizedPath === '/'
-      ? null
-      : '/' + path.relative(basePath, path.dirname(resolved));
+    const parent =
+      normalizedPath === '/' ? null : '/' + path.relative(basePath, path.dirname(resolved));
 
     return {
       path: normalizedPath === '/.' ? '/' : normalizedPath,
@@ -187,7 +228,7 @@ export class WorkspaceService {
       return { ...base, content: null, truncated: true };
     }
 
-    const content = await sfs.readFile(filePath, 'utf-8') as string;
+    const content = (await sfs.readFile(filePath, 'utf-8')) as string;
     return { ...base, content, truncated: false };
   }
 
@@ -240,7 +281,11 @@ export class WorkspaceService {
     };
   }
 
-  async createEntry(userId: string, entryPath: string, type: 'file' | 'directory'): Promise<FileEntry> {
+  async createEntry(
+    userId: string,
+    entryPath: string,
+    type: 'file' | 'directory',
+  ): Promise<FileEntry> {
     const { fs: sfs, basePath } = await this.createScopedFs(userId);
     if (await sfs.exists(entryPath)) {
       throw new ConflictException('Path already exists');
@@ -255,7 +300,13 @@ export class WorkspaceService {
     const name = path.basename(resolved);
     const relativePath = '/' + path.relative(basePath, resolved);
     logger.info({ userId, path: relativePath, type }, 'Created workspace entry');
-    return this.buildFileEntry(name, relativePath, type === 'directory', type === 'directory' ? 0 : stat.size, stat.mtime.toISOString());
+    return this.buildFileEntry(
+      name,
+      relativePath,
+      type === 'directory',
+      type === 'directory' ? 0 : stat.size,
+      stat.mtime.toISOString(),
+    );
   }
 
   async renameEntry(userId: string, entryPath: string, newName: string): Promise<FileEntry> {
@@ -265,30 +316,44 @@ export class WorkspaceService {
     const parentDir = path.dirname(resolved);
     const newResolved = path.join(parentDir, newName);
     const newRelativePath = '/' + path.relative(basePath, newResolved);
-    if (await sfs.exists(newRelativePath)) throw new ConflictException(`"${newName}" already exists in this directory`);
+    if (await sfs.exists(newRelativePath))
+      throw new ConflictException(`"${newName}" already exists in this directory`);
     await sfs.rename(entryPath, newRelativePath);
     const stat = await sfs.stat(newRelativePath);
     const isDirectory = stat.isDirectory();
     logger.info({ userId, from: entryPath, to: newRelativePath }, 'Renamed workspace entry');
-    return this.buildFileEntry(newName, newRelativePath, isDirectory, isDirectory ? 0 : stat.size, stat.mtime.toISOString());
+    return this.buildFileEntry(
+      newName,
+      newRelativePath,
+      isDirectory,
+      isDirectory ? 0 : stat.size,
+      stat.mtime.toISOString(),
+    );
   }
 
   async moveEntry(userId: string, entryPath: string, destination: string): Promise<FileEntry> {
     const { fs: sfs, basePath } = await this.createScopedFs(userId);
     if (!(await sfs.exists(entryPath))) throw new NotFoundException('Source path not found');
     const destStat = await sfs.stat(destination).catch(() => null);
-    if (!destStat || !destStat.isDirectory()) throw new NotFoundException('Destination directory not found');
+    if (!destStat?.isDirectory()) throw new NotFoundException('Destination directory not found');
     const resolved = sfs.resolve(entryPath);
     const name = path.basename(resolved);
     const destResolved = sfs.resolve(destination);
     const newResolved = path.join(destResolved, name);
     const newRelativePath = '/' + path.relative(basePath, newResolved);
-    if (await sfs.exists(newRelativePath)) throw new ConflictException(`"${name}" already exists at destination`);
+    if (await sfs.exists(newRelativePath))
+      throw new ConflictException(`"${name}" already exists at destination`);
     await sfs.rename(entryPath, newRelativePath);
     const stat = await sfs.stat(newRelativePath);
     const isDirectory = stat.isDirectory();
     logger.info({ userId, from: entryPath, to: newRelativePath }, 'Moved workspace entry');
-    return this.buildFileEntry(name, newRelativePath, isDirectory, isDirectory ? 0 : stat.size, stat.mtime.toISOString());
+    return this.buildFileEntry(
+      name,
+      newRelativePath,
+      isDirectory,
+      isDirectory ? 0 : stat.size,
+      stat.mtime.toISOString(),
+    );
   }
 
   async deleteEntry(userId: string, entryPath: string): Promise<{ path: string; deleted: true }> {
@@ -301,18 +366,36 @@ export class WorkspaceService {
     return { path: relativePath, deleted: true };
   }
 
-  async downloadFile(userId: string, filePath: string): Promise<{ stream: NodeJS.ReadableStream; filename: string; contentType: string; size: number }> {
+  async downloadFile(
+    userId: string,
+    filePath: string,
+  ): Promise<{
+    stream: NodeJS.ReadableStream;
+    filename: string;
+    contentType: string;
+    size: number;
+  }> {
     const { fs: sfs } = await this.createScopedFs(userId);
     let stat: Awaited<ReturnType<typeof sfs.stat>>;
-    try { stat = await sfs.stat(filePath); } catch { throw new NotFoundException('File not found'); }
+    try {
+      stat = await sfs.stat(filePath);
+    } catch {
+      throw new NotFoundException('File not found');
+    }
     if (stat.isDirectory()) throw new BadRequestException('Cannot download a directory');
     const resolved = sfs.resolve(filePath);
     const filename = path.basename(resolved);
     const type = WorkspaceService.detectFileType(filename);
     const contentTypeMap: Partial<Record<string, string>> = {
-      image: 'image/*', video: 'video/*', audio: 'audio/*', pdf: 'application/pdf',
-      archive: 'application/octet-stream', json: 'application/json',
-      code: 'text/plain', text: 'text/plain', markdown: 'text/markdown',
+      image: 'image/*',
+      video: 'video/*',
+      audio: 'audio/*',
+      pdf: 'application/pdf',
+      archive: 'application/octet-stream',
+      json: 'application/json',
+      code: 'text/plain',
+      text: 'text/plain',
+      markdown: 'text/markdown',
     };
     return {
       stream: sfs.createReadStream(filePath),
@@ -349,7 +432,10 @@ export class WorkspaceService {
     return items.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async getProjectorItemHtml(userId: string, name: string): Promise<{ name: string; html: string }> {
+  async getProjectorItemHtml(
+    userId: string,
+    name: string,
+  ): Promise<{ name: string; html: string }> {
     const { fs: sfs } = await this.createScopedFs(userId);
     const indexPath = `/projector/${name}/index.html`;
 
@@ -357,20 +443,27 @@ export class WorkspaceService {
       throw new NotFoundException(`Projector item "${name}" not found`);
     }
 
-    const html = await sfs.readFile(indexPath, 'utf-8') as string;
+    const html = (await sfs.readFile(indexPath, 'utf-8')) as string;
     return { name, html };
   }
 
-  async uploadFile(userId: string, dirPath: string, filename: string, data: Buffer, overwrite = false): Promise<FileEntry> {
+  async uploadFile(
+    userId: string,
+    dirPath: string,
+    filename: string,
+    data: Buffer,
+    overwrite = false,
+  ): Promise<FileEntry> {
     const { fs: sfs, basePath } = await this.createScopedFs(userId);
     if (dirPath !== '/') {
       const dirStat = await sfs.stat(dirPath).catch(() => null);
-      if (!dirStat || !dirStat.isDirectory()) throw new NotFoundException('Target directory not found');
+      if (!dirStat?.isDirectory()) throw new NotFoundException('Target directory not found');
     }
     const resolved = sfs.resolve(dirPath);
     const fileResolved = path.join(resolved, filename);
     const relativePath = '/' + path.relative(basePath, fileResolved);
-    if (!overwrite && await sfs.exists(relativePath)) throw new ConflictException(`"${filename}" already exists`);
+    if (!overwrite && (await sfs.exists(relativePath)))
+      throw new ConflictException(`"${filename}" already exists`);
     await sfs.writeFile(relativePath, data);
     const stat = await sfs.stat(relativePath);
     logger.info({ userId, path: relativePath, size: stat.size }, 'Uploaded file to workspace');

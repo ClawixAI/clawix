@@ -96,22 +96,24 @@ export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
       }),
     );
 
-    socket.on('message', async (data: Buffer | ArrayBuffer | Buffer[]) => {
-      try {
-        const raw = typeof data === 'string' ? data : data.toString();
-        await adapter.handleClientMessage(userId, userName, raw);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.error({ userId, error: msg }, 'Error handling WebSocket message');
-        if (socket.readyState === 1) {
-          socket.send(
-            serializeServerMessage({
-              type: 'error',
-              payload: { code: 'INTERNAL_ERROR', message: 'Failed to process message' },
-            }),
-          );
+    socket.on('message', (data: Buffer | ArrayBuffer | Buffer[]) => {
+      void (async () => {
+        try {
+          const raw = typeof data === 'string' ? data : data.toString();
+          await adapter.handleClientMessage(userId, userName, raw);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error({ userId, error: msg }, 'Error handling WebSocket message');
+          if (socket.readyState === 1) {
+            socket.send(
+              serializeServerMessage({
+                type: 'error',
+                payload: { code: 'INTERNAL_ERROR', message: 'Failed to process message' },
+              }),
+            );
+          }
         }
-      }
+      })();
     });
 
     socket.on('close', () => {

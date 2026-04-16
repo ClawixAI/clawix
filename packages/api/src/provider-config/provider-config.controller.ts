@@ -1,9 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import {
-  createProviderConfigSchema,
-  updateProviderConfigSchema,
-} from '@clawix/shared';
+import { createProviderConfigSchema, updateProviderConfigSchema } from '@clawix/shared';
 import type { CreateProviderConfigInput, UpdateProviderConfigInput } from '@clawix/shared';
 
 import { Roles } from '../auth/roles.decorator.js';
@@ -28,9 +25,7 @@ export class ProviderConfigController {
   }
 
   @Post()
-  create(
-    @Body(new ZodValidationPipe(createProviderConfigSchema)) body: CreateProviderConfigInput,
-  ) {
+  create(@Body(new ZodValidationPipe(createProviderConfigSchema)) body: CreateProviderConfigInput) {
     return this.providerConfigService.create(body);
   }
 

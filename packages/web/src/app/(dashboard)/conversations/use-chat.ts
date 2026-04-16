@@ -36,12 +36,12 @@ interface PaginatedSessions {
 
 interface PaginatedMessages {
   success: boolean;
-  data: Array<{
+  data: {
     id: string;
     role: string;
     content: string;
     createdAt: string;
-  }>;
+  }[];
   meta: { total: number; page: number; limit: number };
 }
 
@@ -89,12 +89,8 @@ export function useChat() {
 
   /* ---- refs ---- */
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(
-    undefined,
-  );
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const pongReceivedRef = useRef(true);
   const reconnectAttemptsRef = useRef(0);
   const currentSessionIdRef = useRef<string | null>(null);
@@ -145,8 +141,7 @@ export function useChat() {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsBase =
-      process.env['NEXT_PUBLIC_WS_URL'] ??
-      `${protocol}//${window.location.hostname}:3001`;
+      process.env['NEXT_PUBLIC_WS_URL'] ?? `${protocol}//${window.location.hostname}:3001`;
     const wsUrl = `${wsBase}/ws/chat?token=${token}`;
     const ws = new WebSocket(wsUrl);
 
@@ -176,29 +171,36 @@ export function useChat() {
         if (sid) {
           void authFetch<PaginatedMessages>(
             `/api/v1/chat/sessions/${sid}/messages?limit=${MESSAGE_LIMIT}`,
-          ).then((res) => {
-            const fetched: ChatMessage[] = (
-              Array.isArray(res.data) ? res.data : []
-            ).map((m) => ({
-              id: m.id,
-              role: m.role as ChatMessage['role'],
-              content: m.content,
-              createdAt: m.createdAt,
-            }));
-            setMessages((prev) => {
-              if (fetched.length > prev.length) {
-                const prevIds = new Set(prev.map((m) => m.id));
-                const newAssistant = fetched.filter((m) => m.role === 'assistant' && !prevIds.has(m.id));
-                pendingCountRef.current = Math.max(0, pendingCountRef.current - newAssistant.length);
-                if (pendingCountRef.current === 0) {
-                  setIsTyping(false);
-                  setHasPending(false);
+          )
+            .then((res) => {
+              const fetched: ChatMessage[] = (Array.isArray(res.data) ? res.data : []).map((m) => ({
+                id: m.id,
+                role: m.role as ChatMessage['role'],
+                content: m.content,
+                createdAt: m.createdAt,
+              }));
+              setMessages((prev) => {
+                if (fetched.length > prev.length) {
+                  const prevIds = new Set(prev.map((m) => m.id));
+                  const newAssistant = fetched.filter(
+                    (m) => m.role === 'assistant' && !prevIds.has(m.id),
+                  );
+                  pendingCountRef.current = Math.max(
+                    0,
+                    pendingCountRef.current - newAssistant.length,
+                  );
+                  if (pendingCountRef.current === 0) {
+                    setIsTyping(false);
+                    setHasPending(false);
+                  }
+                  return fetched;
                 }
-                return fetched;
-              }
-              return prev;
+                return prev;
+              });
+            })
+            .catch(() => {
+              /* silent — REST fallback will retry */
             });
-          }).catch(() => { /* silent — REST fallback will retry */ });
         }
       }
     };
@@ -308,8 +310,7 @@ export function useChat() {
     };
 
     wsRef.current = ws;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
+  }, []);
   /* ---- select session ---- */
   const selectSession = useCallback(async (sessionId: string) => {
     setCurrentSessionId(sessionId);
@@ -323,9 +324,7 @@ export function useChat() {
       const res = await authFetch<PaginatedMessages>(
         `/api/v1/chat/sessions/${sessionId}/messages?limit=${MESSAGE_LIMIT}`,
       );
-      const mapped: ChatMessage[] = (
-        Array.isArray(res.data) ? res.data : []
-      ).map((m) => ({
+      const mapped: ChatMessage[] = (Array.isArray(res.data) ? res.data : []).map((m) => ({
         id: m.id,
         role: m.role as ChatMessage['role'],
         content: m.content,
@@ -352,9 +351,7 @@ export function useChat() {
       const res = await authFetch<PaginatedMessages>(
         `/api/v1/chat/sessions/${sid}/messages?limit=${MESSAGE_LIMIT}&page=${nextPage}`,
       );
-      const older: ChatMessage[] = (
-        Array.isArray(res.data) ? res.data : []
-      ).map((m) => ({
+      const older: ChatMessage[] = (Array.isArray(res.data) ? res.data : []).map((m) => ({
         id: m.id,
         role: m.role as ChatMessage['role'],
         content: m.content,
@@ -376,7 +373,7 @@ export function useChat() {
 
   /* ---- send message ---- */
   const sendMessage = useCallback((content: string): boolean => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
       setError('Not connected — message not sent. Try again.');
       return false;
     }
@@ -394,9 +391,7 @@ export function useChat() {
     }
 
     setMessages((prev) => [...prev, optimistic]);
-    wsRef.current.send(
-      JSON.stringify({ type: 'message.send', payload: { content } }),
-    );
+    wsRef.current.send(JSON.stringify({ type: 'message.send', payload: { content } }));
     pendingCountRef.current += 1;
     setHasPending(true);
     setIsTyping(true);
@@ -430,8 +425,12 @@ export function useChat() {
       .then((res) => {
         if (res.data) setWebChannelId(res.data.id);
       })
-      .catch(() => { /* proceed without filter */ })
-      .finally(() => { setChannelResolved(true); });
+      .catch(() => {
+        /* proceed without filter */
+      })
+      .finally(() => {
+        setChannelResolved(true);
+      });
   }, []);
 
   /* ---- lifecycle: connect WebSocket once ---- */
@@ -446,8 +445,7 @@ export function useChat() {
         wsRef.current = null;
       }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
+  }, []);
   /* ---- fallback: poll REST while waiting for response ---- */
   useEffect(() => {
     if (!isTyping && !hasPending) return;
@@ -456,31 +454,37 @@ export function useChat() {
       if (!sid) return;
       void authFetch<PaginatedMessages>(
         `/api/v1/chat/sessions/${sid}/messages?limit=${MESSAGE_LIMIT}`,
-      ).then((res) => {
-        const fetched: ChatMessage[] = (
-          Array.isArray(res.data) ? res.data : []
-        ).map((m) => ({
-          id: m.id,
-          role: m.role as ChatMessage['role'],
-          content: m.content,
-          createdAt: m.createdAt,
-        }));
-        setMessages((prev) => {
-          if (fetched.length > prev.length) {
-            const prevIds = new Set(prev.map((m) => m.id));
-            const newAssistant = fetched.filter((m) => m.role === 'assistant' && !prevIds.has(m.id));
-            pendingCountRef.current = Math.max(0, pendingCountRef.current - newAssistant.length);
-            if (pendingCountRef.current === 0) {
-              setIsTyping(false);
-              setHasPending(false);
+      )
+        .then((res) => {
+          const fetched: ChatMessage[] = (Array.isArray(res.data) ? res.data : []).map((m) => ({
+            id: m.id,
+            role: m.role as ChatMessage['role'],
+            content: m.content,
+            createdAt: m.createdAt,
+          }));
+          setMessages((prev) => {
+            if (fetched.length > prev.length) {
+              const prevIds = new Set(prev.map((m) => m.id));
+              const newAssistant = fetched.filter(
+                (m) => m.role === 'assistant' && !prevIds.has(m.id),
+              );
+              pendingCountRef.current = Math.max(0, pendingCountRef.current - newAssistant.length);
+              if (pendingCountRef.current === 0) {
+                setIsTyping(false);
+                setHasPending(false);
+              }
+              return fetched;
             }
-            return fetched;
-          }
-          return prev;
+            return prev;
+          });
+        })
+        .catch(() => {
+          /* silent */
         });
-      }).catch(() => { /* silent */ });
     }, 2000);
-    return () => { clearInterval(interval); };
+    return () => {
+      clearInterval(interval);
+    };
   }, [isTyping, hasPending]);
 
   /* ---- background sync: catch missed messages every 10s ---- */
@@ -490,35 +494,44 @@ export function useChat() {
       if (!sid) return;
       void authFetch<PaginatedMessages>(
         `/api/v1/chat/sessions/${sid}/messages?limit=${MESSAGE_LIMIT}`,
-      ).then((res) => {
-        const fetched: ChatMessage[] = (
-          Array.isArray(res.data) ? res.data : []
-        ).map((m) => ({
-          id: m.id,
-          role: m.role as ChatMessage['role'],
-          content: m.content,
-          createdAt: m.createdAt,
-        }));
-        setMessages((prev) => {
-          // Only update if server has messages we don't (skip temp/optimistic)
-          const realPrev = prev.filter((m) => !m.id.startsWith('tmp-'));
-          if (fetched.length > realPrev.length) {
-            const prevIds = new Set(realPrev.map((m) => m.id));
-            const newAssistant = fetched.filter((m) => m.role === 'assistant' && !prevIds.has(m.id));
-            if (newAssistant.length > 0) {
-              pendingCountRef.current = Math.max(0, pendingCountRef.current - newAssistant.length);
-              if (pendingCountRef.current === 0) {
-                setIsTyping(false);
-                setHasPending(false);
+      )
+        .then((res) => {
+          const fetched: ChatMessage[] = (Array.isArray(res.data) ? res.data : []).map((m) => ({
+            id: m.id,
+            role: m.role as ChatMessage['role'],
+            content: m.content,
+            createdAt: m.createdAt,
+          }));
+          setMessages((prev) => {
+            // Only update if server has messages we don't (skip temp/optimistic)
+            const realPrev = prev.filter((m) => !m.id.startsWith('tmp-'));
+            if (fetched.length > realPrev.length) {
+              const prevIds = new Set(realPrev.map((m) => m.id));
+              const newAssistant = fetched.filter(
+                (m) => m.role === 'assistant' && !prevIds.has(m.id),
+              );
+              if (newAssistant.length > 0) {
+                pendingCountRef.current = Math.max(
+                  0,
+                  pendingCountRef.current - newAssistant.length,
+                );
+                if (pendingCountRef.current === 0) {
+                  setIsTyping(false);
+                  setHasPending(false);
+                }
+                return fetched;
               }
-              return fetched;
             }
-          }
-          return prev;
+            return prev;
+          });
+        })
+        .catch(() => {
+          /* silent */
         });
-      }).catch(() => { /* silent */ });
     }, 10_000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+    };
   }, []);
 
   /* ---- lifecycle: fetch sessions when channel ID resolves ---- */

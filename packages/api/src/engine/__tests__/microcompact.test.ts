@@ -34,7 +34,9 @@ describe('microcompactMessages', () => {
     const msg = makeMessage({ role: 'tool', content: longContent });
     const result = microcompactMessages([msg]);
     expect(result).toHaveLength(1);
-    expect(result[0]?.content).toBe(`[tool result truncated - originally ${longContent.length} chars]`);
+    expect(result[0]?.content).toBe(
+      `[tool result truncated - originally ${longContent.length} chars]`,
+    );
   });
 
   it('preserves tool role messages with content under 500 chars', () => {
@@ -47,7 +49,12 @@ describe('microcompactMessages', () => {
   it('does not truncate user or assistant messages regardless of length', () => {
     const longContent = 'x'.repeat(1000);
     const userMsg = makeMessage({ role: 'user', content: longContent });
-    const assistantMsg = makeMessage({ id: 'msg-2', role: 'assistant', content: longContent, ordering: 2 });
+    const assistantMsg = makeMessage({
+      id: 'msg-2',
+      role: 'assistant',
+      content: longContent,
+      ordering: 2,
+    });
     const result = microcompactMessages([userMsg, assistantMsg]);
     expect(result[0]?.content).toBe(longContent);
     expect(result[1]?.content).toBe(longContent);
@@ -57,7 +64,9 @@ describe('microcompactMessages', () => {
     const longContent = 'y'.repeat(600);
     const msg = makeMessage({ role: 'system', content: longContent });
     const result = microcompactMessages([msg]);
-    expect(result[0]?.content).toBe(`[system message truncated - originally ${longContent.length} chars]`);
+    expect(result[0]?.content).toBe(
+      `[system message truncated - originally ${longContent.length} chars]`,
+    );
   });
 
   it('returns new objects without mutating originals', () => {
@@ -91,12 +100,16 @@ describe('microcompactMessages', () => {
     // user: not truncated
     expect(result[0]?.content).toBe(longContent);
     // tool (long): truncated
-    expect(result[1]?.content).toBe(`[tool result truncated - originally ${longContent.length} chars]`);
+    expect(result[1]?.content).toBe(
+      `[tool result truncated - originally ${longContent.length} chars]`,
+    );
     // tool (short): not truncated
     expect(result[2]?.content).toBe(shortContent);
     // assistant: not truncated
     expect(result[3]?.content).toBe(longContent);
     // system (long): truncated
-    expect(result[4]?.content).toBe(`[system message truncated - originally ${longContent.length} chars]`);
+    expect(result[4]?.content).toBe(
+      `[system message truncated - originally ${longContent.length} chars]`,
+    );
   });
 });

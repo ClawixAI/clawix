@@ -1,18 +1,13 @@
-import {
-  CallHandler,
-  ExecutionContext,
-  Injectable,
-  NestInterceptor,
-} from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { Observable, tap } from 'rxjs';
 import { AuditLogRepository } from '../db/audit-log.repository.js';
 
 /** Routes that should NOT be audit-logged. */
 const EXCLUDED_PATHS = [
-  '/api/v1/chat',        // conversation fetching
-  '/api/v1/tokens',      // read-only governance queries
-  '/api/v1/audit',       // reading audit logs themselves
-  '/auth/login',         // auth has its own logging
+  '/api/v1/chat', // conversation fetching
+  '/api/v1/tokens', // read-only governance queries
+  '/api/v1/audit', // reading audit logs themselves
+  '/auth/login', // auth has its own logging
   '/auth/refresh',
   '/health',
 ];
@@ -100,11 +95,9 @@ export class AuditLogInterceptor implements NestInterceptor {
           const effectiveResourceId =
             resourceId !== 'n/a'
               ? resourceId
-              : (typeof responseBody === 'object' &&
-                  responseBody !== null &&
-                  'id' in responseBody
-                  ? String((responseBody as { id: string }).id)
-                  : 'n/a');
+              : typeof responseBody === 'object' && responseBody !== null && 'id' in responseBody
+                ? String((responseBody as { id: string }).id)
+                : 'n/a';
 
           // Fire and forget — don't block the response
           void this.auditLogRepo

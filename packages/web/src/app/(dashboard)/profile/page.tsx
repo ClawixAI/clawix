@@ -42,15 +42,16 @@ export default function ProfilePage() {
     try {
       const [data, channels] = await Promise.all([
         authFetch<Profile>('/api/v1/me'),
-        authFetch<{ data: Array<{ type: string; isActive: boolean }> }>('/api/v1/channels')
-          .catch(() => ({ data: [] })),
+        authFetch<{ data: { type: string; isActive: boolean }[] }>('/api/v1/channels').catch(
+          () => ({ data: [] }),
+        ),
       ]);
       setProfile(data);
       setName(data.name);
       setTelegramId(data.telegramId ?? '');
       setTelegramEnabled(
         Array.isArray(channels.data) &&
-        channels.data.some((ch) => ch.type.toLowerCase() === 'telegram' && ch.isActive),
+          channels.data.some((ch) => ch.type.toLowerCase() === 'telegram' && ch.isActive),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile');
@@ -59,7 +60,9 @@ export default function ProfilePage() {
     }
   }, []);
 
-  useEffect(() => { void fetchProfile(); }, [fetchProfile]);
+  useEffect(() => {
+    void fetchProfile();
+  }, [fetchProfile]);
 
   async function handleSaveProfile(e: React.SyntheticEvent) {
     e.preventDefault();
@@ -124,9 +127,7 @@ export default function ProfilePage() {
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Profile</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage your account settings.
-        </p>
+        <p className="text-sm text-muted-foreground">Manage your account settings.</p>
       </div>
 
       {error && (
@@ -150,7 +151,15 @@ export default function ProfilePage() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Role</span>
-            <Badge variant={profile?.role === 'admin' ? 'default' : profile?.role === 'developer' ? 'secondary' : 'outline'}>
+            <Badge
+              variant={
+                profile?.role === 'admin'
+                  ? 'default'
+                  : profile?.role === 'developer'
+                    ? 'secondary'
+                    : 'outline'
+              }
+            >
               {profile?.role}
             </Badge>
           </div>
@@ -162,13 +171,20 @@ export default function ProfilePage() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Member since</span>
-            <span className="font-medium">{profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : '—'}</span>
+            <span className="font-medium">
+              {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : '—'}
+            </span>
           </div>
         </div>
       </div>
 
       {/* Edit profile */}
-      <form onSubmit={(e) => { void handleSaveProfile(e); }} className="rounded-lg border p-6">
+      <form
+        onSubmit={(e) => {
+          void handleSaveProfile(e);
+        }}
+        className="rounded-lg border p-6"
+      >
         <h2 className="mb-4 text-lg font-semibold">Edit Profile</h2>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
@@ -176,7 +192,9 @@ export default function ProfilePage() {
             <Input
               id="profile-name"
               value={name}
-              onChange={(e) => { setName(e.target.value); }}
+              onChange={(e) => {
+                setName(e.target.value);
+              }}
               required
             />
           </div>
@@ -186,18 +204,25 @@ export default function ProfilePage() {
               <Input
                 id="profile-telegram"
                 value={telegramId}
-                onChange={(e) => { setTelegramId(e.target.value); }}
+                onChange={(e) => {
+                  setTelegramId(e.target.value);
+                }}
                 placeholder="Your numeric Telegram ID"
                 pattern="\d*"
               />
               <p className="text-xs text-muted-foreground">
-                Used to link your account with the Telegram bot. Message @userinfobot on Telegram to find your numeric ID.
+                Used to link your account with the Telegram bot. Message @userinfobot on Telegram to
+                find your numeric ID.
               </p>
             </div>
           )}
           <div className="flex justify-end">
             <Button type="submit" disabled={saving}>
-              {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Save className="mr-2 size-4" />}
+              {saving ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 size-4" />
+              )}
               Save Changes
             </Button>
           </div>
@@ -205,7 +230,12 @@ export default function ProfilePage() {
       </form>
 
       {/* Change password */}
-      <form onSubmit={(e) => { void handleChangePassword(e); }} className="rounded-lg border p-6">
+      <form
+        onSubmit={(e) => {
+          void handleChangePassword(e);
+        }}
+        className="rounded-lg border p-6"
+      >
         <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
           <KeyRound className="size-5" />
           Change Password
@@ -217,7 +247,9 @@ export default function ProfilePage() {
               id="current-password"
               type="password"
               value={currentPassword}
-              onChange={(e) => { setCurrentPassword(e.target.value); }}
+              onChange={(e) => {
+                setCurrentPassword(e.target.value);
+              }}
               required
             />
           </div>
@@ -227,7 +259,9 @@ export default function ProfilePage() {
               id="new-password"
               type="password"
               value={newPassword}
-              onChange={(e) => { setNewPassword(e.target.value); }}
+              onChange={(e) => {
+                setNewPassword(e.target.value);
+              }}
               minLength={8}
               required
             />
@@ -238,7 +272,9 @@ export default function ProfilePage() {
               id="confirm-password"
               type="password"
               value={confirmPassword}
-              onChange={(e) => { setConfirmPassword(e.target.value); }}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+              }}
               minLength={8}
               required
             />

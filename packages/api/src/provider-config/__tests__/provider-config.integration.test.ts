@@ -26,15 +26,22 @@ function createPrismaMock() {
       }),
       findMany: vi.fn(() => Promise.resolve([...store.values()])),
       create: vi.fn(({ data }: { data: Record<string, unknown> }) => {
-        store.set(data['provider'] as string, { ...data, id: 'test-id', createdAt: new Date(), updatedAt: new Date() });
+        store.set(data['provider'] as string, {
+          ...data,
+          id: 'test-id',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
         return Promise.resolve(store.get(data['provider'] as string));
       }),
-      update: vi.fn(({ where, data }: { where: { provider: string }; data: Record<string, unknown> }) => {
-        const existing = store.get(where.provider);
-        const updated = { ...existing, ...data, updatedAt: new Date() };
-        store.set(where.provider, updated);
-        return Promise.resolve(updated);
-      }),
+      update: vi.fn(
+        ({ where, data }: { where: { provider: string }; data: Record<string, unknown> }) => {
+          const existing = store.get(where.provider);
+          const updated = { ...existing, ...data, updatedAt: new Date() };
+          store.set(where.provider, updated);
+          return Promise.resolve(updated);
+        },
+      ),
       delete: vi.fn(({ where }: { where: { provider: string } }) => {
         store.delete(where.provider);
         return Promise.resolve({});

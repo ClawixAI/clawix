@@ -1,6 +1,7 @@
 // packages/api/src/workspace/__tests__/scoped-fs.test.ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { ScopedFs } from '../scoped-fs.js';
@@ -10,7 +11,9 @@ describe('ScopedFs', () => {
   let scopedFs: ScopedFs;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'scopedfs-'));
+    const rawTmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'scopedfs-'));
+    // Resolve symlinks (e.g., /var -> /private/var on macOS) for consistent comparison
+    tmpDir = fsSync.realpathSync(rawTmpDir);
     scopedFs = new ScopedFs(tmpDir);
   });
 
@@ -155,7 +158,9 @@ describe('ScopedFs', () => {
       await fs.writeFile(path.join(outsideDir, 'secret.txt'), 'secret');
       await fs.symlink(outsideDir, path.join(tmpDir, 'escape'));
 
-      await expect(scopedFs.readFile('/escape/secret.txt', 'utf-8')).rejects.toThrow('Invalid path');
+      await expect(scopedFs.readFile('/escape/secret.txt', 'utf-8')).rejects.toThrow(
+        'Invalid path',
+      );
 
       await fs.rm(outsideDir, { recursive: true, force: true });
     });

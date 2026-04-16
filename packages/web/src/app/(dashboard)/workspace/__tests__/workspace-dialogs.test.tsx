@@ -10,7 +10,9 @@ describe('CreateDialog', () => {
   });
 
   it('renders with folder title', () => {
-    render(<CreateDialog type="directory" open={true} onOpenChange={vi.fn()} onConfirm={vi.fn()} />);
+    render(
+      <CreateDialog type="directory" open={true} onOpenChange={vi.fn()} onConfirm={vi.fn()} />,
+    );
     expect(screen.getByText('Create New Folder')).toBeInTheDocument();
   });
 
@@ -39,21 +41,40 @@ describe('CreateDialog', () => {
 describe('DeleteDialog', () => {
   it('shows file name in title', () => {
     render(
-      <DeleteDialog name="readme.md" isDirectory={false} open={true} onOpenChange={vi.fn()} onConfirm={vi.fn()} />,
+      <DeleteDialog
+        name="readme.md"
+        isDirectory={false}
+        open={true}
+        onOpenChange={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
     );
     expect(screen.getByText(/readme\.md/)).toBeInTheDocument();
   });
 
   it('shows child count for directories', () => {
     render(
-      <DeleteDialog name="src" isDirectory={true} childCount={12} open={true} onOpenChange={vi.fn()} onConfirm={vi.fn()} />,
+      <DeleteDialog
+        name="src"
+        isDirectory={true}
+        childCount={12}
+        open={true}
+        onOpenChange={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
     );
     expect(screen.getByText(/12 items/)).toBeInTheDocument();
   });
 
   it('shows generic message when childCount is undefined', () => {
     render(
-      <DeleteDialog name="src" isDirectory={true} open={true} onOpenChange={vi.fn()} onConfirm={vi.fn()} />,
+      <DeleteDialog
+        name="src"
+        isDirectory={true}
+        open={true}
+        onOpenChange={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
     );
     expect(screen.getByText(/all its contents/)).toBeInTheDocument();
   });
@@ -61,7 +82,13 @@ describe('DeleteDialog', () => {
   it('calls onConfirm when Delete is clicked', async () => {
     const onConfirm = vi.fn();
     render(
-      <DeleteDialog name="file.txt" isDirectory={false} open={true} onOpenChange={vi.fn()} onConfirm={onConfirm} />,
+      <DeleteDialog
+        name="file.txt"
+        isDirectory={false}
+        open={true}
+        onOpenChange={vi.fn()}
+        onConfirm={onConfirm}
+      />,
     );
     await userEvent.click(screen.getByText('Delete'));
     expect(onConfirm).toHaveBeenCalledOnce();

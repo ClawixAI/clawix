@@ -1,14 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Loader2,
-  MoreHorizontal,
-  Plus,
-  Radio,
-  MessageSquare,
-  Globe,
-} from 'lucide-react';
+import { Loader2, MoreHorizontal, Plus, Radio, MessageSquare, Globe } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -131,7 +124,9 @@ export function ChannelsTab() {
     }
   }, []);
 
-  useEffect(() => { void fetchChannels(); }, [fetchChannels]);
+  useEffect(() => {
+    void fetchChannels();
+  }, [fetchChannels]);
 
   async function handleCreate(form: FormData) {
     setSaving(true);
@@ -208,10 +203,13 @@ export function ChannelsTab() {
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Manage messaging channel integrations.
-        </p>
-        <Button size="sm" onClick={() => { setCreateOpen(true); }}>
+        <p className="text-sm text-muted-foreground">Manage messaging channel integrations.</p>
+        <Button
+          size="sm"
+          onClick={() => {
+            setCreateOpen(true);
+          }}
+        >
           <Plus className="mr-1 size-4" />
           Add Channel
         </Button>
@@ -260,24 +258,25 @@ export function ChannelsTab() {
                   <TableCell>
                     {channel.isActive ? (
                       connectedIds.has(channel.id) ? (
-                        <Badge variant="secondary" className="bg-green-500/15 text-green-600 border-green-500/30">
+                        <Badge
+                          variant="secondary"
+                          className="bg-green-500/15 text-green-600 border-green-500/30"
+                        >
                           connected
                         </Badge>
                       ) : (
-                        <Badge variant="destructive">
-                          disconnected
-                        </Badge>
+                        <Badge variant="destructive">disconnected</Badge>
                       )
                     ) : (
-                      <Badge variant="outline">
-                        disabled
-                      </Badge>
+                      <Badge variant="outline">disabled</Badge>
                     )}
                   </TableCell>
                   <TableCell>
                     <Switch
                       checked={channel.isActive}
-                      onCheckedChange={() => { void handleToggleActive(channel); }}
+                      onCheckedChange={() => {
+                        void handleToggleActive(channel);
+                      }}
                       disabled={saving}
                     />
                   </TableCell>
@@ -289,12 +288,18 @@ export function ChannelsTab() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => { setEditChannel(channel); }}>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setEditChannel(channel);
+                          }}
+                        >
                           Configure
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
-                          onSelect={() => { setDeleteChannel(channel); }}
+                          onSelect={() => {
+                            setDeleteChannel(channel);
+                          }}
                         >
                           Remove
                         </DropdownMenuItem>
@@ -317,29 +322,35 @@ export function ChannelsTab() {
 
       <EditChannelDialog
         channel={editChannel}
-        onOpenChange={(open) => { if (!open) setEditChannel(null); }}
+        onOpenChange={(open) => {
+          if (!open) setEditChannel(null);
+        }}
         saving={saving}
         onSubmit={handleUpdate}
       />
 
       <AlertDialog
         open={deleteChannel !== null}
-        onOpenChange={(open) => { if (!open) setDeleteChannel(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeleteChannel(null);
+        }}
       >
         {deleteChannel && (
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Remove Channel</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to remove <strong>{deleteChannel.name}</strong>?
-                This will disconnect the channel and remove its configuration.
+                Are you sure you want to remove <strong>{deleteChannel.name}</strong>? This will
+                disconnect the channel and remove its configuration.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => { void handleDelete(deleteChannel.id); }}
+                onClick={() => {
+                  void handleDelete(deleteChannel.id);
+                }}
                 disabled={saving}
               >
                 {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -352,7 +363,9 @@ export function ChannelsTab() {
 
       <SuccessDialog
         open={successMessage !== ''}
-        onOpenChange={(open) => { if (!open) setSuccessMessage(''); }}
+        onOpenChange={(open) => {
+          if (!open) setSuccessMessage('');
+        }}
         title="Channel Added"
         description={successMessage}
       />

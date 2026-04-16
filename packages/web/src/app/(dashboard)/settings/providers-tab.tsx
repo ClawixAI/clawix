@@ -1,13 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Loader2,
-  MoreHorizontal,
-  Plus,
-  Star,
-  Zap,
-} from 'lucide-react';
+import { Loader2, MoreHorizontal, Plus, Star, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -84,7 +78,9 @@ export function ProvidersTab() {
     }
   }, []);
 
-  useEffect(() => { void fetchProviders(); }, [fetchProviders]);
+  useEffect(() => {
+    void fetchProviders();
+  }, [fetchProviders]);
 
   async function handleCreate(data: Record<string, unknown>) {
     setSaving(true);
@@ -96,7 +92,9 @@ export function ProvidersTab() {
       });
       setCreateOpen(false);
       await fetchProviders();
-      setSuccessMessage(`${(data as { displayName?: string }).displayName ?? 'Provider'} has been added.`);
+      setSuccessMessage(
+        `${(data as { displayName?: string }).displayName ?? 'Provider'} has been added.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create provider');
     } finally {
@@ -173,7 +171,12 @@ export function ProvidersTab() {
         <p className="text-sm text-muted-foreground">
           Manage AI provider API keys and configurations.
         </p>
-        <Button size="sm" onClick={() => { setCreateOpen(true); }}>
+        <Button
+          size="sm"
+          onClick={() => {
+            setCreateOpen(true);
+          }}
+        >
           <Plus className="mr-1 size-4" />
           Add Provider
         </Button>
@@ -226,7 +229,9 @@ export function ProvidersTab() {
                     <Badge
                       variant={p.isDefault ? 'default' : 'outline'}
                       className={`cursor-pointer gap-1 text-xs ${p.isDefault ? '' : 'opacity-40 hover:opacity-70'}`}
-                      onClick={() => { if (!p.isDefault) void handleSetDefault(p); }}
+                      onClick={() => {
+                        if (!p.isDefault) void handleSetDefault(p);
+                      }}
                     >
                       <Star className={`size-3 ${p.isDefault ? 'fill-current' : ''}`} />
                       Default
@@ -235,7 +240,9 @@ export function ProvidersTab() {
                   <TableCell>
                     <Switch
                       checked={p.isEnabled}
-                      onCheckedChange={() => { void handleToggleEnabled(p); }}
+                      onCheckedChange={() => {
+                        void handleToggleEnabled(p);
+                      }}
                       disabled={saving}
                     />
                   </TableCell>
@@ -247,13 +254,19 @@ export function ProvidersTab() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => { setEditProvider(p); }}>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setEditProvider(p);
+                          }}
+                        >
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive"
-                          onSelect={() => { setDeleteProvider(p); }}
+                          onSelect={() => {
+                            setDeleteProvider(p);
+                          }}
                         >
                           Remove
                         </DropdownMenuItem>
@@ -278,29 +291,35 @@ export function ProvidersTab() {
       <EditProviderDialog
         key={editProvider?.id ?? 'none'}
         provider={editProvider}
-        onOpenChange={(open) => { if (!open) setEditProvider(null); }}
+        onOpenChange={(open) => {
+          if (!open) setEditProvider(null);
+        }}
         saving={saving}
         onSubmit={handleUpdate}
       />
 
       <AlertDialog
         open={deleteProvider !== null}
-        onOpenChange={(open) => { if (!open) setDeleteProvider(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeleteProvider(null);
+        }}
       >
         {deleteProvider && (
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Remove Provider</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to remove <strong>{deleteProvider.displayName}</strong> ({deleteProvider.provider})?
-                Agents using this provider will fail until reconfigured.
+                Are you sure you want to remove <strong>{deleteProvider.displayName}</strong> (
+                {deleteProvider.provider})? Agents using this provider will fail until reconfigured.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => { void handleDelete(deleteProvider.provider); }}
+                onClick={() => {
+                  void handleDelete(deleteProvider.provider);
+                }}
                 disabled={saving}
               >
                 {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -313,7 +332,9 @@ export function ProvidersTab() {
 
       <SuccessDialog
         open={successMessage !== ''}
-        onOpenChange={(open) => { if (!open) setSuccessMessage(''); }}
+        onOpenChange={(open) => {
+          if (!open) setSuccessMessage('');
+        }}
         title="Provider Added"
         description={successMessage}
       />

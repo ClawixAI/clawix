@@ -25,11 +25,12 @@ export class AgentsService {
   async listAgents(
     pagination: PaginationInput,
     role?: 'primary' | 'worker',
+    options?: { includeCreatedBy?: boolean },
   ): Promise<PaginatedResponse<AgentDefinition>> {
     if (role) {
       return this.agentDefRepo.findByRole(role, pagination);
     }
-    return this.agentDefRepo.findAll(pagination);
+    return this.agentDefRepo.findAll(pagination, options);
   }
 
   async getAgent(id: string): Promise<AgentDefinition> {
@@ -82,15 +83,18 @@ export class AgentsService {
     return this.userAgentRepo.findAllByUserIdWithDetails(userId);
   }
 
-  async createSubAgent(input: {
-    readonly userId: string;
-    readonly name: string;
-    readonly description?: string;
-    readonly systemPrompt: string;
-    readonly provider: string;
-    readonly model: string;
-    readonly maxTokensPerRun?: number;
-  }, createdById?: string) {
+  async createSubAgent(
+    input: {
+      readonly userId: string;
+      readonly name: string;
+      readonly description?: string;
+      readonly systemPrompt: string;
+      readonly provider: string;
+      readonly model: string;
+      readonly maxTokensPerRun?: number;
+    },
+    createdById?: string,
+  ) {
     // Find user's primary agent to get workspace path
     const primaryUserAgent = await this.userAgentRepo.findByUserId(input.userId);
     const workspacePath = primaryUserAgent?.workspacePath ?? `users/${input.userId}/workspace`;
@@ -118,10 +122,7 @@ export class AgentsService {
     return { agentDefinition: agentDef, userAgent };
   }
 
-  async assignUserAgent(input: {
-    readonly userId: string;
-    readonly agentDefinitionId: string;
-  }) {
+  async assignUserAgent(input: { readonly userId: string; readonly agentDefinitionId: string }) {
     const primaryUserAgent = await this.userAgentRepo.findByUserId(input.userId);
     const workspacePath = primaryUserAgent?.workspacePath ?? `users/${input.userId}/workspace`;
 

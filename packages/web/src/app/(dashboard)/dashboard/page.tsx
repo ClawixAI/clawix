@@ -159,117 +159,113 @@ export default function DashboardPage() {
 
   return (
     <VantaBackground effect="topology" className="min-h-[calc(100vh-3.5rem)] p-6">
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Here&apos;s an overview of your AI orchestration platform.
-        </p>
-      </div>
-
-      {error && (
-        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
+      <div className="flex flex-col gap-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Here&apos;s an overview of your AI orchestration platform.
+          </p>
         </div>
-      )}
 
-      {/* Stats cards */}
-      <div data-animate="stat-cards" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {statCards.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-              <stat.icon className="size-4 text-muted-foreground" />
+        {error && (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
+        {/* Stats cards */}
+        <div data-animate="stat-cards" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {statCards.map((stat) => (
+            <Card key={stat.title}>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+                <stat.icon className="size-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold tabular-nums">{stat.value}</div>
+                {stat.subtitle && <p className="text-xs text-muted-foreground">{stat.subtitle}</p>}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-5">
+          {/* Recent runs table */}
+          <Card className="lg:col-span-3">
+            <CardHeader>
+              <CardTitle>Recent Agent Runs</CardTitle>
+              <CardDescription>Latest activity across all agents.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold tabular-nums">{stat.value}</div>
-              {stat.subtitle && (
-                <p className="text-xs text-muted-foreground">{stat.subtitle}</p>
+              {recentRuns.length === 0 ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">
+                  No agent runs yet.
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Agent</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Time</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentRuns.map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell className="font-medium">{run.agentName}</TableCell>
+                        <TableCell>
+                          <Badge variant={statusVariant(run.status)}>{run.status}</Badge>
+                        </TableCell>
+                        <TableCell className="tabular-nums">
+                          {formatDuration(run.durationMs)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatTimeAgo(run.startedAt)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
-        ))}
-      </div>
 
-      <div className="grid gap-6 lg:grid-cols-5">
-        {/* Recent runs table */}
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>Recent Agent Runs</CardTitle>
-            <CardDescription>Latest activity across all agents.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recentRuns.length === 0 ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">
-                No agent runs yet.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Agent</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Duration</TableHead>
-                    <TableHead>Time</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentRuns.map((run) => (
-                    <TableRow key={run.id}>
-                      <TableCell className="font-medium">{run.agentName}</TableCell>
-                      <TableCell>
-                        <Badge variant={statusVariant(run.status)}>{run.status}</Badge>
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {formatDuration(run.durationMs)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatTimeAgo(run.startedAt)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent activity */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Latest actions in your workspace.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {recentActivity.length === 0 ? (
-              <div className="py-6 text-center text-sm text-muted-foreground">
-                No activity yet.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {recentActivity.map((activity) => (
-                  <div key={activity.id} className="flex items-start gap-3">
-                    <div className="mt-0.5 size-2 shrink-0 rounded-full bg-primary" />
-                    <div className="flex-1 text-sm">
-                      <p>
-                        <span className="font-medium">{activity.userName}</span>
-                        {' '}
-                        <span className="text-muted-foreground">{activity.action}</span>
-                        {' '}
-                        <span>{activity.resource}</span>
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatTimeAgo(activity.createdAt)}
-                      </p>
+          {/* Recent activity */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Recent Activity</CardTitle>
+              <CardDescription>Latest actions in your workspace.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {recentActivity.length === 0 ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">
+                  No activity yet.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {recentActivity.map((activity) => (
+                    <div key={activity.id} className="flex items-start gap-3">
+                      <div className="mt-0.5 size-2 shrink-0 rounded-full bg-primary" />
+                      <div className="flex-1 text-sm">
+                        <p>
+                          <span className="font-medium">{activity.userName}</span>{' '}
+                          <span className="text-muted-foreground">{activity.action}</span>{' '}
+                          <span>{activity.resource}</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatTimeAgo(activity.createdAt)}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
     </VantaBackground>
   );
 }

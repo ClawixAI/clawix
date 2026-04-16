@@ -64,7 +64,10 @@ export function createWebFetchTool(): Tool {
           connect: {
             lookup: (_hostname, _options, callback) => {
               callback(null, [
-                { address: validated.resolvedIp, family: validated.resolvedIp.includes(':') ? 6 : 4 },
+                {
+                  address: validated.resolvedIp,
+                  family: validated.resolvedIp.includes(':') ? 6 : 4,
+                },
               ]);
             },
           },

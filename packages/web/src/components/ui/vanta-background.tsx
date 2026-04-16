@@ -80,7 +80,11 @@ export function VantaBackground({ effect, children, className }: VantaBackground
     return () => {
       cancelled = true;
       if (effectRef.current) {
-        try { effectRef.current.destroy(); } catch { /* ignore */ }
+        try {
+          effectRef.current.destroy();
+        } catch {
+          /* ignore */
+        }
         effectRef.current = null;
       }
       setReady(false);
@@ -92,7 +96,10 @@ export function VantaBackground({ effect, children, className }: VantaBackground
       <div
         ref={bgRef}
         className={`fixed inset-0 -z-10 transition-opacity duration-1000 ${ready ? (effect === 'topology' ? 'opacity-60' : 'opacity-30') : 'opacity-0'}`}
-        style={{ maskImage: 'linear-gradient(to bottom, transparent 0%, black 30%)', WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 30%)' }}
+        style={{
+          maskImage: 'linear-gradient(to bottom, transparent 0%, black 30%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 30%)',
+        }}
       />
       {children}
     </div>

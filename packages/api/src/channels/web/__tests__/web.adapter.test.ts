@@ -16,7 +16,11 @@ vi.mock('@clawix/shared', async (importOriginal) => {
   };
 });
 
-function makeMockSocket(readyState = 1): { readyState: number; send: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> } {
+function makeMockSocket(readyState = 1): {
+  readyState: number;
+  send: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+} {
   return { readyState, send: vi.fn(), close: vi.fn() };
 }
 
@@ -198,7 +202,11 @@ describe('createWebAdapter', () => {
       const socket = makeMockSocket();
       adapter.addConnection('user-1', socket as never);
 
-      await adapter.handleClientMessage('user-1', 'Alice', JSON.stringify({ type: 'ping', payload: {} }));
+      await adapter.handleClientMessage(
+        'user-1',
+        'Alice',
+        JSON.stringify({ type: 'ping', payload: {} }),
+      );
 
       expect(socket.send).toHaveBeenCalledOnce();
       const payload = JSON.parse(socket.send.mock.calls[0]![0] as string) as { type: string };

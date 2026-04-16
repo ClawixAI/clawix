@@ -26,16 +26,19 @@ When the user asks to create, modify, or fix a projector item:
 Split into exactly 3 sequential spawns. Run ALL automatically — NEVER ask the user for permission between steps.
 
 **Spawn #1 (HTML + CSS):**
+
 ```
 spawn(agent_name="coder", prompt="read_file(\"/skills/builtin/projector-creator/SKILL.md\"). read_file(\"/skills/builtin/projector-creator/references/starter-template.html\"). Copy starter template to /workspace/projector/<NAME>/index.html. Replace ALL placeholders. Build the COMPLETE HTML structure with all controls, inputs, buttons, sliders, dropzone, content areas. Add ALL needed CSS. The <script> should contain ONLY: <script>// JAVASCRIPT GOES HERE</script>. Do NOT write any JS yet. Verify file ends with </html>. TASK: <user requirements>")
 ```
 
 **Spawn #2 (JavaScript):**
+
 ```
 spawn(agent_name="coder", prompt="FIRST: read_file(\"/skills/builtin/projector-creator/references/js-patterns.md\") — this contains ready-to-use JS code blocks for all common features. THEN: read_file /workspace/projector/<NAME>/index.html to see the HTML element IDs. THEN: use edit_file to replace '// JAVASCRIPT GOES HERE' with COMPLETE JavaScript. Copy the patterns from the skill and adapt element IDs to match the HTML. Every function must be real working code — no stubs, no TODOs. Verify after.")
 ```
 
 **Spawn #3 (Review):**
+
 ```
 spawn(agent_name="coder", prompt="read_file /workspace/projector/<NAME>/index.html. Verify: (1) ends with </html>. (2) No empty functions or // STUB or // TODO. (3) All buttons and sliders have working handlers. (4) No syntax errors. Fix any issues with edit_file.")
 ```
@@ -77,76 +80,208 @@ For complex tools, also read the reference example for inspiration:
 Every projector MUST include this exact CSS reset and theme:
 
 ```css
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0f0f1a;
+  color: #e0e0e0;
+  min-height: 100vh;
+}
 
-.header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 20px 30px; border-bottom: 1px solid #2a2a4a; }
-.header h1 { font-size: 22px; color: #fff; }
-.header h1 span { color: #e94560; }
-.header .subtitle { color: #888; font-size: 13px; }
+.header {
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  padding: 20px 30px;
+  border-bottom: 1px solid #2a2a4a;
+}
+.header h1 {
+  font-size: 22px;
+  color: #fff;
+}
+.header h1 span {
+  color: #e94560;
+}
+.header .subtitle {
+  color: #888;
+  font-size: 13px;
+}
 ```
 
 ## Color Palette
 
-| Element | Color |
-|---|---|
-| Body background | `#0f0f1a` |
-| Panel/sidebar | `#16213e` or `#1a1a2e` |
-| Borders | `1px solid #2a2a4a` |
-| Primary text | `#e0e0e0` |
-| Muted text | `#888` |
-| Label text | `#aaa` |
-| Accent (buttons, active) | `#e94560` |
-| Accent hover | `#ff6b81` |
-| Input backgrounds | `#2a2a4a` |
-| Section headers | `#e94560`, uppercase, letter-spacing: 1px |
-| Active items | border `#e94560`, bg `rgba(233,69,96,0.15)` |
+| Element                  | Color                                       |
+| ------------------------ | ------------------------------------------- |
+| Body background          | `#0f0f1a`                                   |
+| Panel/sidebar            | `#16213e` or `#1a1a2e`                      |
+| Borders                  | `1px solid #2a2a4a`                         |
+| Primary text             | `#e0e0e0`                                   |
+| Muted text               | `#888`                                      |
+| Label text               | `#aaa`                                      |
+| Accent (buttons, active) | `#e94560`                                   |
+| Accent hover             | `#ff6b81`                                   |
+| Input backgrounds        | `#2a2a4a`                                   |
+| Section headers          | `#e94560`, uppercase, letter-spacing: 1px   |
+| Active items             | border `#e94560`, bg `rgba(233,69,96,0.15)` |
 
 ## UI Patterns
 
 ### Buttons
+
 ```css
-.btn { padding: 12px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.btn-primary { background: #e94560; color: white; }
-.btn-primary:hover { background: #ff6b81; }
-.btn-secondary { background: #2a2a4a; color: #ccc; }
-.btn-secondary:hover { background: #3a3a5a; color: #fff; }
+.btn {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-primary {
+  background: #e94560;
+  color: white;
+}
+.btn-primary:hover {
+  background: #ff6b81;
+}
+.btn-secondary {
+  background: #2a2a4a;
+  color: #ccc;
+}
+.btn-secondary:hover {
+  background: #3a3a5a;
+  color: #fff;
+}
 ```
 
 ### Range Sliders
+
 ```css
-input[type="range"] { width: 100%; -webkit-appearance: none; height: 6px; background: #2a2a4a; border-radius: 3px; outline: none; }
-input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #e94560; cursor: pointer; }
+input[type='range'] {
+  width: 100%;
+  -webkit-appearance: none;
+  height: 6px;
+  background: #2a2a4a;
+  border-radius: 3px;
+  outline: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e94560;
+  cursor: pointer;
+}
 ```
 
 ### Slider Labels (show current value)
+
 ```css
-.control label { display: flex; justify-content: space-between; font-size: 13px; color: #aaa; margin-bottom: 6px; }
-.control label .val { color: #e94560; font-weight: 600; }
+.control label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #aaa;
+  margin-bottom: 6px;
+}
+.control label .val {
+  color: #e94560;
+  font-weight: 600;
+}
 ```
 
 ### Sidebar Layout
+
 ```css
-.main { display: flex; height: calc(100vh - 70px); }
-.sidebar { width: 300px; min-width: 300px; background: #16213e; padding: 20px; overflow-y: auto; border-right: 1px solid #2a2a4a; }
-.section { margin-bottom: 24px; }
-.section h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #e94560; margin-bottom: 12px; }
+.main {
+  display: flex;
+  height: calc(100vh - 70px);
+}
+.sidebar {
+  width: 300px;
+  min-width: 300px;
+  background: #16213e;
+  padding: 20px;
+  overflow-y: auto;
+  border-right: 1px solid #2a2a4a;
+}
+.section {
+  margin-bottom: 24px;
+}
+.section h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #e94560;
+  margin-bottom: 12px;
+}
 ```
 
 ### Preset Buttons Grid
+
 ```css
-.preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.preset-btn { padding: 10px 8px; border: 1px solid #2a2a4a; background: #1a1a2e; color: #ccc; border-radius: 8px; cursor: pointer; font-size: 12px; text-align: center; transition: all 0.2s; }
-.preset-btn:hover { border-color: #e94560; color: #fff; }
-.preset-btn.active { border-color: #e94560; background: rgba(233,69,96,0.15); color: #e94560; }
+.preset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.preset-btn {
+  padding: 10px 8px;
+  border: 1px solid #2a2a4a;
+  background: #1a1a2e;
+  color: #ccc;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: center;
+  transition: all 0.2s;
+}
+.preset-btn:hover {
+  border-color: #e94560;
+  color: #fff;
+}
+.preset-btn.active {
+  border-color: #e94560;
+  background: rgba(233, 69, 96, 0.15);
+  color: #e94560;
+}
 ```
 
 ### Drop Zone
+
 ```css
-.dropzone { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(15,15,26,0.95); cursor: pointer; }
-.drop-icon { width: 80px; height: 80px; border: 3px dashed #e94560; border-radius: 50%; display: flex; justify-content: center; align-items: center; margin-bottom: 20px; }
-.dropzone h2 { color: #fff; margin-bottom: 8px; }
-.dropzone p { color: #888; font-size: 14px; }
+.dropzone {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: rgba(15, 15, 26, 0.95);
+  cursor: pointer;
+}
+.drop-icon {
+  width: 80px;
+  height: 80px;
+  border: 3px dashed #e94560;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.dropzone h2 {
+  color: #fff;
+  margin-bottom: 8px;
+}
+.dropzone p {
+  color: #888;
+  font-size: 14px;
+}
 ```
 
 ## Building Strategy (IMPORTANT — prevents truncation)
@@ -173,33 +308,39 @@ The iframe sends a message to the parent page, which saves the file to `/workspa
 ```javascript
 // Save text file to workspace
 function saveToWorkspace(filename, textContent) {
-  window.parent.postMessage({
-    type: 'projector:save',
-    filename: filename,
-    content: textContent,
-    encoding: 'text'
-  }, '*');
+  window.parent.postMessage(
+    {
+      type: 'projector:save',
+      filename: filename,
+      content: textContent,
+      encoding: 'text',
+    },
+    '*',
+  );
 }
 
 // Save binary file (image, etc.) to workspace
 function saveBinaryToWorkspace(filename, canvas) {
-  canvas.toBlob(function(blob) {
+  canvas.toBlob(function (blob) {
     const reader = new FileReader();
-    reader.onload = function() {
+    reader.onload = function () {
       const base64 = reader.result.split(',')[1];
-      window.parent.postMessage({
-        type: 'projector:save',
-        filename: filename,
-        content: base64,
-        encoding: 'base64'
-      }, '*');
+      window.parent.postMessage(
+        {
+          type: 'projector:save',
+          filename: filename,
+          content: base64,
+          encoding: 'base64',
+        },
+        '*',
+      );
     };
     reader.readAsDataURL(blob);
   });
 }
 
 // Listen for save result (optional, for UI feedback)
-window.addEventListener('message', function(event) {
+window.addEventListener('message', function (event) {
   if (event.data && event.data.type === 'projector:save-result') {
     if (event.data.success) {
       alert('Saved to workspace: ' + event.data.path);
@@ -211,9 +352,16 @@ window.addEventListener('message', function(event) {
 ```
 
 ### Button styling for Save to Workspace
+
 ```css
-.btn-save-workspace { background: #16213e; color: #e94560; border: 1px solid #e94560; }
-.btn-save-workspace:hover { background: rgba(233,69,96,0.15); }
+.btn-save-workspace {
+  background: #16213e;
+  color: #e94560;
+  border: 1px solid #e94560;
+}
+.btn-save-workspace:hover {
+  background: rgba(233, 69, 96, 0.15);
+}
 ```
 
 Always place the "Save to Workspace" button right next to the "Download" button.
@@ -223,16 +371,24 @@ Always place the "Save to Workspace" button right next to the "Download" button.
 Projector tools run in a sandboxed iframe with NO network access. They cannot use `fetch()`, `XMLHttpRequest`, or any external API calls.
 
 If the tool needs external data (e.g. exchange rates, weather, news):
+
 1. The **agent** must fetch the data FIRST using `web_search` or `web_fetch` tools (before building the HTML)
 2. Embed the data as a **hardcoded JSON object** inside the `<script>` tag
 3. Add a comment with the date: `// Rates as of YYYY-MM-DD`
 4. The tool works offline with the embedded data
 
 Example for currency converter:
+
 ```javascript
 // Exchange rates as of 2026-04-12 (embedded by agent via web_fetch)
 const RATES = {
-  USD: 1, EUR: 0.92, GBP: 0.79, JPY: 151.5, HKD: 7.82, CNY: 7.24, TWD: 32.1
+  USD: 1,
+  EUR: 0.92,
+  GBP: 0.79,
+  JPY: 151.5,
+  HKD: 7.82,
+  CNY: 7.24,
+  TWD: 32.1,
 };
 ```
 
@@ -241,6 +397,7 @@ NEVER use `fetch()` or any network calls inside projector HTML.
 ## Responsive Layout (IMPORTANT)
 
 Projector tools run inside a modal iframe. The tool MUST fill the available space responsively:
+
 - Use `height: 100vh` on the main layout container, NOT fixed pixel heights.
 - For sidebar layouts: use `display: flex; height: calc(100vh - header_height)`.
 - For simple tools without a sidebar: center the content using `display: flex; justify-content: center; align-items: center; min-height: calc(100vh - 70px)`.

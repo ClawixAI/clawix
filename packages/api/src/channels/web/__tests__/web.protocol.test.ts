@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  parseClientMessage,
-  serializeServerMessage,
-  type ServerMessage,
-} from '../web.protocol.js';
+import { parseClientMessage, serializeServerMessage, type ServerMessage } from '../web.protocol.js';
 
 describe('web.protocol', () => {
   describe('parseClientMessage', () => {

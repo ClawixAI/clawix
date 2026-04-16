@@ -12,32 +12,23 @@ import {
 /* ------------------------------------------------------------------ */
 
 describe('isCodexModel', () => {
-  it.each([
-    'gpt-5.1-codex-mini',
-    'gpt-5-codex',
-    'codex-mini',
-  ])('returns true for codex model: %s', (model) => {
+  it.each(['gpt-5.1-codex-mini', 'gpt-5-codex', 'codex-mini'])(
+    'returns true for codex model: %s',
+    (model) => {
+      expect(isCodexModel(model)).toBe(true);
+    },
+  );
+
+  it.each(['gpt-5', 'gpt-5.1', 'gpt-5.4'])('returns true for gpt-5.x model: %s', (model) => {
     expect(isCodexModel(model)).toBe(true);
   });
 
-  it.each([
-    'gpt-5',
-    'gpt-5.1',
-    'gpt-5.4',
-  ])('returns true for gpt-5.x model: %s', (model) => {
-    expect(isCodexModel(model)).toBe(true);
-  });
-
-  it.each([
-    'gpt-4.1',
-    'gpt-4o',
-    'gpt-4o-mini',
-    'o3-mini',
-    'o4-mini',
-    'claude-3-opus',
-  ])('returns false for non-codex model: %s', (model) => {
-    expect(isCodexModel(model)).toBe(false);
-  });
+  it.each(['gpt-4.1', 'gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o4-mini', 'claude-3-opus'])(
+    'returns false for non-codex model: %s',
+    (model) => {
+      expect(isCodexModel(model)).toBe(false);
+    },
+  );
 });
 
 /* ------------------------------------------------------------------ */
@@ -79,9 +70,7 @@ describe('toResponsesTool', () => {
 
 describe('toResponsesInput', () => {
   it('returns a plain string input for a single user message', () => {
-    const messages: ChatMessage[] = [
-      { role: 'user', content: 'Hello!' },
-    ];
+    const messages: ChatMessage[] = [{ role: 'user', content: 'Hello!' }];
 
     const result = toResponsesInput(messages);
 
@@ -111,9 +100,7 @@ describe('toResponsesInput', () => {
       {
         role: 'assistant',
         content: '',
-        toolCalls: [
-          { id: 'call_1', name: 'get_weather', arguments: { location: 'NYC' } },
-        ],
+        toolCalls: [{ id: 'call_1', name: 'get_weather', arguments: { location: 'NYC' } }],
       },
       { role: 'tool', content: '72F sunny', toolCallId: 'call_1' },
       { role: 'assistant', content: 'It is 72F and sunny in NYC.' },

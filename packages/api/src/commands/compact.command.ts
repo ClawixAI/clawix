@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '@clawix/shared';
-import type { SessionCommand, SessionCommandContext, SessionCommandResult } from './session-command.js';
+import type {
+  SessionCommand,
+  SessionCommandContext,
+  SessionCommandResult,
+} from './session-command.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AgentRunRepository } from '../db/agent-run.repository.js';
 import { MemoryConsolidationService } from '../engine/memory-consolidation.service.js';

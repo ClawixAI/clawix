@@ -51,27 +51,28 @@ describe('AnthropicProvider', () => {
 
   it('maps tool_use stop reason and extracts tool calls', async () => {
     mockCreate.mockResolvedValueOnce({
-      content: [{
-        type: 'tool_use',
-        id: 'toolu_123',
-        name: 'web_search',
-        input: { query: 'test' },
-      }],
+      content: [
+        {
+          type: 'tool_use',
+          id: 'toolu_123',
+          name: 'web_search',
+          input: { query: 'test' },
+        },
+      ],
       stop_reason: 'tool_use',
       usage: { input_tokens: 20, output_tokens: 15 },
     });
 
     const provider = new AnthropicProvider('test-key');
-    const result = await provider.chat(
-      [{ role: 'user', content: 'Search for test' }],
-      {
-        tools: [{
+    const result = await provider.chat([{ role: 'user', content: 'Search for test' }], {
+      tools: [
+        {
           name: 'web_search',
           description: 'Search the web',
           inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
-        }],
-      },
-    );
+        },
+      ],
+    });
 
     expect(result.finishReason).toBe('tool_use');
     expect(result.toolCalls).toHaveLength(1);

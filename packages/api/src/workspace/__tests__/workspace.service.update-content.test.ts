@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 
-import { UserAgentRepository } from '../../db/user-agent.repository.js';
+import type { UserAgentRepository } from '../../db/user-agent.repository.js';
 import { WorkspaceService } from '../workspace.service.js';
 
 vi.mock('../scoped-fs.js');

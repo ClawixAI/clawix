@@ -36,9 +36,7 @@ function formatDateLabel(iso: string): string {
 function DateSeparator({ label }: { label: string }) {
   return (
     <div className="flex items-center justify-center py-2">
-      <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-        {label}
-      </span>
+      <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">{label}</span>
     </div>
   );
 }
@@ -68,9 +66,7 @@ function dedentCodeBlocks(md: string): string {
       const lines = body.split('\n');
       const nonEmpty = lines.filter((l) => l.trim().length > 0);
       if (nonEmpty.length === 0) return `${open}${body}${close}`;
-      const minIndent = Math.min(
-        ...nonEmpty.map((l) => l.match(/^(\s*)/)?.[1]?.length ?? 0),
-      );
+      const minIndent = Math.min(...nonEmpty.map((l) => /^(\s*)/.exec(l)?.[1]?.length ?? 0));
       if (minIndent === 0) return `${open}${body}${close}`;
       const dedented = lines.map((l) => l.slice(minIndent)).join('\n');
       return `${open}${dedented}${close}`;
@@ -114,9 +110,7 @@ function TypingIndicator() {
       <div className="flex size-6 shrink-0 items-center justify-center rounded-full border border-foreground/20 bg-muted">
         <Bot className="size-3.5 animate-pulse" />
       </div>
-      <p className="text-sm text-muted-foreground animate-pulse">
-        Thinking...
-      </p>
+      <p className="text-sm text-muted-foreground animate-pulse">Thinking...</p>
     </div>
   );
 }
@@ -185,7 +179,9 @@ export function ChatThread({
       lastHeight = h;
     }, 200);
 
-    return () => { clearInterval(poll); };
+    return () => {
+      clearInterval(poll);
+    };
   }, [loading, messages.length]);
 
   // Auto-scroll to bottom when new messages arrive.
@@ -230,11 +226,16 @@ export function ChatThread({
     };
 
     el.addEventListener('scroll', onScroll, { passive: true });
-    return () => { el.removeEventListener('scroll', onScroll); };
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+    };
   }, [hasMore, loadingMore, onLoadMore]);
 
   const scrollToBottom = useCallback(() => {
-    scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' });
+    scrollContainerRef.current?.scrollTo({
+      top: scrollContainerRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
   }, []);
 
   if (loading) {
@@ -250,63 +251,60 @@ export function ChatThread({
 
   return (
     <div className="relative flex-1 overflow-hidden">
-      <div
-        ref={scrollContainerRef}
-        className="h-full overflow-auto px-6 py-6"
-      >
-      <div className="mx-auto flex max-w-[768px] flex-col gap-6">
-        {/* Load more indicator */}
-        {loadingMore && (
-          <div className="flex justify-center py-2">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        )}
-        {hasMore && !loadingMore && (
-          <div className="flex justify-center">
-            <button
-              className="text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                if (scrollContainerRef.current) {
-                  prevHeightRef.current = scrollContainerRef.current.scrollHeight;
-                }
-                onLoadMore();
-              }}
-            >
-              Load older messages
-            </button>
-          </div>
-        )}
-
-        {messages.map((msg) => {
-          // Hide system messages, tool results, and empty assistant messages (tool call requests)
-          if (msg.role === 'system' || msg.role === 'tool') return null;
-          if (msg.role === 'assistant' && !msg.content.trim()) return null;
-          // Hide sub-agent result injections (system-generated, stored as user role)
-          if (msg.role === 'user' && msg.content.startsWith('[Sub-Agent Result]')) return null;
-          // Hide runtime context injections (system-generated, stored as user role)
-          if (msg.role === 'user' && msg.content.startsWith('[Runtime Context]')) return null;
-
-          // Date separator
-          const dateLabel = formatDateLabel(msg.createdAt);
-          const showDate = dateLabel !== lastDateLabel;
-          lastDateLabel = dateLabel;
-
-          return (
-            <div key={msg.id}>
-              {showDate && <DateSeparator label={dateLabel} />}
-              {msg.role === 'user' ? (
-                <UserMessage content={msg.content} createdAt={msg.createdAt} />
-              ) : (
-                <AgentMessage content={msg.content} createdAt={msg.createdAt} />
-              )}
+      <div ref={scrollContainerRef} className="h-full overflow-auto px-6 py-6">
+        <div className="mx-auto flex max-w-[768px] flex-col gap-6">
+          {/* Load more indicator */}
+          {loadingMore && (
+            <div className="flex justify-center py-2">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
-          );
-        })}
+          )}
+          {hasMore && !loadingMore && (
+            <div className="flex justify-center">
+              <button
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  if (scrollContainerRef.current) {
+                    prevHeightRef.current = scrollContainerRef.current.scrollHeight;
+                  }
+                  onLoadMore();
+                }}
+              >
+                Load older messages
+              </button>
+            </div>
+          )}
 
-        {isTyping && <TypingIndicator />}
+          {messages.map((msg) => {
+            // Hide system messages, tool results, and empty assistant messages (tool call requests)
+            if (msg.role === 'system' || msg.role === 'tool') return null;
+            if (msg.role === 'assistant' && !msg.content.trim()) return null;
+            // Hide sub-agent result injections (system-generated, stored as user role)
+            if (msg.role === 'user' && msg.content.startsWith('[Sub-Agent Result]')) return null;
+            // Hide runtime context injections (system-generated, stored as user role)
+            if (msg.role === 'user' && msg.content.startsWith('[Runtime Context]')) return null;
 
-        <div ref={messagesEndRef} />
-      </div>
+            // Date separator
+            const dateLabel = formatDateLabel(msg.createdAt);
+            const showDate = dateLabel !== lastDateLabel;
+            lastDateLabel = dateLabel;
+
+            return (
+              <div key={msg.id}>
+                {showDate && <DateSeparator label={dateLabel} />}
+                {msg.role === 'user' ? (
+                  <UserMessage content={msg.content} createdAt={msg.createdAt} />
+                ) : (
+                  <AgentMessage content={msg.content} createdAt={msg.createdAt} />
+                )}
+              </div>
+            );
+          })}
+
+          {isTyping && <TypingIndicator />}
+
+          <div ref={messagesEndRef} />
+        </div>
       </div>
 
       {/* Floating scroll-to-bottom button */}

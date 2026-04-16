@@ -127,14 +127,14 @@ export default function AgentDetailPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => router.push('/agents')}
+          onClick={() => {
+            router.push('/agents');
+          }}
         >
           <ArrowLeft className="mr-1 size-4" />
           Back to Agents
         </Button>
-        <div className="bg-destructive/10 text-destructive rounded-lg border p-4">
-          {error}
-        </div>
+        <div className="bg-destructive/10 text-destructive rounded-lg border p-4">{error}</div>
       </div>
     );
   }
@@ -146,7 +146,9 @@ export default function AgentDetailPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => router.push('/agents')}
+          onClick={() => {
+            router.push('/agents');
+          }}
         >
           <ArrowLeft className="mr-1 size-4" />
           Back to Agents
@@ -162,7 +164,9 @@ export default function AgentDetailPage() {
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => router.push('/agents')}
+        onClick={() => {
+          router.push('/agents');
+        }}
       >
         <ArrowLeft className="mr-1 size-4" />
         Back to Agents
@@ -174,18 +178,12 @@ export default function AgentDetailPage() {
           <Bot className="size-6" />
           <h1 className="text-2xl font-bold">{agent.name}</h1>
         </div>
-        {agent.description && (
-          <p className="text-muted-foreground">{agent.description}</p>
-        )}
+        {agent.description && <p className="text-muted-foreground">{agent.description}</p>}
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline">
             {agent.provider}/{agent.model}
           </Badge>
-          <Badge
-            variant={agent.role === 'primary' ? 'default' : 'secondary'}
-          >
-            {agent.role}
-          </Badge>
+          <Badge variant={agent.role === 'primary' ? 'default' : 'secondary'}>{agent.role}</Badge>
           <Badge variant={agent.isActive ? 'secondary' : 'outline'}>
             {agent.isActive ? 'Active' : 'Inactive'}
           </Badge>
@@ -197,46 +195,30 @@ export default function AgentDetailPage() {
         <h2 className="text-lg font-semibold">Details</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <p className="text-muted-foreground mb-1 text-sm font-medium">
-              System Prompt
-            </p>
+            <p className="text-muted-foreground mb-1 text-sm font-medium">System Prompt</p>
             <pre className="bg-muted/50 max-h-40 overflow-auto rounded border p-3 text-sm whitespace-pre-wrap">
               {agent.systemPrompt || '—'}
             </pre>
           </div>
           <div>
-            <p className="text-muted-foreground mb-1 text-sm font-medium">
-              Provider
-            </p>
+            <p className="text-muted-foreground mb-1 text-sm font-medium">Provider</p>
             <p className="text-sm">{agent.provider}</p>
           </div>
           <div>
-            <p className="text-muted-foreground mb-1 text-sm font-medium">
-              Model
-            </p>
+            <p className="text-muted-foreground mb-1 text-sm font-medium">Model</p>
             <p className="text-sm">{agent.model}</p>
           </div>
           <div>
-            <p className="text-muted-foreground mb-1 text-sm font-medium">
-              Skills
-            </p>
+            <p className="text-muted-foreground mb-1 text-sm font-medium">Skills</p>
             <p className="text-sm">{agent.skillIds.length} skill(s)</p>
           </div>
           <div>
-            <p className="text-muted-foreground mb-1 text-sm font-medium">
-              Max Tokens per Run
-            </p>
-            <p className="text-sm">
-              {agent.maxTokensPerRun.toLocaleString()}
-            </p>
+            <p className="text-muted-foreground mb-1 text-sm font-medium">Max Tokens per Run</p>
+            <p className="text-sm">{agent.maxTokensPerRun.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-muted-foreground mb-1 text-sm font-medium">
-              Created
-            </p>
-            <p className="text-sm">
-              {new Date(agent.createdAt).toLocaleDateString()}
-            </p>
+            <p className="text-muted-foreground mb-1 text-sm font-medium">Created</p>
+            <p className="text-sm">{new Date(agent.createdAt).toLocaleDateString()}</p>
           </div>
         </div>
       </div>
@@ -272,26 +254,18 @@ export default function AgentDetailPage() {
                 {runs.map((run) => (
                   <TableRow key={run.id}>
                     <TableCell>
-                      <Badge variant={statusVariant(run.status)}>
-                        {run.status}
-                      </Badge>
+                      <Badge variant={statusVariant(run.status)}>{run.status}</Badge>
                     </TableCell>
                     <TableCell className="max-w-[300px] truncate">
-                      {run.input.length > 80
-                        ? `${run.input.slice(0, 80)}...`
-                        : run.input}
+                      {run.input.length > 80 ? `${run.input.slice(0, 80)}...` : run.input}
                     </TableCell>
                     <TableCell>
                       {run.tokenUsage
                         ? `${run.tokenUsage.inputTokens ?? 0} / ${run.tokenUsage.outputTokens ?? 0}`
                         : '—'}
                     </TableCell>
-                    <TableCell>
-                      {new Date(run.startedAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      {formatDuration(run.startedAt, run.completedAt)}
-                    </TableCell>
+                    <TableCell>{new Date(run.startedAt).toLocaleString()}</TableCell>
+                    <TableCell>{formatDuration(run.startedAt, run.completedAt)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

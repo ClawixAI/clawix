@@ -55,7 +55,8 @@ export function createSaveMemoryTool(prisma: PrismaService, userId: string): Too
       type: 'object',
       properties: {
         content: {
-          description: 'Content to store. Can be a string or a JSON object/array (max 2000 chars when serialized).',
+          description:
+            'Content to store. Can be a string or a JSON object/array (max 2000 chars when serialized).',
         },
         tags: {
           type: 'array',

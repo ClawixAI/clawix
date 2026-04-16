@@ -162,7 +162,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     to: 'LEFT' | 'RIGHT',
   ): Promise<string | null> {
     // ioredis types lmove as 4 exact-literal overloads; a union param doesn't match.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     return (this.client as any).lmove(source, destination, from, to) as Promise<string | null>;
   }
 

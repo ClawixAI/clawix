@@ -3,13 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BookOpen, Loader2, Package, User, Wrench } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { authFetch } from '@/lib/auth';
 
 /* ------------------------------------------------------------------ */
@@ -34,9 +28,7 @@ export default function SkillsPage() {
 
   const fetchSkills = useCallback(async () => {
     try {
-      const res = await authFetch<{ success: boolean; data: Skill[] }>(
-        '/api/v1/skills',
-      );
+      const res = await authFetch<{ success: boolean; data: Skill[] }>('/api/v1/skills');
       setSkills(Array.isArray(res.data) ? res.data : []);
     } catch {
       setError('Failed to load skills');
@@ -65,8 +57,9 @@ export default function SkillsPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Skills</h1>
         <p className="text-sm text-muted-foreground">
-          Skills extend your agent&apos;s capabilities with specialized knowledge and workflows.
-          Use <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/create-skill</code> in a conversation to create new ones.
+          Skills extend your agent&apos;s capabilities with specialized knowledge and workflows. Use{' '}
+          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/create-skill</code> in a
+          conversation to create new ones.
         </p>
       </div>
 
@@ -113,8 +106,8 @@ export default function SkillsPage() {
               <Wrench className="mb-2 size-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
                 No custom skills yet. Type{' '}
-                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/skill-creator</code>{' '}
-                in a conversation to create one.
+                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/skill-creator</code> in a
+                conversation to create one.
               </p>
             </CardContent>
           </Card>

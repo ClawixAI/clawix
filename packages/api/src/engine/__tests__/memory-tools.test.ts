@@ -206,7 +206,9 @@ describe('save_memory tool', () => {
       tags: ['preference'],
     });
 
-    expect((prisma as unknown as { memoryItem: { create: ReturnType<typeof vi.fn> } }).memoryItem.create).toHaveBeenCalledWith({
+    expect(
+      (prisma as unknown as { memoryItem: { create: ReturnType<typeof vi.fn> } }).memoryItem.create,
+    ).toHaveBeenCalledWith({
       data: expect.objectContaining({
         content: { key: 'preferred_language', value: 'TypeScript' },
       }),

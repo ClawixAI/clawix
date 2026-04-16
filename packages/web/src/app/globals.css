@@ -121,9 +121,15 @@
 }
 
 @keyframes badge-pop {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.15); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 .animate-pop {
@@ -161,10 +167,10 @@
   }
 }
 
-[data-slot="dialog-content"].tv-effect[data-state="open"] {
+[data-slot='dialog-content'].tv-effect[data-state='open'] {
   animation: tv-on 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
 }
 
-[data-slot="dialog-content"].tv-effect[data-state="closed"] {
+[data-slot='dialog-content'].tv-effect[data-state='closed'] {
   animation: tv-off 300ms cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
 }

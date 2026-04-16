@@ -326,12 +326,8 @@ export class ContainerRunner implements IContainerRunner {
     }, timeoutSeconds * 1000);
 
     // Allow the process to exit even if the timer is still pending
-    if (
-      typeof handle === 'object' &&
-      handle !== null &&
-      typeof (handle as NodeJS.Timeout).unref === 'function'
-    ) {
-      (handle as NodeJS.Timeout).unref();
+    if (typeof handle === 'object' && handle !== null && typeof handle.unref === 'function') {
+      handle.unref();
     }
 
     this.timeoutHandles.set(containerId, handle);

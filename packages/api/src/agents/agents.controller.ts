@@ -44,9 +44,12 @@ export class AgentsController {
   findAll(
     @Query(new ZodValidationPipe(paginationSchema)) query: PaginationInput,
     @Query('role') role?: string,
+    @Query('includeCreatedBy') includeCreatedBy?: string,
   ) {
     const validRole = role === 'primary' || role === 'worker' ? role : undefined;
-    return this.agentsService.listAgents(query, validRole);
+    return this.agentsService.listAgents(query, validRole, {
+      includeCreatedBy: includeCreatedBy === 'true',
+    });
   }
 
   @Get('providers')
@@ -65,17 +68,18 @@ export class AgentsController {
   @Post('user-agents')
   @Roles(UserRole.admin)
   createUserAgent(
-    @Body(new ZodValidationPipe(createUserAgentSchema)) body: { userId: string; agentDefinitionId: string },
+    @Body(new ZodValidationPipe(createUserAgentSchema))
+    body: {
+      userId: string;
+      agentDefinitionId: string;
+    },
   ) {
     return this.agentsService.assignUserAgent(body);
   }
 
   @Patch('user-agents/:id')
   @Roles(UserRole.admin)
-  updateUserAgent(
-    @Param('id') id: string,
-    @Body() body: { agentDefinitionId: string },
-  ) {
+  updateUserAgent(@Param('id') id: string, @Body() body: { agentDefinitionId: string }) {
     return this.agentsService.updateUserAgent(id, body);
   }
 
@@ -87,7 +91,8 @@ export class AgentsController {
 
   @Post('sub-agents')
   createSubAgent(
-    @Body(new ZodValidationPipe(createSubAgentSchema)) body: {
+    @Body(new ZodValidationPipe(createSubAgentSchema))
+    body: {
       userId: string;
       name: string;
       description?: string;

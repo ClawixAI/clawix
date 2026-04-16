@@ -39,7 +39,11 @@ export class ProfileService {
     return this.stripPassword(await this.userRepo.update(userId, input));
   }
 
-  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<{ success: boolean }> {
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ success: boolean }> {
     if (newPassword.length < 8) {
       throw new BadRequestException('New password must be at least 8 characters');
     }

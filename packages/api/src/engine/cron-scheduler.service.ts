@@ -65,7 +65,9 @@ export class CronSchedulerService implements OnModuleInit, OnModuleDestroy {
       'cron:scheduler started',
     );
     this.timer = setInterval(() => {
-      this.tick().catch((err) => logger.error({ err }, 'cron:tick error'));
+      this.tick().catch((err) => {
+        logger.error({ err }, 'cron:tick error');
+      });
     }, SCHEDULER_POLL_INTERVAL);
   }
 

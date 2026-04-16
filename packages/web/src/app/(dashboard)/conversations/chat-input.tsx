@@ -17,8 +17,16 @@ interface SlashItem {
 }
 
 const builtinCommands: SlashItem[] = [
-  { name: '/reset', description: 'Start a fresh conversation (current session is archived)', type: 'command' },
-  { name: '/compact', description: 'Summarize conversation context to free up space', type: 'command' },
+  {
+    name: '/reset',
+    description: 'Start a fresh conversation (current session is archived)',
+    type: 'command',
+  },
+  {
+    name: '/compact',
+    description: 'Summarize conversation context to free up space',
+    type: 'command',
+  },
   { name: '/help', description: 'Show available commands', type: 'command' },
 ];
 
@@ -69,11 +77,7 @@ function SuggestionCard({
 /*  EmptyState                                                         */
 /* ------------------------------------------------------------------ */
 
-export function EmptyState({
-  onSelectSuggestion,
-}: {
-  onSelectSuggestion: (text: string) => void;
-}) {
+export function EmptyState({ onSelectSuggestion }: { onSelectSuggestion: (text: string) => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-8">
       <div className="flex size-12 items-center justify-center rounded-full border border-foreground/20 bg-muted">
@@ -120,11 +124,13 @@ export function ChatInput({
   const savedInputRef = useRef('');
   // User messages in reverse order (most recent first) for history navigation
   const inputHistory = userMessages;
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Fetch skills and merge with builtin commands
   useEffect(() => {
-    void authFetch<{ data: Array<{ name: string; description: string }> }>('/api/v1/skills')
+    void authFetch<{ data: { name: string; description: string }[] }>('/api/v1/skills')
       .then((res) => {
         const skills: SlashItem[] = (Array.isArray(res.data) ? res.data : []).map((s) => ({
           name: `/${s.name}`,
@@ -133,14 +139,14 @@ export function ChatInput({
         }));
         setSlashItems([...skills, ...builtinCommands]);
       })
-      .catch(() => { /* keep builtin commands only */ });
+      .catch(() => {
+        /* keep builtin commands only */
+      });
   }, []);
 
   // Filter commands based on current input
   const filteredCommands = value.startsWith('/')
-    ? slashItems.filter((cmd) =>
-        cmd.name.toLowerCase().startsWith(value.toLowerCase()),
-      )
+    ? slashItems.filter((cmd) => cmd.name.toLowerCase().startsWith(value.toLowerCase()))
     : [];
 
   // Show/hide command menu based on input
@@ -215,7 +221,9 @@ export function ChatInput({
                     ? 'bg-accent text-accent-foreground'
                     : 'hover:bg-muted',
                 )}
-                onMouseEnter={() => setSelectedCommandIndex(i)}
+                onMouseEnter={() => {
+                  setSelectedCommandIndex(i);
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault(); // Prevent textarea blur
                   selectCommand(cmd.name);
@@ -320,8 +328,7 @@ export function ChatInput({
                 isConnected ? 'animate-pulse bg-green-500' : 'bg-red-500',
               )}
             />
-            {isConnected ? 'Connected' : 'Disconnected'} &mdash; Clawix agents
-            can make errors.
+            {isConnected ? 'Connected' : 'Disconnected'} &mdash; Clawix agents can make errors.
           </p>
         )}
       </div>

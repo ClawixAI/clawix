@@ -6,12 +6,7 @@ import { DiscardDialog, ConflictDialog } from '../workspace-dialogs';
 describe('DiscardDialog', () => {
   it('shows filename in body', () => {
     render(
-      <DiscardDialog
-        filename="config.ts"
-        open={true}
-        onOpenChange={vi.fn()}
-        onDiscard={vi.fn()}
-      />,
+      <DiscardDialog filename="config.ts" open={true} onOpenChange={vi.fn()} onDiscard={vi.fn()} />,
     );
     expect(screen.getByText(/config\.ts/)).toBeInTheDocument();
   });

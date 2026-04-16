@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HealthIndicatorService } from '@nestjs/terminus';
+import type { HealthIndicatorService } from '@nestjs/terminus';
 import { RedisHealthIndicator } from '../redis.health-indicator.js';
 import type { RedisService } from '../../cache/redis.service.js';
 

@@ -189,9 +189,7 @@ export class ProviderConfigService {
     this.invalidateCache(providerName);
     logger.info({ provider: providerName }, 'Provider config updated');
 
-    const maskedKey = input.apiKey
-      ? maskApiKey(input.apiKey)
-      : maskApiKey(decrypt(config.apiKey));
+    const maskedKey = input.apiKey ? maskApiKey(input.apiKey) : maskApiKey(decrypt(config.apiKey));
 
     return { ...config, apiKey: maskedKey };
   }

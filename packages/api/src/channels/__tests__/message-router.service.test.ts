@@ -283,9 +283,7 @@ describe('MessageRouterService', () => {
     await router.handleInbound(mockInbound(), channel);
 
     expect(mockAgentRunner.run).toHaveBeenCalled();
-    expect(channel.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'Response' }),
-    );
+    expect(channel.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ text: 'Response' }));
   });
 
   it('routes web channel message using findById lookup', async () => {
@@ -378,9 +376,7 @@ describe('MessageRouterService', () => {
       await router.handleInbound(mockInbound({ text: '/compact' }), ch);
 
       expect(mockCommandService.execute).toHaveBeenCalled();
-      expect(ch.sendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ text: 'Compacted.' }),
-      );
+      expect(ch.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ text: 'Compacted.' }));
     });
 
     it('skips concurrency check for commands', async () => {

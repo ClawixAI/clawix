@@ -134,9 +134,7 @@ describe('OpenAIResponsesProvider', () => {
       settings: { temperature: 0.7 },
     });
 
-    expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ temperature: 0.7 }),
-    );
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ temperature: 0.7 }));
   });
 
   it('handles empty output gracefully', async () => {
@@ -176,8 +174,8 @@ describe('OpenAIResponsesProvider', () => {
     mockCreate.mockRejectedValue(new Error('API rate limit'));
 
     const messages: ChatMessage[] = [{ role: 'user', content: 'Hi' }];
-    await expect(
-      provider.chat(messages, { model: 'gpt-5.1-codex-mini' }),
-    ).rejects.toThrow('API rate limit');
+    await expect(provider.chat(messages, { model: 'gpt-5.1-codex-mini' })).rejects.toThrow(
+      'API rate limit',
+    );
   });
 });

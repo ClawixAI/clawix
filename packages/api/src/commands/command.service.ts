@@ -34,7 +34,7 @@ export class CommandService {
     return command.execute({ ...ctx, args });
   }
 
-  getAll(): ReadonlyArray<{ readonly name: string; readonly description: string }> {
+  getAll(): readonly { readonly name: string; readonly description: string }[] {
     return [...this.commands.values()].map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
@@ -48,7 +48,7 @@ export class CommandService {
    */
   isSlashPrefixed(text: string): boolean {
     const trimmed = text.trim();
-    return trimmed.length >= 2 && trimmed[0] === '/' && trimmed[1] !== ' ';
+    return trimmed.length >= 2 && trimmed.startsWith('/') && trimmed[1] !== ' ';
   }
 
   private parseArgs(text: string): string | undefined {
