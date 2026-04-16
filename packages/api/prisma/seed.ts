@@ -273,8 +273,8 @@ async function main(): Promise<void> {
 
   // --- Custom Skills Directories ---
   const workspaceBase = process.env['WORKSPACE_BASE_PATH'] ?? './data';
-  const customSkillsBase = process.env['SKILLS_CUSTOM_HOST_DIR']
-    ?? path.resolve(workspaceBase, 'skills/custom');
+  const customSkillsBase =
+    process.env['SKILLS_CUSTOM_HOST_DIR'] ?? path.resolve(workspaceBase, 'skills/custom');
   for (const user of [admin, developer, viewer]) {
     const userSkillsDir = path.join(customSkillsBase, user.id);
     await fs.mkdir(userSkillsDir, { recursive: true });
@@ -349,7 +349,9 @@ async function main(): Promise<void> {
       data: {
         type: 'telegram',
         name: 'Telegram Bot',
-        config: encryptChannelConfig('telegram', { bot_token: process.env['TELEGRAM_BOT_TOKEN'] }) as Record<string, string>,
+        config: encryptChannelConfig('telegram', {
+          bot_token: process.env['TELEGRAM_BOT_TOKEN'],
+        }) as Record<string, string>,
         isActive: true,
       },
     });
