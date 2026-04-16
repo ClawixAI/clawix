@@ -42,6 +42,16 @@ function PasswordInput(props: React.ComponentProps<typeof Input>) {
 }
 
 // ------------------------------------------------------------------ //
+//  Provider options                                                   //
+// ------------------------------------------------------------------ //
+
+const PROVIDER_OPTIONS = [
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'anthropic', name: 'Anthropic' },
+  { id: 'zai-coding', name: 'Z.AI Coding' },
+] as const;
+
+// ------------------------------------------------------------------ //
 //  Create Provider Dialog                                             //
 // ------------------------------------------------------------------ //
 
@@ -56,8 +66,18 @@ export function CreateProviderDialog({
   saving: boolean;
   onSubmit: (data: Record<string, unknown>) => void;
 }) {
+  const [selectedProvider, setSelectedProvider] = useState('');
+
+  const selectedOption = PROVIDER_OPTIONS.find((p) => p.id === selectedProvider);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) setSelectedProvider('');
+        onOpenChange(isOpen);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add Provider</DialogTitle>
@@ -68,8 +88,8 @@ export function CreateProviderDialog({
             e.preventDefault();
             const form = new FormData(e.currentTarget);
             const data: Record<string, unknown> = {
-              provider: form.get('provider'),
-              displayName: form.get('displayName'),
+              provider: selectedProvider,
+              displayName: selectedOption?.name ?? selectedProvider,
               apiKey: form.get('apiKey'),
               isDefault: form.get('isDefault') === 'on',
             };
@@ -80,21 +100,23 @@ export function CreateProviderDialog({
           className="flex flex-col gap-4"
         >
           <div className="flex flex-col gap-2">
-            <Label htmlFor="create-provider">Provider ID</Label>
-            <Input
+            <Label htmlFor="create-provider">Provider</Label>
+            <select
               id="create-provider"
-              name="provider"
-              placeholder="openai"
-              pattern="^[a-z0-9-]+$"
+              className="rounded-md border bg-background px-3 py-2 text-sm"
+              value={selectedProvider}
+              onChange={(e) => {
+                setSelectedProvider(e.target.value);
+              }}
               required
-            />
-            <p className="text-xs text-muted-foreground">
-              Lowercase alphanumeric with hyphens (e.g., openai, anthropic, zai-coding).
-            </p>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="create-displayName">Display Name</Label>
-            <Input id="create-displayName" name="displayName" placeholder="OpenAI" required />
+            >
+              <option value="">Select a provider...</option>
+              {PROVIDER_OPTIONS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-apiKey">API Key</Label>

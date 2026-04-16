@@ -60,13 +60,14 @@ services:
       WORKSPACE_BASE_PATH: /data
       WORKSPACE_HOST_BASE_PATH: ${CLAWIX_HOST_DATA_DIR:-${PWD}/data}
       SKILLS_BUILTIN_DIR: /app/skills/builtin
-      SKILLS_BUILTIN_HOST_DIR: ${CLAWIX_HOST_SKILLS_DIR:-${PWD}/skills/builtin}
+      SKILLS_BUILTIN_HOST_DIR: ${CLAWIX_HOST_SKILLS_BUILTIN_DIR:-${PWD}/skills/builtin}
       SKILLS_CUSTOM_DIR: /app/skills/custom
-      SKILLS_CUSTOM_HOST_DIR: ${CLAWIX_HOST_SKILLS_DIR:-${PWD}/skills/custom}
+      SKILLS_CUSTOM_HOST_DIR: ${CLAWIX_HOST_SKILLS_CUSTOM_DIR:-${PWD}/skills/custom}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
-      - ./skills:/app/skills:ro
+      - ./skills/builtin:/app/skills/builtin:ro
+      - ./skills/custom:/app/skills/custom
       - ./infra/templates:/app/infra/templates:ro
     depends_on:
       postgres:

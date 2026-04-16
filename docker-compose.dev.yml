@@ -80,6 +80,15 @@ services:
              corepack prepare pnpm@latest --activate &&
              pnpm install --frozen-lockfile &&
              pnpm --filter @clawix/shared build &&
+             pnpm --filter @clawix/api exec prisma migrate deploy --schema=prisma/schema.prisma &&
+             node -e \"
+               const { Client } = require('pg');
+               const c = new Client({ connectionString: process.env.DATABASE_URL });
+               c.connect()
+                .then(() => c.query('SELECT count(*) FROM \\\"User\\\"'))
+                .then(r => { c.end(); process.exit(Number(r.rows[0].count) > 0 ? 0 : 1); })
+                .catch(() => { c.end(); process.exit(1); });
+             \" || pnpm --filter @clawix/api exec prisma db seed &&
              pnpm --filter @clawix/api exec nest start --watch"
     depends_on:
       postgres:

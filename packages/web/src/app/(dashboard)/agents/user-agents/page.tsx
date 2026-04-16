@@ -185,7 +185,6 @@ function CreateAgentDialog({
   onOpenChange,
   saving,
   onSubmit,
-  defaultRole = 'primary',
   title = 'Create Agent',
   description = 'Define a new AI agent with its model, prompt, and skills.',
 }: {
@@ -193,7 +192,6 @@ function CreateAgentDialog({
   onOpenChange: (open: boolean) => void;
   saving: boolean;
   onSubmit: (form: FormData) => void;
-  defaultRole?: string;
   title?: string;
   description?: string;
 }) {
@@ -241,18 +239,8 @@ function CreateAgentDialog({
             />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="create-role">Role</Label>
-            <select
-              name="role"
-              id="create-role"
-              className="rounded-md border bg-background px-3 py-2 text-sm"
-              defaultValue={defaultRole}
-            >
-              <option value="primary">Primary</option>
-              <option value="worker">Worker (Sub-Agent)</option>
-            </select>
-          </div>
+          {/* Role is always worker for user-created agents; primary is system-only */}
+          <input type="hidden" name="role" value="worker" />
 
           <ProviderModelFields providers={providers} idPrefix="create" />
 
@@ -361,17 +349,13 @@ function EditAgentDialog({
             />
           </div>
 
+          {/* Role cannot be changed; primary is system-only, workers stay workers */}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-role">Role</Label>
-            <select
-              name="role"
-              id="edit-role"
-              className="rounded-md border bg-background px-3 py-2 text-sm"
-              defaultValue={agent.role}
-            >
-              <option value="primary">Primary</option>
-              <option value="worker">Worker (Sub-Agent)</option>
-            </select>
+            <Label>Role</Label>
+            <p className="text-sm text-muted-foreground">
+              {agent.role === 'primary' ? 'Primary (system)' : 'Worker (Sub-Agent)'}
+            </p>
+            <input type="hidden" name="role" value={agent.role} />
           </div>
 
           <ProviderModelFields
@@ -485,13 +469,17 @@ function OfficialAgentsTable({
                 <Badge variant="outline">Official</Badge>
               </TableCell>
               <TableCell>
-                <Switch
-                  checked={agent.isActive}
-                  onCheckedChange={() => {
-                    onToggleActive(agent);
-                  }}
-                  disabled={saving || !isAdmin}
-                />
+                {agent.role === 'primary' ? (
+                  <span className="text-muted-foreground text-sm">Always on</span>
+                ) : (
+                  <Switch
+                    checked={agent.isActive}
+                    onCheckedChange={() => {
+                      onToggleActive(agent);
+                    }}
+                    disabled={saving || !isAdmin}
+                  />
+                )}
               </TableCell>
               <TableCell>
                 <DropdownMenu>
@@ -588,13 +576,17 @@ function SubAgentsTable({
                 <Badge variant="secondary">Custom</Badge>
               </TableCell>
               <TableCell>
-                <Switch
-                  checked={agent.isActive}
-                  onCheckedChange={() => {
-                    onToggleActive(agent);
-                  }}
-                  disabled={saving || !canEdit}
-                />
+                {agent.role === 'primary' ? (
+                  <span className="text-muted-foreground text-sm">Always on</span>
+                ) : (
+                  <Switch
+                    checked={agent.isActive}
+                    onCheckedChange={() => {
+                      onToggleActive(agent);
+                    }}
+                    disabled={saving || !canEdit}
+                  />
+                )}
               </TableCell>
               <TableCell>
                 <DropdownMenu>
@@ -1087,7 +1079,9 @@ function ViewAgentDialog({
             </div>
             <div className="flex flex-col gap-1">
               <Label className="text-muted-foreground">Status</Label>
-              <p className="text-sm">{agent.isActive ? 'Active' : 'Inactive'}</p>
+              <p className="text-sm">
+                {agent.role === 'primary' ? 'Always on' : agent.isActive ? 'Active' : 'Inactive'}
+              </p>
             </div>
           </div>
 
@@ -1441,7 +1435,6 @@ export default function UserAgentsPage() {
         onOpenChange={setCreateOfficialOpen}
         saving={saving}
         onSubmit={handleCreateOfficial}
-        defaultRole="primary"
         title="Create Official Agent"
         description="Create a new official agent available to all users."
       />
@@ -1453,7 +1446,6 @@ export default function UserAgentsPage() {
         onOpenChange={setCreateSubOpen}
         saving={saving}
         onSubmit={handleCreateSub}
-        defaultRole="worker"
         title="Create Sub-Agent"
         description="Create a custom sub-agent for specialized tasks."
       />

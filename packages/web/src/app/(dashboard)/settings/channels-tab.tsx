@@ -202,8 +202,7 @@ export function ChannelsTab() {
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Manage messaging channel integrations.</p>
+      <div className="mb-4 flex items-center justify-end">
         <Button
           size="sm"
           onClick={() => {

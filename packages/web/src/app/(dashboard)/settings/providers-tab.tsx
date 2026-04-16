@@ -167,10 +167,7 @@ export function ProvidersTab() {
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Manage AI provider API keys and configurations.
-        </p>
+      <div className="mb-4 flex items-center justify-end">
         <Button
           size="sm"
           onClick={() => {

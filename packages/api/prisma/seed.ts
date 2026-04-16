@@ -4,14 +4,13 @@
  * Run: pnpm exec prisma db seed
  */
 import dotenv from 'dotenv';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
+import bcrypt from 'bcryptjs';
 import { encrypt } from '../src/common/crypto.js';
 import { encryptChannelConfig } from '../src/channels/channel-config-crypto.js';
-
-// bcrypt hash of "password123" (12 salt rounds) — dev seed only
-const DEV_PASSWORD_HASH = '$2b$12$kxtj.oI1arkJ9tfY8HcHXe2tVEwThcNLwimFy20PR6I2wmTSB8A.2';
 
 dotenv.config({ path: path.join(import.meta.dirname, '..', '..', '..', '.env') });
 
@@ -20,12 +19,21 @@ if (!connectionString) {
   throw new Error('DATABASE_URL is not set');
 }
 
+const defaultProvider = process.env['DEFAULT_PROVIDER'] ?? 'openai';
+const defaultModel = process.env['DEFAULT_LLM_MODEL'] ?? 'gpt-4o';
+
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString }),
 });
 
 async function main(): Promise<void> {
   console.log('Seeding database...');
+
+  const defaultPassword = process.env['DEFAULT_PASSWORD'];
+  if (!defaultPassword) {
+    throw new Error('DEFAULT_PASSWORD is not set');
+  }
+  const passwordHash = await bcrypt.hash(defaultPassword, 12);
 
   // --- Clean previous seed data (allows safe re-seeding) ---
   // Delete in reverse dependency order; ON DELETE CASCADE handles children.
@@ -117,7 +125,7 @@ async function main(): Promise<void> {
     create: {
       email: 'admin@clawix.test',
       name: 'Admin User',
-      passwordHash: DEV_PASSWORD_HASH,
+      passwordHash,
       role: 'admin',
       policyId: unrestrictedPolicy.id,
       telegramId: 'xxxxxxxx',
@@ -132,7 +140,7 @@ async function main(): Promise<void> {
     create: {
       email: 'dev@clawix.test',
       name: 'Dev User',
-      passwordHash: DEV_PASSWORD_HASH,
+      passwordHash,
       role: 'developer',
       policyId: extendedPolicy.id,
       isActive: true,
@@ -146,7 +154,7 @@ async function main(): Promise<void> {
     create: {
       email: 'viewer@clawix.test',
       name: 'Viewer User',
-      passwordHash: DEV_PASSWORD_HASH,
+      passwordHash,
       role: 'viewer',
       policyId: standardPolicy.id,
       isActive: true,
@@ -161,8 +169,8 @@ async function main(): Promise<void> {
       description: 'Default primary agent for users',
       systemPrompt: 'You are a helpful AI assistant.',
       role: 'primary',
-      provider: 'openai',
-      model: 'gpt-4o',
+      provider: defaultProvider,
+      model: defaultModel,
       maxTokensPerRun: 100000,
       containerConfig: {
         image: 'clawix-agent:latest',
@@ -175,7 +183,7 @@ async function main(): Promise<void> {
       isActive: true,
     },
   });
-  console.log(`  Agent: ${primaryAgent.name} (primary, zai-coding/glm-4.7)`);
+  console.log(`  Agent: ${primaryAgent.name} (primary, ${defaultProvider}/${defaultModel})`);
 
   const coderAgent = await prisma.agentDefinition.create({
     data: {
@@ -184,8 +192,8 @@ async function main(): Promise<void> {
       systemPrompt:
         'You are a skilled software engineer. Write clean, complete, functional code. Never use placeholders or TODO comments. Always verify your output is complete. Use the tools available to read, write, and execute code in the workspace.',
       role: 'worker',
-      provider: 'openai',
-      model: 'gpt-4.1',
+      provider: defaultProvider,
+      model: defaultModel,
       maxTokensPerRun: 100000,
       containerConfig: {
         image: 'clawix-agent:latest',
@@ -198,7 +206,7 @@ async function main(): Promise<void> {
       isActive: true,
     },
   });
-  console.log(`  Agent: ${coderAgent.name} (worker, openai/gpt-4o)`);
+  console.log(`  Agent: ${coderAgent.name} (worker, ${defaultProvider}/${defaultModel})`);
 
   const researcherAgent = await prisma.agentDefinition.create({
     data: {
@@ -207,8 +215,8 @@ async function main(): Promise<void> {
       systemPrompt:
         'You are a research specialist. Search the web for information, analyze sources, and provide clear, well-organized summaries with citations.',
       role: 'worker',
-      provider: 'openai',
-      model: 'gpt-4o',
+      provider: defaultProvider,
+      model: defaultModel,
       maxTokensPerRun: 50000,
       containerConfig: {
         image: 'clawix-agent:latest',
@@ -221,7 +229,7 @@ async function main(): Promise<void> {
       isActive: true,
     },
   });
-  console.log(`  Agent: ${researcherAgent.name} (worker, openai/gpt-4o)`);
+  console.log(`  Agent: ${researcherAgent.name} (worker, ${defaultProvider}/${defaultModel})`);
 
   const defaultWorker = await prisma.agentDefinition.create({
     data: {
@@ -229,8 +237,8 @@ async function main(): Promise<void> {
       description: 'Default worker agent for anonymous sub-agent tasks',
       systemPrompt: 'Complete the assigned task thoroughly and report the result.',
       role: 'worker',
-      provider: 'openai',
-      model: 'gpt-4o',
+      provider: defaultProvider,
+      model: defaultModel,
       maxTokensPerRun: 50000,
       containerConfig: {
         image: 'clawix-agent:latest',
@@ -243,7 +251,7 @@ async function main(): Promise<void> {
       isActive: true,
     },
   });
-  console.log(`  Agent: ${defaultWorker.name} (worker, openai/gpt-4o)`);
+  console.log(`  Agent: ${defaultWorker.name} (worker, ${defaultProvider}/${defaultModel})`);
 
   // --- User Agents (bind users to primary agent) ---
   await prisma.userAgent.create({
@@ -263,31 +271,67 @@ async function main(): Promise<void> {
   });
   console.log('  UserAgents: admin + developer bound to Primary Assistant');
 
-  // --- Provider Configs (org-level) ---
-  await prisma.providerConfig.upsert({
-    where: { provider: 'openai' },
-    update: {},
-    create: {
-      provider: 'openai',
-      displayName: 'OpenAI',
-      apiKey: encrypt('__OPENAI_API_KEY__'),
-      isDefault: true,
-    },
-  });
-  console.log('  Provider: openai (default)');
+  // --- Custom Skills Directories ---
+  const workspaceBase = process.env['WORKSPACE_BASE_PATH'] ?? './data';
+  const customSkillsBase = process.env['SKILLS_CUSTOM_HOST_DIR']
+    ?? path.resolve(workspaceBase, 'skills/custom');
+  for (const user of [admin, developer, viewer]) {
+    const userSkillsDir = path.join(customSkillsBase, user.id);
+    await fs.mkdir(userSkillsDir, { recursive: true });
+  }
+  console.log(`  Skills: custom skill directories created under ${customSkillsBase}`);
 
-  await prisma.providerConfig.upsert({
-    where: { provider: 'zai-coding' },
-    update: {},
-    create: {
-      provider: 'zai-coding',
-      displayName: 'Zai Coding',
-      apiKey: encrypt('__ZAI_API_KEY__'),
-      apiBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
-      isDefault: false,
-    },
-  });
-  console.log('  Provider: zai-coding');
+  // --- Provider Configs (org-level, conditional on env vars) ---
+  const providerEnvKeys: Record<string, string> = {
+    openai: 'OPENAI_API_KEY',
+    'zai-coding': 'ZAI_API_KEY',
+  };
+  const insertedProviders = new Set<string>();
+
+  if (process.env['OPENAI_API_KEY']) {
+    await prisma.providerConfig.upsert({
+      where: { provider: 'openai' },
+      update: {},
+      create: {
+        provider: 'openai',
+        displayName: 'OpenAI',
+        apiKey: encrypt(process.env['OPENAI_API_KEY']),
+        isDefault: defaultProvider === 'openai',
+      },
+    });
+    insertedProviders.add('openai');
+    console.log(`  Provider: openai${defaultProvider === 'openai' ? ' (default)' : ''}`);
+  }
+
+  if (process.env['ZAI_API_KEY']) {
+    await prisma.providerConfig.upsert({
+      where: { provider: 'zai-coding' },
+      update: {},
+      create: {
+        provider: 'zai-coding',
+        displayName: 'Zai Coding',
+        apiKey: encrypt(process.env['ZAI_API_KEY']),
+        apiBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
+        isDefault: defaultProvider === 'zai-coding',
+      },
+    });
+    insertedProviders.add('zai-coding');
+    console.log(`  Provider: zai-coding${defaultProvider === 'zai-coding' ? ' (default)' : ''}`);
+  }
+
+  if (insertedProviders.size === 0) {
+    throw new Error('No provider API keys found. Set at least one of: OPENAI_API_KEY, ZAI_API_KEY');
+  }
+
+  if (!insertedProviders.has(defaultProvider)) {
+    const envKey = providerEnvKeys[defaultProvider];
+    const hint = envKey
+      ? `Set ${envKey} in your .env file.`
+      : `Add a provider entry for "${defaultProvider}" in the seed script.`;
+    throw new Error(
+      `DEFAULT_PROVIDER is "${defaultProvider}" but no API key was provided for it. ${hint}`,
+    );
+  }
 
   // --- Channel ---
   const webChannel = await prisma.channel.create({
@@ -300,17 +344,17 @@ async function main(): Promise<void> {
   });
   console.log(`  Channel: ${webChannel.name}`);
 
-  const telegramChannel = await prisma.channel.create({
-    data: {
-      type: 'telegram',
-      name: 'Telegram Bot',
-      config: encryptChannelConfig('telegram', {
-        bot_token: process.env['TELEGRAM_BOT_TOKEN'] ?? '__TELEGRAM_BOT_TOKEN__',
-      }) as Record<string, string>,
-      isActive: true,
-    },
-  });
-  console.log(`  Channel: ${telegramChannel.name}`);
+  if (process.env['TELEGRAM_BOT_TOKEN']) {
+    const telegramChannel = await prisma.channel.create({
+      data: {
+        type: 'telegram',
+        name: 'Telegram Bot',
+        config: encryptChannelConfig('telegram', { bot_token: process.env['TELEGRAM_BOT_TOKEN'] }) as Record<string, string>,
+        isActive: true,
+      },
+    });
+    console.log(`  Channel: ${telegramChannel.name}`);
+  }
 
   // --- Group (memory sharing) ---
   const engineeringGroup = await prisma.group.create({

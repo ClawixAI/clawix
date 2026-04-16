@@ -364,13 +364,17 @@ export function AgentsList() {
                     <Badge variant="outline">{agent.skillIds.length} skills</Badge>
                   </TableCell>
                   <TableCell>
-                    <Switch
-                      checked={agent.isActive}
-                      onCheckedChange={() => {
-                        void handleToggleActive(agent);
-                      }}
-                      disabled={saving}
-                    />
+                    {agent.role === 'primary' ? (
+                      <span className="text-muted-foreground text-sm">Always on</span>
+                    ) : (
+                      <Switch
+                        checked={agent.isActive}
+                        onCheckedChange={() => {
+                          void handleToggleActive(agent);
+                        }}
+                        disabled={saving}
+                      />
+                    )}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
