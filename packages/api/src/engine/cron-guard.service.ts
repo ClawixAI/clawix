@@ -9,7 +9,7 @@ const logger = createLogger('engine:cron-guard');
 
 /** Parse human-readable interval like "30s", "5m", "1h" into seconds. */
 function parseIntervalToSeconds(interval: string): number | null {
-  const match = interval.match(/^(\d+)(s|m|h|d)$/);
+  const match = /^(\d+)(s|m|h|d)$/.exec(interval);
   if (!match) return null;
   const value = parseInt(match[1]!, 10);
   const unit = match[2]!;

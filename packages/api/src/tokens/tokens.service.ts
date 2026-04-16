@@ -58,13 +58,13 @@ export class TokensService {
   async getPerUserBreakdown(userRole: string, userId: string) {
     const { startOfMonth, endOfMonth } = this.getMonthRange();
 
-    let userUsages: Array<{
+    let userUsages: {
       userId: string;
       totalInputTokens: number;
       totalOutputTokens: number;
       totalTokens: number;
       totalEstimatedCostUsd: number;
-    }>;
+    }[];
 
     if (userRole === 'admin') {
       userUsages = await this.tokenUsageRepo.sumAllUsers(startOfMonth, endOfMonth);
@@ -136,7 +136,10 @@ export class TokensService {
       startDate.setHours(0, 0, 0, 0);
       const daily = await this.tokenUsageRepo.dailyUsage(startDate, endDate, userId);
 
-      const weeks = new Map<string, { date: string; totalTokens: number; totalEstimatedCostUsd: number }>();
+      const weeks = new Map<
+        string,
+        { date: string; totalTokens: number; totalEstimatedCostUsd: number }
+      >();
       for (const day of daily) {
         const d = new Date(day.date);
         // Week start (Monday)
@@ -149,7 +152,11 @@ export class TokensService {
           existing.totalTokens += day.totalTokens;
           existing.totalEstimatedCostUsd += day.totalEstimatedCostUsd;
         } else {
-          weeks.set(key, { date: key, totalTokens: day.totalTokens, totalEstimatedCostUsd: day.totalEstimatedCostUsd });
+          weeks.set(key, {
+            date: key,
+            totalTokens: day.totalTokens,
+            totalEstimatedCostUsd: day.totalEstimatedCostUsd,
+          });
         }
       }
       return Array.from(weeks.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -159,7 +166,10 @@ export class TokensService {
     startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1);
     const daily = await this.tokenUsageRepo.dailyUsage(startDate, endDate, userId);
 
-    const months = new Map<string, { date: string; totalTokens: number; totalEstimatedCostUsd: number }>();
+    const months = new Map<
+      string,
+      { date: string; totalTokens: number; totalEstimatedCostUsd: number }
+    >();
     for (const day of daily) {
       const key = day.date.slice(0, 7); // YYYY-MM
       const existing = months.get(key);
@@ -167,7 +177,11 @@ export class TokensService {
         existing.totalTokens += day.totalTokens;
         existing.totalEstimatedCostUsd += day.totalEstimatedCostUsd;
       } else {
-        months.set(key, { date: key, totalTokens: day.totalTokens, totalEstimatedCostUsd: day.totalEstimatedCostUsd });
+        months.set(key, {
+          date: key,
+          totalTokens: day.totalTokens,
+          totalEstimatedCostUsd: day.totalEstimatedCostUsd,
+        });
       }
     }
     return Array.from(months.values()).sort((a, b) => a.date.localeCompare(b.date));

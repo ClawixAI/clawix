@@ -57,8 +57,8 @@ describe('ChannelRegistry', () => {
     const registry = new ChannelRegistry();
     registry.register('telegram', mockFactory());
 
-    expect(() => registry.register('telegram', mockFactory())).toThrow(
-      'Channel adapter already registered for type: telegram',
-    );
+    expect(() => {
+      registry.register('telegram', mockFactory());
+    }).toThrow('Channel adapter already registered for type: telegram');
   });
 });

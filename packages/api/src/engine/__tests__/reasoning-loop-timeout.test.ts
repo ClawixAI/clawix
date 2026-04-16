@@ -131,7 +131,9 @@ describe('ReasoningLoop timeout', () => {
     const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
 
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 50);
+    setTimeout(() => {
+      controller.abort();
+    }, 50);
 
     const result = await loop.run(messages, { abortSignal: controller.signal });
 

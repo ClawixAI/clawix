@@ -67,7 +67,10 @@ describe('SessionManagerService', () => {
     updateMany: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
   };
-  let mockPrisma: { sessionMessage: typeof mockSessionMessage; $transaction: ReturnType<typeof vi.fn> };
+  let mockPrisma: {
+    sessionMessage: typeof mockSessionMessage;
+    $transaction: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     mockSessionRepo = {
@@ -277,7 +280,8 @@ describe('SessionManagerService', () => {
   describe('saveMessages', () => {
     it('saves messages with ordering offset from current count', async () => {
       mockSessionMessage.count.mockResolvedValue(2);
-      const mockCreate = vi.fn()
+      const mockCreate = vi
+        .fn()
         .mockResolvedValueOnce({ id: 'id-1' })
         .mockResolvedValueOnce({ id: 'id-2' });
       mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -376,9 +380,7 @@ describe('SessionManagerService', () => {
         return fn(fakeTx);
       });
 
-      await service.saveMessages('session-1', [
-        { role: 'assistant', content: 'Hi there' },
-      ]);
+      await service.saveMessages('session-1', [{ role: 'assistant', content: 'Hi there' }]);
 
       expect(mockCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({
@@ -393,7 +395,8 @@ describe('SessionManagerService', () => {
       mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
         const fakeTx = {
           sessionMessage: {
-            create: vi.fn()
+            create: vi
+              .fn()
               .mockResolvedValueOnce({ id: 'msg-id-1' })
               .mockResolvedValueOnce({ id: 'msg-id-2' }),
           },

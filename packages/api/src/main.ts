@@ -43,11 +43,14 @@ async function bootstrap() {
   await registerSecurityPlugins(app);
 
   // Register multipart plugin for file uploads
-  await app.getHttpAdapter().getInstance().register(multipart as any, {
-    limits: {
-      fileSize: Number(process.env['WORKSPACE_UPLOAD_MAX_SIZE'] ?? 50 * 1024 * 1024), // 50 MB default
-    },
-  });
+  await app
+    .getHttpAdapter()
+    .getInstance()
+    .register(multipart as any, {
+      limits: {
+        fileSize: Number(process.env['WORKSPACE_UPLOAD_MAX_SIZE'] ?? 50 * 1024 * 1024), // 50 MB default
+      },
+    });
 
   if (process.env['NODE_ENV'] !== 'production') {
     const swaggerConfig = new DocumentBuilder()

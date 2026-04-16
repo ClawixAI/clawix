@@ -79,7 +79,10 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
           id: dbChannel.id,
           type: dbChannel.type,
           name: dbChannel.name,
-          config: decryptChannelConfig(dbChannel.type, (dbChannel.config ?? {}) as Record<string, unknown>),
+          config: decryptChannelConfig(
+            dbChannel.type,
+            (dbChannel.config ?? {}) as Record<string, unknown>,
+          ),
         });
 
         // Wire message handler
@@ -145,7 +148,7 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
     await this.pubsub.subscribe<ChannelResponsePayload>(
       PUBSUB_CHANNELS.channelResponseReady,
       async (msg) => {
-        const payload = msg.payload as ChannelResponsePayload;
+        const payload = msg.payload;
         if (!payload?.sessionId || !payload?.output) return;
 
         await this.deliverResponseToChannel(payload.sessionId, payload.output);
@@ -159,7 +162,7 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
    */
   private async subscribeToCronResults(): Promise<void> {
     await this.pubsub.subscribe<CronResultPayload>(PUBSUB_CHANNELS.cronResultReady, async (msg) => {
-      const payload = msg.payload as CronResultPayload;
+      const payload = msg.payload;
       if (!payload?.channelId || !payload?.userId || !payload?.output) return;
 
       await this.deliverCronResult(payload);

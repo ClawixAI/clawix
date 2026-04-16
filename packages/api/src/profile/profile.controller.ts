@@ -1,9 +1,6 @@
 import { Body, Controller, Get, Patch, Post, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import {
-  updateProfileSchema,
-  changePasswordSchema,
-} from '@clawix/shared';
+import { updateProfileSchema, changePasswordSchema } from '@clawix/shared';
 import type { UpdateProfileInput, ChangePasswordInput } from '@clawix/shared';
 import type { JwtPayload } from '../auth/auth.types.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';

@@ -28,9 +28,7 @@ interface MessageRow {
  * Return a new array of messages with large tool/system content replaced by
  * a truncation marker. Original objects are never mutated.
  */
-export function microcompactMessages(
-  messages: readonly MessageRow[],
-): readonly MessageRow[] {
+export function microcompactMessages(messages: readonly MessageRow[]): readonly MessageRow[] {
   return messages.map((msg) => {
     if (!TRUNCATABLE_ROLES.has(msg.role)) return msg;
     if (msg.content.length <= TRUNCATION_THRESHOLD) return msg;

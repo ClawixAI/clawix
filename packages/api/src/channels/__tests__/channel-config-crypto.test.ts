@@ -42,7 +42,7 @@ describe('channel-config-crypto', () => {
     const config = { bot_token: 'secret', mode: 'polling' };
     const encrypted = encryptChannelConfig('telegram', config);
 
-    expect(config['bot_token']).toBe('secret');
+    expect(config.bot_token).toBe('secret');
     expect(encrypted).not.toBe(config);
   });
 

@@ -60,7 +60,7 @@ export function toOpenAIMessage(msg: ChatMessage): OpenAI.ChatCompletionMessageP
   }
 
   return {
-    role: msg.role as 'system' | 'user' | 'assistant',
+    role: msg.role,
     content: msg.content,
   };
 }

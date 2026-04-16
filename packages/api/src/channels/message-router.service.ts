@@ -31,7 +31,7 @@ export class MessageRouterService {
     // 1. Look up user by channel-appropriate method
     const user = await this.lookupUser(message.channelType, senderId);
 
-    if (!user || !user.isActive) {
+    if (!user?.isActive) {
       logger.warn({ senderId, senderName }, 'Unauthorized channel message');
       await channel.sendMessage({
         recipientId: senderId,
@@ -146,10 +146,7 @@ export class MessageRouterService {
     }
   }
 
-  private async lookupUser(
-    channelType: ChannelType,
-    senderId: string,
-  ): Promise<User | null> {
+  private async lookupUser(channelType: ChannelType, senderId: string): Promise<User | null> {
     switch (channelType) {
       case 'web':
         return this.userRepo.findById(senderId).catch(() => null);

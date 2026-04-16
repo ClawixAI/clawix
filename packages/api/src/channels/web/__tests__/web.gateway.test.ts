@@ -45,7 +45,11 @@ describe('WebChatGateway', () => {
     mockJwtService.verifyAsync.mockReset();
     mockConfigService.getOrThrow.mockReturnValue('test-jwt-secret');
     mockAdapter.handleClientMessage.mockResolvedValue(undefined);
-    gateway = new WebChatGateway(mockJwtService as never, mockConfigService as never, mockHttpAdapterHost as never);
+    gateway = new WebChatGateway(
+      mockJwtService as never,
+      mockConfigService as never,
+      mockHttpAdapterHost as never,
+    );
     gateway.setAdapter(mockAdapter as never);
   });
 
@@ -104,7 +108,7 @@ describe('WebChatGateway', () => {
       await gateway.handleConnection(socket as never, req);
 
       // Find the 'message' callback registered via socket.on
-      const onCalls = (socket.on as ReturnType<typeof vi.fn>).mock.calls;
+      const onCalls = socket.on.mock.calls;
       const messageCb = onCalls.find(([event]: string[]) => event === 'message')?.[1] as
         | ((raw: string) => Promise<void>)
         | undefined;
@@ -114,7 +118,11 @@ describe('WebChatGateway', () => {
       const raw = JSON.stringify({ type: 'message.send', payload: { content: 'Hello' } });
       await messageCb!(raw);
 
-      expect(mockAdapter.handleClientMessage).toHaveBeenCalledWith('user-1', 'test@example.com', raw);
+      expect(mockAdapter.handleClientMessage).toHaveBeenCalledWith(
+        'user-1',
+        'test@example.com',
+        raw,
+      );
     });
   });
 
@@ -129,7 +137,7 @@ describe('WebChatGateway', () => {
       await gateway.handleConnection(socket as never, req);
 
       // Find the 'close' callback registered via socket.on
-      const onCalls = (socket.on as ReturnType<typeof vi.fn>).mock.calls;
+      const onCalls = socket.on.mock.calls;
       const closeCb = onCalls.find(([event]: string[]) => event === 'close')?.[1] as
         | (() => void)
         | undefined;

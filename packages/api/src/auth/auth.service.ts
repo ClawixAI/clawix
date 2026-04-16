@@ -90,7 +90,7 @@ export class AuthService {
       select: { id: true, isActive: true },
     });
 
-    if (!user || !user.isActive) {
+    if (!user?.isActive) {
       return null;
     }
 

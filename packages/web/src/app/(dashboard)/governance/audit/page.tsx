@@ -98,9 +98,7 @@ export default function AuditLogsPage() {
       if (actionFilter) params.set('action', actionFilter);
       if (resourceFilter) params.set('resource', resourceFilter);
 
-      const res = await authFetch<PaginatedAuditLogs>(
-        `/api/v1/audit?${params.toString()}`,
-      );
+      const res = await authFetch<PaginatedAuditLogs>(`/api/v1/audit?${params.toString()}`);
       setLogs(Array.isArray(res.data) ? res.data : []);
       setTotalPages(res.meta?.totalPages ?? 1);
       setTotal(res.meta?.total ?? 0);
@@ -130,18 +128,32 @@ export default function AuditLogsPage() {
 
   // Unique actions for filter dropdown (from known set)
   const knownActions = [
-    'agent.run', 'agent.create', 'agent.update', 'agent.delete',
-    'auth.login', 'auth.logout',
-    'skill.install', 'skill.approve',
-    'task.create', 'task.update',
-    'user.create', 'user.update',
+    'agent.run',
+    'agent.create',
+    'agent.update',
+    'agent.delete',
+    'auth.login',
+    'auth.logout',
+    'skill.install',
+    'skill.approve',
+    'task.create',
+    'task.update',
+    'user.create',
+    'user.update',
     'memory.share',
     'config.update',
   ];
 
   const knownResources = [
-    'AgentDefinition', 'AgentRun', 'User', 'Session',
-    'Policy', 'Channel', 'Skill', 'MemoryItem', 'Group',
+    'AgentDefinition',
+    'AgentRun',
+    'User',
+    'Session',
+    'Policy',
+    'Channel',
+    'Skill',
+    'MemoryItem',
+    'Group',
   ];
 
   return (
@@ -162,32 +174,42 @@ export default function AuditLogsPage() {
             placeholder="Search logs..."
             className="pl-9"
             value={searchQuery}
-            onChange={(e) => { setSearchQuery(e.target.value); }}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+            }}
           />
         </div>
         <select
           className="rounded-md border bg-background px-3 py-2 text-sm"
           value={actionFilter}
-          onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}
+          onChange={(e) => {
+            setActionFilter(e.target.value);
+            setPage(1);
+          }}
         >
           <option value="">All Actions</option>
           {knownActions.map((a) => (
-            <option key={a} value={a}>{a}</option>
+            <option key={a} value={a}>
+              {a}
+            </option>
           ))}
         </select>
         <select
           className="rounded-md border bg-background px-3 py-2 text-sm"
           value={resourceFilter}
-          onChange={(e) => { setResourceFilter(e.target.value); setPage(1); }}
+          onChange={(e) => {
+            setResourceFilter(e.target.value);
+            setPage(1);
+          }}
         >
           <option value="">All Resources</option>
           {knownResources.map((r) => (
-            <option key={r} value={r}>{r}</option>
+            <option key={r} value={r}>
+              {r}
+            </option>
           ))}
         </select>
-        <span className="text-sm text-muted-foreground">
-          {total} total entries
-        </span>
+        <span className="text-sm text-muted-foreground">{total} total entries</span>
       </div>
 
       {/* Logs table */}
@@ -221,9 +243,7 @@ export default function AuditLogsPage() {
                     <div>
                       <span className="font-medium">{log.user.name}</span>
                       {log.ipAddress && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          {log.ipAddress}
-                        </span>
+                        <span className="ml-2 text-xs text-muted-foreground">{log.ipAddress}</span>
                       )}
                     </div>
                   </TableCell>
@@ -263,7 +283,9 @@ export default function AuditLogsPage() {
               variant="outline"
               size="sm"
               disabled={page <= 1}
-              onClick={() => { setPage((p) => p - 1); }}
+              onClick={() => {
+                setPage((p) => p - 1);
+              }}
             >
               <ChevronLeft className="mr-1 size-4" />
               Previous
@@ -272,7 +294,9 @@ export default function AuditLogsPage() {
               variant="outline"
               size="sm"
               disabled={page >= totalPages}
-              onClick={() => { setPage((p) => p + 1); }}
+              onClick={() => {
+                setPage((p) => p + 1);
+              }}
             >
               Next
               <ChevronRight className="ml-1 size-4" />

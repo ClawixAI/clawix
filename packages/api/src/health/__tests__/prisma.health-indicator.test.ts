@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HealthIndicatorService } from '@nestjs/terminus';
+import type { HealthIndicatorService } from '@nestjs/terminus';
 import { PrismaHealthIndicator } from '../prisma.health-indicator.js';
 import type { PrismaService } from '../../prisma/prisma.service.js';
 

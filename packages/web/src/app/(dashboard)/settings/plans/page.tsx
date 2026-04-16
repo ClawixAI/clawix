@@ -7,7 +7,9 @@ export default function PlansPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Plans</h1>
-        <p className="text-sm text-muted-foreground">Manage plans, quotas, and governance policies.</p>
+        <p className="text-sm text-muted-foreground">
+          Manage plans, quotas, and governance policies.
+        </p>
       </div>
       <PoliciesTab />
     </div>

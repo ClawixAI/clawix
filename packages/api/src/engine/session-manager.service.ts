@@ -117,7 +117,10 @@ export class SessionManagerService {
    * Appends messages to a session, computing ordering offsets from the current count.
    * Ordering for each new message = currentCount + index.
    */
-  async saveMessages(sessionId: string, messages: readonly ChatMessage[]): Promise<readonly string[]> {
+  async saveMessages(
+    sessionId: string,
+    messages: readonly ChatMessage[],
+  ): Promise<readonly string[]> {
     const currentCount = await this.prisma.sessionMessage.count({
       where: { sessionId, archivedAt: null },
     });

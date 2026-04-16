@@ -94,6 +94,16 @@ export class SkillLoaderService {
     private readonly maxSkillsPerUser: number = DEFAULT_MAX_SKILLS_PER_USER,
   ) {}
 
+  /**
+   * Ensures the user's custom skill directory exists.
+   * Call this when creating a new user.
+   */
+  async ensureUserSkillDir(userId: string): Promise<void> {
+    const userSkillDir = path.join(this.customDir, userId);
+    await fs.mkdir(userSkillDir, { recursive: true });
+    logger.info({ userId, userSkillDir }, 'Ensured user skill directory exists');
+  }
+
   async listSkills(userId: string): Promise<readonly SkillInfo[]> {
     const customSkills = await this.scanDirectory(
       path.join(this.customDir, userId),
@@ -102,11 +112,7 @@ export class SkillLoaderService {
       this.maxSkillsPerUser,
     );
     const customDirNames = new Set(customSkills.map((s) => s.dirName));
-    const builtinSkills = await this.scanDirectory(
-      this.builtinDir,
-      'builtin',
-      '/skills/builtin',
-    );
+    const builtinSkills = await this.scanDirectory(this.builtinDir, 'builtin', '/skills/builtin');
     const filteredBuiltins = builtinSkills.filter((s) => !customDirNames.has(s.dirName));
     return [
       ...customSkills.map(({ dirName: _, ...rest }) => rest),

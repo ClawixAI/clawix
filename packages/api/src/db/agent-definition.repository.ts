@@ -112,7 +112,10 @@ export class AgentDefinitionRepository {
     return buildPaginatedResponse(data, total, pagination);
   }
 
-  async findAll(pagination: PaginationInput): Promise<PaginatedResponse<AgentDefinition>> {
+  async findAll(
+    pagination: PaginationInput,
+    options?: { includeCreatedBy?: boolean },
+  ): Promise<PaginatedResponse<AgentDefinition>> {
     const { skip, take } = buildPaginationArgs(pagination);
 
     const [total, data] = await Promise.all([
@@ -121,6 +124,9 @@ export class AgentDefinitionRepository {
         skip,
         take,
         orderBy: { createdAt: 'desc' },
+        ...(options?.includeCreatedBy
+          ? { include: { createdBy: { select: { id: true, name: true, email: true } } } }
+          : {}),
       }),
     ]);
 

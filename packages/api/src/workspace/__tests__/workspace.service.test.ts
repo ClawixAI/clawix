@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Readable } from 'stream';
 
-import { UserAgentRepository } from '../../db/user-agent.repository.js';
+import type { UserAgentRepository } from '../../db/user-agent.repository.js';
 import { WorkspaceService } from '../workspace.service.js';
 
 vi.mock('../scoped-fs.js');
@@ -59,9 +59,7 @@ describe('WorkspaceService', () => {
       }),
     };
 
-    service = new WorkspaceService(
-      mockUserAgentRepo as unknown as UserAgentRepository,
-    );
+    service = new WorkspaceService(mockUserAgentRepo as unknown as UserAgentRepository);
   });
 
   describe('detectFileType', () => {
@@ -287,7 +285,9 @@ describe('WorkspaceService', () => {
     it('should throw ConflictException if path already exists', async () => {
       mockScopedFs.exists.mockResolvedValue(true);
 
-      await expect(service.createEntry(userId, '/existing.txt', 'file')).rejects.toThrow(ConflictException);
+      await expect(service.createEntry(userId, '/existing.txt', 'file')).rejects.toThrow(
+        ConflictException,
+      );
       expect(mockScopedFs.writeFile).not.toHaveBeenCalled();
     });
   });
@@ -307,7 +307,7 @@ describe('WorkspaceService', () => {
     it('should rename a file and return FileEntry with new name', async () => {
       // source exists, target does not
       mockScopedFs.exists
-        .mockResolvedValueOnce(true)   // source exists check
+        .mockResolvedValueOnce(true) // source exists check
         .mockResolvedValueOnce(false); // target does not exist
       mockScopedFs.stat.mockResolvedValue({
         isDirectory: () => false,
@@ -323,17 +323,21 @@ describe('WorkspaceService', () => {
 
     it('should throw ConflictException if target name already exists', async () => {
       mockScopedFs.exists
-        .mockResolvedValueOnce(true)  // source exists
+        .mockResolvedValueOnce(true) // source exists
         .mockResolvedValueOnce(true); // target already exists
 
-      await expect(service.renameEntry(userId, '/old.txt', 'existing.txt')).rejects.toThrow(ConflictException);
+      await expect(service.renameEntry(userId, '/old.txt', 'existing.txt')).rejects.toThrow(
+        ConflictException,
+      );
       expect(mockScopedFs.rename).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException if source does not exist', async () => {
       mockScopedFs.exists.mockResolvedValueOnce(false); // source does not exist
 
-      await expect(service.renameEntry(userId, '/missing.txt', 'new.txt')).rejects.toThrow(NotFoundException);
+      await expect(service.renameEntry(userId, '/missing.txt', 'new.txt')).rejects.toThrow(
+        NotFoundException,
+      );
       expect(mockScopedFs.rename).not.toHaveBeenCalled();
     });
   });
@@ -352,11 +356,15 @@ describe('WorkspaceService', () => {
 
     it('should move file to another directory and return FileEntry with new path', async () => {
       mockScopedFs.exists
-        .mockResolvedValueOnce(true)  // source exists
+        .mockResolvedValueOnce(true) // source exists
         .mockResolvedValueOnce(false); // no conflict at destination
       mockScopedFs.stat
         .mockResolvedValueOnce({ isDirectory: () => true, size: 0, mtime: new Date('2026-01-01') }) // dest stat
-        .mockResolvedValueOnce({ isDirectory: () => false, size: 50, mtime: new Date('2026-01-01') }); // new location stat
+        .mockResolvedValueOnce({
+          isDirectory: () => false,
+          size: 50,
+          mtime: new Date('2026-01-01'),
+        }); // new location stat
 
       const result = await service.moveEntry(userId, '/file.txt', '/archive');
 
@@ -369,17 +377,25 @@ describe('WorkspaceService', () => {
       mockScopedFs.exists.mockResolvedValueOnce(true); // source exists
       mockScopedFs.stat.mockRejectedValue(new Error('ENOENT')); // destination stat fails
 
-      await expect(service.moveEntry(userId, '/file.txt', '/nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.moveEntry(userId, '/file.txt', '/nonexistent')).rejects.toThrow(
+        NotFoundException,
+      );
       expect(mockScopedFs.rename).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException if same-name file exists at destination', async () => {
       mockScopedFs.exists
-        .mockResolvedValueOnce(true)  // source exists
+        .mockResolvedValueOnce(true) // source exists
         .mockResolvedValueOnce(true); // conflict at destination
-      mockScopedFs.stat.mockResolvedValueOnce({ isDirectory: () => true, size: 0, mtime: new Date('2026-01-01') }); // dest is directory
+      mockScopedFs.stat.mockResolvedValueOnce({
+        isDirectory: () => true,
+        size: 0,
+        mtime: new Date('2026-01-01'),
+      }); // dest is directory
 
-      await expect(service.moveEntry(userId, '/file.txt', '/archive')).rejects.toThrow(ConflictException);
+      await expect(service.moveEntry(userId, '/file.txt', '/archive')).rejects.toThrow(
+        ConflictException,
+      );
       expect(mockScopedFs.rename).not.toHaveBeenCalled();
     });
   });
@@ -484,7 +500,11 @@ describe('WorkspaceService', () => {
       const data = Buffer.from('hello world');
       mockScopedFs.stat
         .mockResolvedValueOnce({ isDirectory: () => true, size: 0, mtime: new Date('2026-01-01') }) // dir stat
-        .mockResolvedValueOnce({ isDirectory: () => false, size: data.byteLength, mtime: new Date('2026-01-01') }); // file stat after write
+        .mockResolvedValueOnce({
+          isDirectory: () => false,
+          size: data.byteLength,
+          mtime: new Date('2026-01-01'),
+        }); // file stat after write
       mockScopedFs.exists.mockResolvedValue(false); // no conflict
 
       const result = await service.uploadFile(userId, '/docs', 'hello.txt', data);
@@ -497,18 +517,28 @@ describe('WorkspaceService', () => {
 
     it('should throw ConflictException if file exists and overwrite is false', async () => {
       const data = Buffer.from('data');
-      mockScopedFs.stat.mockResolvedValueOnce({ isDirectory: () => true, size: 0, mtime: new Date() }); // dir ok
+      mockScopedFs.stat.mockResolvedValueOnce({
+        isDirectory: () => true,
+        size: 0,
+        mtime: new Date(),
+      }); // dir ok
       mockScopedFs.exists.mockResolvedValue(true); // file exists
 
-      await expect(service.uploadFile(userId, '/docs', 'existing.txt', data, false)).rejects.toThrow(ConflictException);
+      await expect(
+        service.uploadFile(userId, '/docs', 'existing.txt', data, false),
+      ).rejects.toThrow(ConflictException);
       expect(mockScopedFs.writeFile).not.toHaveBeenCalled();
     });
 
     it('should overwrite existing file when overwrite=true', async () => {
       const data = Buffer.from('new content');
       mockScopedFs.stat
-        .mockResolvedValueOnce({ isDirectory: () => true, size: 0, mtime: new Date() })  // dir stat
-        .mockResolvedValueOnce({ isDirectory: () => false, size: data.byteLength, mtime: new Date() }); // file stat
+        .mockResolvedValueOnce({ isDirectory: () => true, size: 0, mtime: new Date() }) // dir stat
+        .mockResolvedValueOnce({
+          isDirectory: () => false,
+          size: data.byteLength,
+          mtime: new Date(),
+        }); // file stat
       mockScopedFs.exists.mockResolvedValue(true); // file exists but overwrite=true
 
       const result = await service.uploadFile(userId, '/docs', 'existing.txt', data, true);

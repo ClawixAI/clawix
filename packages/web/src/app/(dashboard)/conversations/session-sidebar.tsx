@@ -73,12 +73,7 @@ export function SessionSidebar({
         <Button variant="ghost" size="icon" className="size-8">
           <Search className="size-4" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          onClick={onNewChat}
-        >
+        <Button variant="ghost" size="icon" className="size-8" onClick={onNewChat}>
           <MessageSquarePlus className="size-4" />
         </Button>
       </div>
@@ -96,9 +91,7 @@ export function SessionSidebar({
         ) : (
           orderedGroups.map((group) => (
             <div key={group}>
-              <p className="px-3 py-2 text-xs font-medium text-muted-foreground">
-                {group}
-              </p>
+              <p className="px-3 py-2 text-xs font-medium text-muted-foreground">{group}</p>
               {(groups[group] ?? []).map((session) => (
                 <button
                   key={session.id}
@@ -115,7 +108,8 @@ export function SessionSidebar({
                     <Archive className="size-3 shrink-0 text-muted-foreground" />
                   )}
                   <span className="truncate">
-                    {session.isActive ? 'Session' : 'Archived'} &mdash; {formatShortDate(session.createdAt)}
+                    {session.isActive ? 'Session' : 'Archived'} &mdash;{' '}
+                    {formatShortDate(session.createdAt)}
                   </span>
                 </button>
               ))}

@@ -53,7 +53,9 @@ export function CreateChannelDialog({
               id="create-type"
               className="rounded-md border bg-background px-3 py-2 text-sm"
               value={type}
-              onChange={(e) => setType(e.target.value)}
+              onChange={(e) => {
+                setType(e.target.value);
+              }}
             >
               <option value="telegram">Telegram</option>
               <option value="web">Web</option>
@@ -73,7 +75,13 @@ export function CreateChannelDialog({
           {type === 'web' && <WebConfigFields />}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
@@ -109,9 +117,7 @@ export function EditChannelDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Configure Channel</DialogTitle>
-          <DialogDescription>
-            Update settings for {channel.name}.
-          </DialogDescription>
+          <DialogDescription>Update settings for {channel.name}.</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -122,23 +128,20 @@ export function EditChannelDialog({
         >
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-name">Name</Label>
-            <Input
-              id="edit-name"
-              name="name"
-              defaultValue={channel.name}
-              required
-            />
+            <Input id="edit-name" name="name" defaultValue={channel.name} required />
           </div>
 
-          {channel.type === 'telegram' && (
-            <TelegramConfigFields config={channel.config} />
-          )}
-          {channel.type === 'web' && (
-            <WebConfigFields config={channel.config} />
-          )}
+          {channel.type === 'telegram' && <TelegramConfigFields config={channel.config} />}
+          {channel.type === 'web' && <WebConfigFields config={channel.config} />}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
@@ -156,19 +159,12 @@ export function EditChannelDialog({
 //  Channel-Type Config Field Components                               //
 // ------------------------------------------------------------------ //
 
-function TelegramConfigFields({
-  config = {},
-}: {
-  config?: Record<string, unknown>;
-}) {
-  const hasToken = typeof config['bot_token'] === 'string'
-    && config['bot_token'].length > 0;
-  const hasWebhookSecret = typeof config['webhook_secret'] === 'string'
-    && config['webhook_secret'].length > 0;
+function TelegramConfigFields({ config = {} }: { config?: Record<string, unknown> }) {
+  const hasToken = typeof config['bot_token'] === 'string' && config['bot_token'].length > 0;
+  const hasWebhookSecret =
+    typeof config['webhook_secret'] === 'string' && config['webhook_secret'].length > 0;
 
-  const [mode, setMode] = useState<string>(
-    (config['mode'] as string) ?? 'polling',
-  );
+  const [mode, setMode] = useState<string>((config['mode'] as string) ?? 'polling');
 
   return (
     <>
@@ -177,10 +173,16 @@ function TelegramConfigFields({
         <Input
           id="cfg-bot_token"
           name="bot_token"
-          placeholder={hasToken ? 'Token is set — leave blank to keep' : 'Enter Telegram bot token from @BotFather'}
+          placeholder={
+            hasToken
+              ? 'Token is set — leave blank to keep'
+              : 'Enter Telegram bot token from @BotFather'
+          }
         />
         <p className="text-xs text-muted-foreground">
-          {hasToken ? 'Leave blank to keep the current token.' : 'Required for the bot to function.'}
+          {hasToken
+            ? 'Leave blank to keep the current token.'
+            : 'Required for the bot to function.'}
         </p>
       </div>
       <div className="flex flex-col gap-2">
@@ -190,7 +192,9 @@ function TelegramConfigFields({
           id="cfg-mode"
           className="rounded-md border bg-background px-3 py-2 text-sm"
           value={mode}
-          onChange={(e) => setMode(e.target.value)}
+          onChange={(e) => {
+            setMode(e.target.value);
+          }}
         >
           <option value="polling">Polling</option>
           <option value="webhook">Webhook</option>
@@ -216,10 +220,16 @@ function TelegramConfigFields({
             <Input
               id="cfg-webhook_secret"
               name="webhook_secret"
-              placeholder={hasWebhookSecret ? 'Secret is set — leave blank to keep' : 'Optional secret token for webhook verification'}
+              placeholder={
+                hasWebhookSecret
+                  ? 'Secret is set — leave blank to keep'
+                  : 'Optional secret token for webhook verification'
+              }
             />
             <p className="text-xs text-muted-foreground">
-              {hasWebhookSecret ? 'Leave blank to keep the current secret.' : 'Optional. Used to verify incoming webhook requests.'}
+              {hasWebhookSecret
+                ? 'Leave blank to keep the current secret.'
+                : 'Optional. Used to verify incoming webhook requests.'}
             </p>
           </div>
         </>
@@ -228,11 +238,7 @@ function TelegramConfigFields({
   );
 }
 
-function WebConfigFields({
-  config = {},
-}: {
-  config?: Record<string, unknown>;
-}) {
+function WebConfigFields({ config = {} }: { config?: Record<string, unknown> }) {
   return (
     <>
       <div className="flex items-center gap-3">

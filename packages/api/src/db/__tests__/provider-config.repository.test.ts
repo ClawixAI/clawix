@@ -115,9 +115,9 @@ describe('ProviderConfigRepository', () => {
         meta: { target: ['provider'] },
       });
 
-      await expect(repository.create({ provider: 'anthropic', displayName: 'Anthropic', apiKey: 'key' })).rejects.toThrow(
-        ConflictError,
-      );
+      await expect(
+        repository.create({ provider: 'anthropic', displayName: 'Anthropic', apiKey: 'key' }),
+      ).rejects.toThrow(ConflictError);
     });
   });
 

@@ -28,11 +28,7 @@ import { useTheme } from 'next-themes';
 import anime from 'animejs';
 import { EASING } from '@/lib/anime';
 
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Sidebar,
   SidebarContent,
@@ -77,6 +73,11 @@ const platformItems = [
     icon: Wrench,
     href: '/skills',
   },
+  {
+    title: 'Agents',
+    icon: Bot,
+    href: '/agents',
+  },
 ];
 
 const governanceItems = [
@@ -91,7 +92,9 @@ export function AppSidebar() {
   const { user, logout } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const animateSubItems = useCallback((container: HTMLElement) => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -148,45 +151,6 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
-            <Collapsible
-              defaultOpen={pathname.startsWith('/agents')}
-              className="group/collapsible-agents"
-              onOpenChange={(open) => {
-                if (open) {
-                  requestAnimationFrame(() => {
-                    const el = document.querySelector('.group\\/collapsible-agents [data-sidebar="menu-sub"]');
-                    if (el) animateSubItems(el as HTMLElement);
-                  });
-                }
-              }}
-            >
-              <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton isActive={pathname.startsWith('/agents')} tooltip="Agents">
-                    <Bot />
-                    <span>Agents</span>
-                    <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible-agents:rotate-90" />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {[
-                      { title: 'Definitions', href: '/agents/definitions', icon: Bot },
-                      { title: 'User Agents', href: '/agents/user-agents', icon: Users },
-                    ].map((item) => (
-                      <SidebarMenuSubItem key={item.title}>
-                        <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
-                          <Link href={item.href}>
-                            <item.icon />
-                            <span>{item.title}</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
           </SidebarMenu>
         </SidebarGroup>
 
@@ -209,41 +173,46 @@ export function AppSidebar() {
               onOpenChange={(open) => {
                 if (open) {
                   requestAnimationFrame(() => {
-                    const el = document.querySelector('.group\\/collapsible [data-sidebar="menu-sub"]');
+                    const el = document.querySelector(
+                      '.group\\/collapsible [data-sidebar="menu-sub"]',
+                    );
                     if (el) animateSubItems(el as HTMLElement);
                   });
                 }
               }}
             >
               {user?.role === 'admin' && (
-              <SidebarMenuItem>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuButton isActive={pathname.startsWith('/settings')} tooltip="Settings">
-                    <Settings2 />
-                    <span>Settings</span>
-                    <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                  </SidebarMenuButton>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {[
-                      { title: 'Users', href: '/settings/users', icon: Users },
-                      { title: 'Plans', href: '/settings/plans', icon: CreditCard },
-                      { title: 'Channels', href: '/settings/channels', icon: Radio },
-                      { title: 'Providers', href: '/settings/providers', icon: Bot },
-                    ].map((item) => (
-                      <SidebarMenuSubItem key={item.title}>
-                        <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
-                          <Link href={item.href}>
-                            <item.icon />
-                            <span>{item.title}</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      isActive={pathname.startsWith('/settings')}
+                      tooltip="Settings"
+                    >
+                      <Settings2 />
+                      <span>Settings</span>
+                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {[
+                        { title: 'Users', href: '/settings/users', icon: Users },
+                        { title: 'Plans', href: '/settings/plans', icon: CreditCard },
+                        { title: 'Channels', href: '/settings/channels', icon: Radio },
+                        { title: 'Providers', href: '/settings/providers', icon: Bot },
+                      ].map((item) => (
+                        <SidebarMenuSubItem key={item.title}>
+                          <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                            <Link href={item.href}>
+                              <item.icon />
+                              <span>{item.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
               )}
             </Collapsible>
           </SidebarMenu>
@@ -256,7 +225,9 @@ export function AppSidebar() {
             <SidebarMenuButton
               aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
               tooltip={isDark ? 'Light mode' : 'Dark mode'}
-              onClick={() => { setTheme(isDark ? 'light' : 'dark'); }}
+              onClick={() => {
+                setTheme(isDark ? 'light' : 'dark');
+              }}
             >
               <Sun className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
@@ -288,7 +259,11 @@ export function AppSidebar() {
                 align="start"
                 className="w-[--radix-dropdown-menu-trigger-width]"
               >
-                <DropdownMenuItem onSelect={() => { router.push('/profile'); }}>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    router.push('/profile');
+                  }}
+                >
                   <User className="mr-2 size-4" />
                   Profile
                 </DropdownMenuItem>

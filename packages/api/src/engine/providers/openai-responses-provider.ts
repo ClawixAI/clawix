@@ -52,9 +52,7 @@ export class OpenAIResponsesProvider implements LLMProvider {
 
     const { instructions, input } = toResponsesInput(messages);
     const tools =
-      options?.tools && options.tools.length > 0
-        ? options.tools.map(toResponsesTool)
-        : undefined;
+      options?.tools && options.tools.length > 0 ? options.tools.map(toResponsesTool) : undefined;
 
     try {
       // Use the responses.create() method from the OpenAI SDK.

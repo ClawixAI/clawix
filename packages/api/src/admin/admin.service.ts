@@ -15,6 +15,7 @@ import { encryptChannelConfig, maskChannelConfig } from '../channels/channel-con
 import { GroupRepository } from '../db/group.repository.js';
 import { PolicyRepository } from '../db/policy.repository.js';
 import { UserRepository } from '../db/user.repository.js';
+import { SkillLoaderService } from '../engine/skill-loader.service.js';
 import { BCRYPT_SALT_ROUNDS_DEFAULT } from '../auth/auth.constants.js';
 
 type SafeUser = Omit<User, 'passwordHash'>;
@@ -44,6 +45,7 @@ export class AdminService {
     private readonly channelManager: ChannelManagerService,
     private readonly groupRepo: GroupRepository,
     private readonly policyRepo: PolicyRepository,
+    private readonly skillLoader: SkillLoaderService,
     private readonly config: ConfigService,
   ) {
     this.saltRounds = Number(
@@ -67,13 +69,18 @@ export class AdminService {
 
   async createUser(input: CreateUserInput): Promise<SafeUser> {
     const passwordHash = await hash(input.password, this.saltRounds);
-    return this.stripPassword(await this.userRepo.create({
+    const user = await this.userRepo.create({
       email: input.email,
       name: input.name,
       passwordHash,
       role: input.role,
       policyId: input.policyId,
-    }));
+    });
+
+    // Create the user's custom skill directory
+    await this.skillLoader.ensureUserSkillDir(user.id);
+
+    return this.stripPassword(user);
   }
 
   async updateUser(id: string, input: UpdateUserInput): Promise<SafeUser> {
@@ -89,7 +96,10 @@ export class AdminService {
   private maskChannelSecrets(channel: Channel): Channel {
     return {
       ...channel,
-      config: maskChannelConfig(channel.type, (channel.config ?? {}) as Record<string, unknown>) as Prisma.JsonValue,
+      config: maskChannelConfig(
+        channel.type,
+        (channel.config ?? {}) as Record<string, unknown>,
+      ) as Prisma.JsonValue,
     };
   }
 
@@ -132,10 +142,7 @@ export class AdminService {
     let encryptedConfig: Prisma.InputJsonValue | undefined;
     if (input.config) {
       const existing = await this.channelRepo.findById(id);
-      encryptedConfig = encryptChannelConfig(
-        existing.type,
-        input.config,
-      ) as Prisma.InputJsonValue;
+      encryptedConfig = encryptChannelConfig(existing.type, input.config) as Prisma.InputJsonValue;
     }
     const channel = await this.channelRepo.update(id, {
       name: input.name,

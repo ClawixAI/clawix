@@ -5,25 +5,31 @@ import dynamic from 'next/dynamic';
 import { FolderOpen, Loader2 } from 'lucide-react';
 import { authFetch, getAccessToken } from '@/lib/auth';
 import { ApiError } from '@/lib/api';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAnimeOnMount } from '@/lib/anime/use-anime';
 import { staggerFadeUp, STAGGER } from '@/lib/anime';
 import { WorkspaceBreadcrumbs } from './breadcrumbs';
 import { WorkspaceToolbar } from './workspace-toolbar';
 import { FileList } from './file-list';
 import { FilePreview } from './file-preview';
-import { CreateDialog, DeleteDialog, MoveDialog, DiscardDialog, ConflictDialog } from './workspace-dialogs';
+import {
+  CreateDialog,
+  DeleteDialog,
+  MoveDialog,
+  DiscardDialog,
+  ConflictDialog,
+} from './workspace-dialogs';
 import { UploadZone } from './upload-zone';
-import type { DirectoryListing, FileContent, FileEntry, UpdateContentResponse } from '@clawix/shared';
+import type {
+  DirectoryListing,
+  FileContent,
+  FileEntry,
+  UpdateContentResponse,
+} from '@clawix/shared';
 
-const FileEditor = dynamic(
-  () => import('./file-editor').then((m) => ({ default: m.FileEditor })),
-  { ssr: false },
-);
+const FileEditor = dynamic(() => import('./file-editor').then((m) => ({ default: m.FileEditor })), {
+  ssr: false,
+});
 
 export default function WorkspacePage() {
   const [currentPath, setCurrentPath] = useState('/');
@@ -116,21 +122,24 @@ export default function WorkspacePage() {
     setSelectedPath(null);
   }, [editing, editingDirty]);
 
-  const handleCreateEntry = useCallback(async (name: string) => {
-    if (!showCreateDialog) return;
-    try {
-      const entryPath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
-      await authFetch('/api/v1/workspace/files', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: entryPath, type: showCreateDialog }),
-      });
-      setShowCreateDialog(null);
-      fetchDirectory(currentPath);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create entry');
-    }
-  }, [showCreateDialog, currentPath, fetchDirectory]);
+  const handleCreateEntry = useCallback(
+    async (name: string) => {
+      if (!showCreateDialog) return;
+      try {
+        const entryPath = currentPath === '/' ? `/${name}` : `${currentPath}/${name}`;
+        await authFetch('/api/v1/workspace/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: entryPath, type: showCreateDialog }),
+        });
+        setShowCreateDialog(null);
+        fetchDirectory(currentPath);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to create entry');
+      }
+    },
+    [showCreateDialog, currentPath, fetchDirectory],
+  );
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
@@ -151,33 +160,39 @@ export default function WorkspacePage() {
     }
   }, [deleteTarget, currentPath, fetchDirectory, selectedPath]);
 
-  const handleRename = useCallback(async (entry: FileEntry, newName: string) => {
-    try {
-      await authFetch('/api/v1/workspace/files/rename', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: entry.path, newName }),
-      });
-      fetchDirectory(currentPath);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename');
-    }
-  }, [currentPath, fetchDirectory]);
+  const handleRename = useCallback(
+    async (entry: FileEntry, newName: string) => {
+      try {
+        await authFetch('/api/v1/workspace/files/rename', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: entry.path, newName }),
+        });
+        fetchDirectory(currentPath);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to rename');
+      }
+    },
+    [currentPath, fetchDirectory],
+  );
 
-  const handleMove = useCallback(async (destination: string) => {
-    if (!moveTarget) return;
-    try {
-      await authFetch('/api/v1/workspace/files/move', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: moveTarget.path, destination }),
-      });
-      setMoveTarget(null);
-      fetchDirectory(currentPath);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to move');
-    }
-  }, [moveTarget, currentPath, fetchDirectory]);
+  const handleMove = useCallback(
+    async (destination: string) => {
+      if (!moveTarget) return;
+      try {
+        await authFetch('/api/v1/workspace/files/move', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: moveTarget.path, destination }),
+        });
+        setMoveTarget(null);
+        fetchDirectory(currentPath);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to move');
+      }
+    },
+    [moveTarget, currentPath, fetchDirectory],
+  );
 
   const handleDownload = useCallback(async (entry: FileEntry) => {
     try {
@@ -207,31 +222,39 @@ export default function WorkspacePage() {
     setEditing(true);
   }, []);
 
-  const handleSave = useCallback(async (content: string) => {
-    if (!selectedFile) return;
-    try {
-      const result = await authFetch<UpdateContentResponse>('/api/v1/workspace/files/content', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          path: selectedFile.path,
+  const handleSave = useCallback(
+    async (content: string) => {
+      if (!selectedFile) return;
+      try {
+        const result = await authFetch<UpdateContentResponse>('/api/v1/workspace/files/content', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: selectedFile.path,
+            content,
+            expectedModifiedAt: selectedFile.modifiedAt,
+          }),
+        });
+        setSelectedFile({
+          ...selectedFile,
           content,
-          expectedModifiedAt: selectedFile.modifiedAt,
-        }),
-      });
-      setSelectedFile({ ...selectedFile, content, size: result.size, modifiedAt: result.modifiedAt });
-      setEditing(false);
-      setEditingDirty(false);
-      fetchDirectory(currentPath);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setPendingContent(content);
-        setShowConflictDialog(true);
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to save file');
+          size: result.size,
+          modifiedAt: result.modifiedAt,
+        });
+        setEditing(false);
+        setEditingDirty(false);
+        fetchDirectory(currentPath);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          setPendingContent(content);
+          setShowConflictDialog(true);
+        } else {
+          setError(err instanceof Error ? err.message : 'Failed to save file');
+        }
       }
-    }
-  }, [selectedFile, currentPath, fetchDirectory]);
+    },
+    [selectedFile, currentPath, fetchDirectory],
+  );
 
   const handleCancelEdit = useCallback(() => {
     if (editingDirty) {
@@ -267,7 +290,12 @@ export default function WorkspacePage() {
           force: true,
         }),
       });
-      setSelectedFile({ ...selectedFile, content: pendingContent, size: result.size, modifiedAt: result.modifiedAt });
+      setSelectedFile({
+        ...selectedFile,
+        content: pendingContent,
+        size: result.size,
+        modifiedAt: result.modifiedAt,
+      });
       setEditing(false);
       setEditingDirty(false);
       setPendingContent(null);
@@ -293,20 +321,23 @@ export default function WorkspacePage() {
     }
   }, [selectedFile]);
 
-  const handleSelectFile = useCallback((entry: FileEntry) => {
-    if (editing && editingDirty && selectedPath !== entry.path) {
-      setPendingAction(() => () => {
-        setEditing(false);
-        setEditingDirty(false);
-        fetchFileContent(entry);
-      });
-      setShowDiscardDialog(true);
-      return;
-    }
-    setEditing(false);
-    setEditingDirty(false);
-    fetchFileContent(entry);
-  }, [editing, editingDirty, selectedPath, fetchFileContent]);
+  const handleSelectFile = useCallback(
+    (entry: FileEntry) => {
+      if (editing && editingDirty && selectedPath !== entry.path) {
+        setPendingAction(() => () => {
+          setEditing(false);
+          setEditingDirty(false);
+          fetchFileContent(entry);
+        });
+        setShowDiscardDialog(true);
+        return;
+      }
+      setEditing(false);
+      setEditingDirty(false);
+      fetchFileContent(entry);
+    },
+    [editing, editingDirty, selectedPath, fetchFileContent],
+  );
 
   useEffect(() => {
     fetchDirectory('/');
@@ -329,9 +360,15 @@ export default function WorkspacePage() {
       {/* Toolbar */}
       <WorkspaceToolbar
         entryCount={listing?.entries.length ?? 0}
-        onNewFile={() => setShowCreateDialog('file')}
-        onNewFolder={() => setShowCreateDialog('directory')}
-        onUpload={() => setShowUploadZone((prev) => !prev)}
+        onNewFile={() => {
+          setShowCreateDialog('file');
+        }}
+        onNewFolder={() => {
+          setShowCreateDialog('directory');
+        }}
+        onUpload={() => {
+          setShowUploadZone((prev) => !prev);
+        }}
       />
 
       {/* Upload Zone */}
@@ -339,7 +376,9 @@ export default function WorkspacePage() {
         <UploadZone
           currentPath={currentPath}
           onUploadComplete={() => fetchDirectory(currentPath)}
-          onClose={() => setShowUploadZone(false)}
+          onClose={() => {
+            setShowUploadZone(false);
+          }}
         />
       )}
 
@@ -366,8 +405,12 @@ export default function WorkspacePage() {
               onSelectFile={handleSelectFile}
               onDownload={handleDownload}
               onRename={handleRename}
-              onMove={(entry) => setMoveTarget(entry)}
-              onDelete={(entry) => setDeleteTarget(entry)}
+              onMove={(entry) => {
+                setMoveTarget(entry);
+              }}
+              onDelete={(entry) => {
+                setDeleteTarget(entry);
+              }}
               editingPath={editing ? selectedPath : null}
               editingDirty={editingDirty}
             />
@@ -390,7 +433,9 @@ export default function WorkspacePage() {
         <CreateDialog
           type={showCreateDialog}
           open={!!showCreateDialog}
-          onOpenChange={(open) => { if (!open) setShowCreateDialog(null); }}
+          onOpenChange={(open) => {
+            if (!open) setShowCreateDialog(null);
+          }}
           onConfirm={handleCreateEntry}
         />
       )}
@@ -400,7 +445,9 @@ export default function WorkspacePage() {
           name={deleteTarget.name}
           isDirectory={deleteTarget.isDirectory}
           open={!!deleteTarget}
-          onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+          onOpenChange={(open) => {
+            if (!open) setDeleteTarget(null);
+          }}
           onConfirm={handleDelete}
         />
       )}
@@ -410,7 +457,9 @@ export default function WorkspacePage() {
           name={moveTarget.name}
           currentDir={currentPath}
           open={!!moveTarget}
-          onOpenChange={(open) => { if (!open) setMoveTarget(null); }}
+          onOpenChange={(open) => {
+            if (!open) setMoveTarget(null);
+          }}
           onConfirm={handleMove}
         />
       )}
@@ -433,15 +482,15 @@ export default function WorkspacePage() {
       {/* Editor modal */}
       <Dialog
         open={editing && selectedFile !== null}
-        onOpenChange={(open) => { if (!open) handleCancelEdit(); }}
+        onOpenChange={(open) => {
+          if (!open) handleCancelEdit();
+        }}
       >
         <DialogContent
           showCloseButton={false}
           className="tv-effect flex h-[85vh] !w-[40vw] !max-w-none flex-col gap-0 p-0 overflow-hidden [&>*]:h-full"
         >
-          <DialogTitle className="sr-only">
-            Edit {selectedFile?.name ?? 'file'}
-          </DialogTitle>
+          <DialogTitle className="sr-only">Edit {selectedFile?.name ?? 'file'}</DialogTitle>
           {editing && selectedFile && (
             <FileEditor
               file={selectedFile}

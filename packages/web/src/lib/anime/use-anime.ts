@@ -36,7 +36,7 @@ export function useAnimeOnMount(
     return () => {
       instanceRef.current?.pause();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 }
 
 export function useAnimate() {
@@ -85,5 +85,5 @@ export function useCountUp(
     return () => {
       instance.pause();
     };
-  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  }, deps);
 }

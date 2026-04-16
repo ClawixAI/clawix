@@ -18,8 +18,20 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import type { JwtPayload } from '../auth/auth.types.js';
 import { WorkspaceService } from './workspace.service.js';
-import type { DirectoryListing, FileContent, FileEntry, DeleteResponse, UpdateContentResponse } from '@clawix/shared';
-import { createEntrySchema, renameSchema, moveSchema, deleteSchema, updateContentSchema } from '@clawix/shared';
+import type {
+  DirectoryListing,
+  FileContent,
+  FileEntry,
+  DeleteResponse,
+  UpdateContentResponse,
+} from '@clawix/shared';
+import {
+  createEntrySchema,
+  renameSchema,
+  moveSchema,
+  deleteSchema,
+  updateContentSchema,
+} from '@clawix/shared';
 
 @ApiTags('workspace')
 @Controller('api/v1/workspace')
@@ -78,10 +90,7 @@ export class WorkspaceController {
   }
 
   @Post('files')
-  async createEntry(
-    @Req() req: { user: JwtPayload },
-    @Body() body: unknown,
-  ): Promise<FileEntry> {
+  async createEntry(@Req() req: { user: JwtPayload }, @Body() body: unknown): Promise<FileEntry> {
     const parsed = createEntrySchema.parse(body);
     return this.workspaceService.createEntry(req.user.sub, parsed.path, parsed.type);
   }
@@ -108,19 +117,13 @@ export class WorkspaceController {
   }
 
   @Patch('files/rename')
-  async renameEntry(
-    @Req() req: { user: JwtPayload },
-    @Body() body: unknown,
-  ): Promise<FileEntry> {
+  async renameEntry(@Req() req: { user: JwtPayload }, @Body() body: unknown): Promise<FileEntry> {
     const parsed = renameSchema.parse(body);
     return this.workspaceService.renameEntry(req.user.sub, parsed.path, parsed.newName);
   }
 
   @Patch('files/move')
-  async moveEntry(
-    @Req() req: { user: JwtPayload },
-    @Body() body: unknown,
-  ): Promise<FileEntry> {
+  async moveEntry(@Req() req: { user: JwtPayload }, @Body() body: unknown): Promise<FileEntry> {
     const parsed = moveSchema.parse(body);
     return this.workspaceService.moveEntry(req.user.sub, parsed.path, parsed.destination);
   }

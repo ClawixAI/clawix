@@ -7,9 +7,9 @@
   </p>
   <p align="center">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue`?style=flat-square" alt="License"></a>
-    <a href="https://github.com/ClawixAI/clawix/stargazers"><img src="https://img.shields.io/github/stars/ClawixAI/clawix?style=flat-square" alt="Stars"></a>
-    <a href="https://github.com/ClawixAI/clawix/issues"><img src="https://img.shields.io/github/issues/ClawixAI/clawix?style=flat-square" alt="Issues"></a>
-    <a href="https://github.com/ClawixAI/clawix/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs Welcome"></a>
+    <a href="https://github.com/clawix/clawix/stargazers"><img src="https://img.shields.io/github/stars/clawix/clawix?style=flat-square" alt="Stars"></a>
+    <a href="https://github.com/clawix/clawix/issues"><img src="https://img.shields.io/github/issues/clawix/clawix?style=flat-square" alt="Issues"></a>
+    <a href="https://github.com/clawix/clawix/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs Welcome"></a>
     <a href="package.json"><img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen?style=flat-square" alt="Node.js"></a>
     <a href="package.json"><img src="https://img.shields.io/badge/TypeScript-5.7-blue?style=flat-square" alt="TypeScript"></a>
   </p>
@@ -39,24 +39,30 @@ Clawix sits in between: **production-grade orchestration you own entirely.**
 <td width="50%">
 
 ### Container-Isolated Agents
+
 Every agent gets its own sandboxed Docker container with CPU/memory limits, read-only mounts, and no root access. Cross-agent interference is architecturally impossible.
 
 ### Warm Container Pool
+
 Primary agents stay warm in pre-provisioned containers. Cold-start latency drops from **1-3 seconds to ~50ms**.
 
 ### Swarm Orchestration
+
 Break complex tasks into sub-agent DAGs. The coordinator delegates, aggregates results, and handles failures -- all within isolated containers.
 
 </td>
 <td width="50%">
 
 ### Multi-Provider AI
+
 Anthropic and OpenAI out of the box, with Azure, DeepSeek, Gemini, and OpenRouter planned. Any OpenAI-compatible endpoint already works via the custom provider. Add new providers with a single config entry.
 
 ### Scoped Memory System
+
 Persistent memory at three levels: private (per-user), group (team), and org-wide. Agents build context over time without re-prompting.
 
 ### Skills Framework
+
 Pluggable tools with approval workflows. Bundle built-in skills, create custom ones at runtime, or use the built-in skill-creator agent to generate new skills from natural language.
 
 </td>
@@ -177,26 +183,26 @@ That's it. Open `http://localhost:3000` or message your Telegram bot.
 
 Built-in providers plus extensible registry -- add new ones with a single `ProviderSpec` entry:
 
-| Provider       | Detection                       | Use Case               | Status         |
-| -------------- | ------------------------------- | ---------------------- | -------------- |
-| **Anthropic**  | model starts with `claude-`     | Primary (best tools)   | Available      |
-| **OpenAI**     | model starts with `gpt-`/`o1-`/`o3-`/`o4-` | General purpose | Available |
-| **Z.AI Coding**| model starts with `glm-`        | GLM models             | Available      |
-| **Azure**      | config key `azure_openai`       | Enterprise compliance  | Planned        |
-| **DeepSeek**   | model starts with `deepseek-`   | Cost-effective         | Planned        |
-| **Gemini**     | model starts with `gemini-`     | Google ecosystem       | Planned        |
-| **Kimi**       | model starts with `moonshot-`   | Long-context tasks     | Planned        |
-| **OpenRouter** | API key starts with `sk-or-`    | Provider gateway       | Planned        |
-| **Custom**     | any OpenAI-compatible endpoint  | Ollama, vLLM, etc.     | Available      |
+| Provider        | Detection                                  | Use Case              | Status    |
+| --------------- | ------------------------------------------ | --------------------- | --------- |
+| **Anthropic**   | model starts with `claude-`                | Primary (best tools)  | Available |
+| **OpenAI**      | model starts with `gpt-`/`o1-`/`o3-`/`o4-` | General purpose       | Available |
+| **Z.AI Coding** | model starts with `glm-`                   | GLM models            | Available |
+| **Azure**       | config key `azure_openai`                  | Enterprise compliance | Planned   |
+| **DeepSeek**    | model starts with `deepseek-`              | Cost-effective        | Planned   |
+| **Gemini**      | model starts with `gemini-`                | Google ecosystem      | Planned   |
+| **Kimi**        | model starts with `moonshot-`              | Long-context tasks    | Planned   |
+| **OpenRouter**  | API key starts with `sk-or-`               | Provider gateway      | Planned   |
+| **Custom**      | any OpenAI-compatible endpoint             | Ollama, vLLM, etc.    | Available |
 
 ## Channels
 
-| Channel            | Integration          | Use Case                        | Status         |
-| ------------------ | -------------------- | ------------------------------- | -------------- |
-| **Telegram**       | grammY               | Personal & team chat            | Available      |
-| **WhatsApp**       | Business API         | Customer-facing agents          | Planned        |
-| **Slack**          | Bolt SDK             | Workspace collaboration         | Planned        |
-| **Web Dashboard**  | Next.js + WebSocket  | Admin console & conversations   | Available      |
+| Channel           | Integration         | Use Case                      | Status    |
+| ----------------- | ------------------- | ----------------------------- | --------- |
+| **Telegram**      | grammY              | Personal & team chat          | Available |
+| **WhatsApp**      | Business API        | Customer-facing agents        | Planned   |
+| **Slack**         | Bolt SDK            | Workspace collaboration       | Planned   |
+| **Web Dashboard** | Next.js + WebSocket | Admin console & conversations | Available |
 
 ---
 
@@ -211,7 +217,7 @@ Clawix follows a **zero-trust architecture** for agent execution:
 | Memory poisoning               | Agent context regenerated from DB each run                     |
 | Disk exhaustion                | Per-user quota enforcement (default 500 MB)                    |
 | Path traversal                 | All paths validated to stay under `data/org/`                  |
-| Secret leakage                 | API keys encrypted at rest (AES-256-GCM)                      |
+| Secret leakage                 | API keys encrypted at rest (AES-256-GCM)                       |
 | Untrusted code execution       | All agent code runs inside sandboxed containers, never on host |
 
 ---
@@ -319,6 +325,7 @@ git push origin feature/your-feature
 ```
 
 **Guidelines:**
+
 - TypeScript strict mode -- no `any`
 - Write tests for new features (Vitest)
 - Follow conventional commits (`feat:`, `fix:`, `refactor:`, etc.)

@@ -35,7 +35,6 @@ interface PaginatedUsers {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
-
 // ------------------------------------------------------------------ //
 //  Create Group Dialog                                                //
 // ------------------------------------------------------------------ //
@@ -56,7 +55,9 @@ export function CreateGroupDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create Group</DialogTitle>
-          <DialogDescription>Add a new group for memory sharing and access control.</DialogDescription>
+          <DialogDescription>
+            Add a new group for memory sharing and access control.
+          </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -80,7 +81,13 @@ export function CreateGroupDialog({
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
@@ -140,7 +147,13 @@ export function EditGroupDialog({
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
@@ -197,7 +210,12 @@ export function MembersDialog({
     }
   }, []);
 
-  useEffect(() => { if (group) { void fetchMembers(); void fetchUsers(); } }, [group, fetchMembers, fetchUsers]);
+  useEffect(() => {
+    if (group) {
+      void fetchMembers();
+      void fetchUsers();
+    }
+  }, [group, fetchMembers, fetchUsers]);
 
   if (!group) return null;
 
@@ -300,7 +318,10 @@ export function MembersDialog({
                         className="rounded-md border bg-background px-2 py-1 text-sm"
                         value={member.role}
                         onChange={(e) => {
-                          void handleRoleChange(member.userId, e.target.value as 'OWNER' | 'MEMBER');
+                          void handleRoleChange(
+                            member.userId,
+                            e.target.value as 'OWNER' | 'MEMBER',
+                          );
                         }}
                         disabled={saving || (member.role === 'OWNER' && ownerCount <= 1)}
                       >
@@ -313,7 +334,9 @@ export function MembersDialog({
                         variant="ghost"
                         size="icon"
                         className="size-8 text-destructive hover:text-destructive"
-                        onClick={() => { void handleRemoveMember(member.userId); }}
+                        onClick={() => {
+                          void handleRemoveMember(member.userId);
+                        }}
                         disabled={saving || (member.role === 'OWNER' && ownerCount <= 1)}
                         title={
                           member.role === 'OWNER' && ownerCount <= 1
@@ -340,7 +363,9 @@ export function MembersDialog({
                 id="add-member-user"
                 className="rounded-md border bg-background px-3 py-2 text-sm"
                 value={addUserId}
-                onChange={(e) => setAddUserId(e.target.value)}
+                onChange={(e) => {
+                  setAddUserId(e.target.value);
+                }}
               >
                 <option value="">Select a user...</option>
                 {availableUsers.map((u) => (
@@ -356,7 +381,9 @@ export function MembersDialog({
                 id="add-member-role"
                 className="rounded-md border bg-background px-3 py-2 text-sm"
                 value={addRole}
-                onChange={(e) => setAddRole(e.target.value as 'OWNER' | 'MEMBER')}
+                onChange={(e) => {
+                  setAddRole(e.target.value as 'OWNER' | 'MEMBER');
+                }}
               >
                 <option value="MEMBER">Member</option>
                 <option value="OWNER">Owner</option>
@@ -365,7 +392,9 @@ export function MembersDialog({
             <Button
               size="sm"
               disabled={saving || !addUserId}
-              onClick={() => { void handleAddMember(); }}
+              onClick={() => {
+                void handleAddMember();
+              }}
             >
               {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
               Add
@@ -373,7 +402,10 @@ export function MembersDialog({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => { setAddOpen(false); setAddUserId(''); }}
+              onClick={() => {
+                setAddOpen(false);
+                setAddUserId('');
+              }}
             >
               Cancel
             </Button>
@@ -383,7 +415,9 @@ export function MembersDialog({
             variant="outline"
             size="sm"
             className="self-start"
-            onClick={() => { setAddOpen(true); }}
+            onClick={() => {
+              setAddOpen(true);
+            }}
           >
             <Plus className="mr-1 size-4" />
             Add Member

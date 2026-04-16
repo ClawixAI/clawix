@@ -6,6 +6,10 @@
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:22-slim AS builder
 
+# Install openssl for Prisma client generation
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
@@ -18,12 +22,12 @@ COPY packages/api ./packages/api
 # Install all dependencies (including devDependencies for build)
 RUN pnpm install --frozen-lockfile
 
+# Generate Prisma client first (TypeScript imports from generated types)
+RUN pnpm --filter @clawix/api exec prisma generate
+
 # Build shared package first, then API
 RUN pnpm --filter @clawix/shared build && \
     pnpm --filter @clawix/api build
-
-# Generate Prisma client
-RUN pnpm --filter @clawix/api exec prisma generate
 
 # Deploy API with production dependencies only (creates standalone bundle)
 # --legacy required for pnpm v10+ with workspace dependencies

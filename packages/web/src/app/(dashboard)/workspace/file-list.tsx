@@ -112,23 +112,27 @@ export function FileList({
     });
   }, []);
 
-  const sorted = useMemo(() => [...entries].sort((a, b) => {
-    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+  const sorted = useMemo(
+    () =>
+      [...entries].sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
 
-    let cmp = 0;
-    switch (sortField) {
-      case 'name':
-        cmp = a.name.localeCompare(b.name);
-        break;
-      case 'size':
-        cmp = a.size - b.size;
-        break;
-      case 'modifiedAt':
-        cmp = new Date(a.modifiedAt).getTime() - new Date(b.modifiedAt).getTime();
-        break;
-    }
-    return sortDir === 'asc' ? cmp : -cmp;
-  }), [entries, sortField, sortDir]);
+        let cmp = 0;
+        switch (sortField) {
+          case 'name':
+            cmp = a.name.localeCompare(b.name);
+            break;
+          case 'size':
+            cmp = a.size - b.size;
+            break;
+          case 'modifiedAt':
+            cmp = new Date(a.modifiedAt).getTime() - new Date(b.modifiedAt).getTime();
+            break;
+        }
+        return sortDir === 'asc' ? cmp : -cmp;
+      }),
+    [entries, sortField, sortDir],
+  );
 
   const handleRowClick = useCallback(
     (entry: FileEntry) => {
@@ -179,7 +183,9 @@ export function FileList({
           <TableRow>
             <TableHead
               className="cursor-pointer select-none"
-              onClick={() => toggleSort('name')}
+              onClick={() => {
+                toggleSort('name');
+              }}
             >
               <span className="flex items-center gap-1">
                 Name <ArrowUpDown className="size-3 text-muted-foreground" />
@@ -187,7 +193,9 @@ export function FileList({
             </TableHead>
             <TableHead
               className="w-[100px] cursor-pointer select-none"
-              onClick={() => toggleSort('size')}
+              onClick={() => {
+                toggleSort('size');
+              }}
             >
               <span className="flex items-center gap-1">
                 Size <ArrowUpDown className="size-3 text-muted-foreground" />
@@ -195,7 +203,9 @@ export function FileList({
             </TableHead>
             <TableHead
               className="w-[140px] cursor-pointer select-none"
-              onClick={() => toggleSort('modifiedAt')}
+              onClick={() => {
+                toggleSort('modifiedAt');
+              }}
             >
               <span className="flex items-center gap-1">
                 Modified <ArrowUpDown className="size-3 text-muted-foreground" />
@@ -211,32 +221,44 @@ export function FileList({
             return (
               <TableRow
                 key={entry.path}
-                className={cn(
-                  'cursor-pointer',
-                  isSelected && 'bg-muted/50',
-                )}
-                onClick={() => handleRowClick(entry)}
+                className={cn('cursor-pointer', isSelected && 'bg-muted/50')}
+                onClick={() => {
+                  handleRowClick(entry);
+                }}
               >
                 <TableCell className="font-medium">
                   {renamingPath === entry.path ? (
                     <Input
                       className="h-7 text-sm"
                       value={renameValue}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => setRenameValue(e.target.value)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
+                      onChange={(e) => {
+                        setRenameValue(e.target.value);
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') confirmRename(entry);
                         if (e.key === 'Escape') cancelRename();
                       }}
-                      onBlur={() => confirmRename(entry)}
+                      onBlur={() => {
+                        confirmRename(entry);
+                      }}
                       autoFocus
                     />
                   ) : (
                     <div className="flex items-center gap-2">
-                      <Icon className={cn('size-4 shrink-0', entry.isDirectory ? 'text-amber-500' : 'text-muted-foreground')} />
+                      <Icon
+                        className={cn(
+                          'size-4 shrink-0',
+                          entry.isDirectory ? 'text-amber-500' : 'text-muted-foreground',
+                        )}
+                      />
                       <span className="truncate">{entry.name}</span>
                       {editingDirty && editingPath === entry.path && (
-                        <span className="text-amber-500 text-xs" title="Unsaved changes">●</span>
+                        <span className="text-amber-500 text-xs" title="Unsaved changes">
+                          ●
+                        </span>
                       )}
                     </div>
                   )}
@@ -252,19 +274,30 @@ export function FileList({
                     <DropdownMenuTrigger asChild>
                       <button
                         className="flex size-8 items-center justify-center rounded-md hover:bg-accent"
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
                       >
                         <MoreVertical className="size-4 text-muted-foreground" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenuContent
+                      align="end"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                      }}
+                    >
                       {!entry.isDirectory && (
                         <DropdownMenuItem onSelect={() => onDownload?.(entry)}>
                           <Download className="mr-2 size-4" />
                           Download
                         </DropdownMenuItem>
                       )}
-                      <DropdownMenuItem onSelect={() => startRename(entry)}>
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          startRename(entry);
+                        }}
+                      >
                         <Pencil className="mr-2 size-4" />
                         Rename
                       </DropdownMenuItem>

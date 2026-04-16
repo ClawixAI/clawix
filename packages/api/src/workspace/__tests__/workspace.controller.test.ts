@@ -20,14 +20,30 @@ describe('WorkspaceController', () => {
     uploadFile: ReturnType<typeof vi.fn>;
   };
 
-  const mockReq = { user: { sub: 'user-1', email: 'test@test.com', role: 'admin' as const, policyName: 'default' } };
+  const mockReq = {
+    user: { sub: 'user-1', email: 'test@test.com', role: 'admin' as const, policyName: 'default' },
+  };
 
   const mockListing: DirectoryListing = {
     path: '/',
     parent: null,
     entries: [
-      { name: 'src', path: '/src', size: 0, modifiedAt: '2026-01-01T00:00:00.000Z', isDirectory: true, type: 'directory' },
-      { name: 'index.ts', path: '/index.ts', size: 100, modifiedAt: '2026-01-01T00:00:00.000Z', isDirectory: false, type: 'code' },
+      {
+        name: 'src',
+        path: '/src',
+        size: 0,
+        modifiedAt: '2026-01-01T00:00:00.000Z',
+        isDirectory: true,
+        type: 'directory',
+      },
+      {
+        name: 'index.ts',
+        path: '/index.ts',
+        size: 100,
+        modifiedAt: '2026-01-01T00:00:00.000Z',
+        isDirectory: false,
+        type: 'code',
+      },
     ],
   };
 
@@ -134,15 +150,13 @@ describe('WorkspaceController', () => {
     });
 
     it('should throw ZodError when body is missing type', async () => {
-      await expect(
-        controller.createEntry(mockReq, { path: '/newfile.ts' }),
-      ).rejects.toThrow(ZodError);
+      await expect(controller.createEntry(mockReq, { path: '/newfile.ts' })).rejects.toThrow(
+        ZodError,
+      );
     });
 
     it('should throw ZodError when body is missing path', async () => {
-      await expect(
-        controller.createEntry(mockReq, { type: 'file' }),
-      ).rejects.toThrow(ZodError);
+      await expect(controller.createEntry(mockReq, { type: 'file' })).rejects.toThrow(ZodError);
     });
 
     it('should throw ZodError when type is invalid', async () => {
@@ -157,7 +171,10 @@ describe('WorkspaceController', () => {
       const renamedEntry: FileEntry = { ...mockFileEntry, name: 'renamed.ts', path: '/renamed.ts' };
       mockService.renameEntry.mockResolvedValue(renamedEntry);
 
-      const result = await controller.renameEntry(mockReq, { path: '/newfile.ts', newName: 'renamed.ts' });
+      const result = await controller.renameEntry(mockReq, {
+        path: '/newfile.ts',
+        newName: 'renamed.ts',
+      });
 
       expect(result).toEqual(renamedEntry);
       expect(mockService.renameEntry).toHaveBeenCalledWith('user-1', '/newfile.ts', 'renamed.ts');
@@ -176,9 +193,9 @@ describe('WorkspaceController', () => {
     });
 
     it('should throw ZodError when path is missing', async () => {
-      await expect(
-        controller.renameEntry(mockReq, { newName: 'renamed.ts' }),
-      ).rejects.toThrow(ZodError);
+      await expect(controller.renameEntry(mockReq, { newName: 'renamed.ts' })).rejects.toThrow(
+        ZodError,
+      );
     });
   });
 
@@ -187,16 +204,19 @@ describe('WorkspaceController', () => {
       const movedEntry: FileEntry = { ...mockFileEntry, path: '/src/newfile.ts' };
       mockService.moveEntry.mockResolvedValue(movedEntry);
 
-      const result = await controller.moveEntry(mockReq, { path: '/newfile.ts', destination: '/src' });
+      const result = await controller.moveEntry(mockReq, {
+        path: '/newfile.ts',
+        destination: '/src',
+      });
 
       expect(result).toEqual(movedEntry);
       expect(mockService.moveEntry).toHaveBeenCalledWith('user-1', '/newfile.ts', '/src');
     });
 
     it('should throw ZodError when destination is missing', async () => {
-      await expect(
-        controller.moveEntry(mockReq, { path: '/newfile.ts' }),
-      ).rejects.toThrow(ZodError);
+      await expect(controller.moveEntry(mockReq, { path: '/newfile.ts' })).rejects.toThrow(
+        ZodError,
+      );
     });
 
     it('should throw ZodError when path is empty', async () => {
@@ -218,15 +238,11 @@ describe('WorkspaceController', () => {
     });
 
     it('should throw ZodError when path is empty', async () => {
-      await expect(
-        controller.deleteEntry(mockReq, { path: '' }),
-      ).rejects.toThrow(ZodError);
+      await expect(controller.deleteEntry(mockReq, { path: '' })).rejects.toThrow(ZodError);
     });
 
     it('should throw ZodError when body has no path', async () => {
-      await expect(
-        controller.deleteEntry(mockReq, {}),
-      ).rejects.toThrow(ZodError);
+      await expect(controller.deleteEntry(mockReq, {})).rejects.toThrow(ZodError);
     });
   });
 
@@ -249,7 +265,10 @@ describe('WorkspaceController', () => {
 
       expect(mockService.downloadFile).toHaveBeenCalledWith('user-1', '/index.ts');
       expect(mockReply.header).toHaveBeenCalledWith('Content-Type', 'text/plain');
-      expect(mockReply.header).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="index.ts"');
+      expect(mockReply.header).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="index.ts"',
+      );
       expect(mockReply.header).toHaveBeenCalledWith('Content-Length', 100);
       expect(mockReply.send).toHaveBeenCalledWith(mockStream);
     });
@@ -260,9 +279,9 @@ describe('WorkspaceController', () => {
         send: vi.fn().mockResolvedValue(undefined),
       } as any;
 
-      await expect(
-        controller.downloadFile(mockReq, undefined, mockReply),
-      ).rejects.toThrow(BadRequestException);
+      await expect(controller.downloadFile(mockReq, undefined, mockReply)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 });

@@ -1,12 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Loader2,
-  MoreHorizontal,
-  Plus,
-  Shield,
-} from 'lucide-react';
+import { Loader2, MoreHorizontal, Plus, Shield } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -104,7 +99,9 @@ export function PoliciesTab() {
     }
   }, []);
 
-  useEffect(() => { void fetchPolicies(); }, [fetchPolicies]);
+  useEffect(() => {
+    void fetchPolicies();
+  }, [fetchPolicies]);
 
   async function handleCreate(data: Record<string, unknown>) {
     setSaving(true);
@@ -177,7 +174,12 @@ export function PoliciesTab() {
         <p className="text-sm text-muted-foreground">
           Manage governance policies — quotas, limits, and feature access.
         </p>
-        <Button size="sm" onClick={() => { setCreateOpen(true); }}>
+        <Button
+          size="sm"
+          onClick={() => {
+            setCreateOpen(true);
+          }}
+        >
           <Plus className="mr-1 size-4" />
           Create Policy
         </Button>
@@ -244,7 +246,9 @@ export function PoliciesTab() {
                   <TableCell>
                     <Switch
                       checked={p.isActive}
-                      onCheckedChange={() => { void handleToggleActive(p); }}
+                      onCheckedChange={() => {
+                        void handleToggleActive(p);
+                      }}
                       disabled={saving}
                     />
                   </TableCell>
@@ -256,13 +260,19 @@ export function PoliciesTab() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => { setEditPolicy(p); }}>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setEditPolicy(p);
+                          }}
+                        >
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive"
-                          onSelect={() => { setDeletePolicy(p); }}
+                          onSelect={() => {
+                            setDeletePolicy(p);
+                          }}
                         >
                           Delete
                         </DropdownMenuItem>
@@ -287,29 +297,35 @@ export function PoliciesTab() {
       <EditPolicyDialog
         key={editPolicy?.id ?? 'none'}
         policy={editPolicy}
-        onOpenChange={(open) => { if (!open) setEditPolicy(null); }}
+        onOpenChange={(open) => {
+          if (!open) setEditPolicy(null);
+        }}
         saving={saving}
         onSubmit={handleUpdate}
       />
 
       <AlertDialog
         open={deletePolicy !== null}
-        onOpenChange={(open) => { if (!open) setDeletePolicy(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeletePolicy(null);
+        }}
       >
         {deletePolicy && (
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Policy</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete <strong>{deletePolicy.name}</strong>?
-                Users assigned to this policy must be reassigned first.
+                Are you sure you want to delete <strong>{deletePolicy.name}</strong>? Users assigned
+                to this policy must be reassigned first.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => { void handleDelete(deletePolicy.id); }}
+                onClick={() => {
+                  void handleDelete(deletePolicy.id);
+                }}
                 disabled={saving}
               >
                 {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -322,7 +338,9 @@ export function PoliciesTab() {
 
       <SuccessDialog
         open={successMessage !== ''}
-        onOpenChange={(open) => { if (!open) setSuccessMessage(''); }}
+        onOpenChange={(open) => {
+          if (!open) setSuccessMessage('');
+        }}
         title="Policy Created"
         description={successMessage}
       />

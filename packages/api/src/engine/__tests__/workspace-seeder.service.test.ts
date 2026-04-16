@@ -121,9 +121,7 @@ describe('WorkspaceSeederService', () => {
   });
 
   it('should seed MEMORY.md from existing memory items when file does not exist', async () => {
-    mockReadFile
-      .mockResolvedValueOnce('# Soul' as never)
-      .mockResolvedValueOnce('# User' as never);
+    mockReadFile.mockResolvedValueOnce('# Soul' as never).mockResolvedValueOnce('# User' as never);
 
     await service.seedWorkspace({
       workspacePath: '/data/users/u1/workspace',
@@ -155,9 +153,7 @@ describe('WorkspaceSeederService', () => {
   });
 
   it('should NOT overwrite existing MEMORY.md', async () => {
-    mockReadFile
-      .mockResolvedValueOnce('# Soul' as never)
-      .mockResolvedValueOnce('# User' as never);
+    mockReadFile.mockResolvedValueOnce('# Soul' as never).mockResolvedValueOnce('# User' as never);
 
     // SOUL.md missing, USER.md missing, MEMORY.md exists
     mockAccess
@@ -168,9 +164,7 @@ describe('WorkspaceSeederService', () => {
     await service.seedWorkspace({
       workspacePath: '/data/users/u1/workspace',
       templateVars: {},
-      existingMemoryItems: [
-        { content: 'Should not be written', tags: ['general'] },
-      ],
+      existingMemoryItems: [{ content: 'Should not be written', tags: ['general'] }],
     });
 
     // Only SOUL.md and USER.md should be written, NOT MEMORY.md
@@ -181,9 +175,7 @@ describe('WorkspaceSeederService', () => {
   });
 
   it('should not write MEMORY.md when no memory items provided', async () => {
-    mockReadFile
-      .mockResolvedValueOnce('# Soul' as never)
-      .mockResolvedValueOnce('# User' as never);
+    mockReadFile.mockResolvedValueOnce('# Soul' as never).mockResolvedValueOnce('# User' as never);
 
     await service.seedWorkspace({
       workspacePath: '/data/users/u1/workspace',

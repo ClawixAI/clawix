@@ -49,7 +49,13 @@ interface CreateDialogProps {
   readonly isLoading?: boolean;
 }
 
-export function CreateDialog({ type, open, onOpenChange, onConfirm, isLoading }: CreateDialogProps) {
+export function CreateDialog({
+  type,
+  open,
+  onOpenChange,
+  onConfirm,
+  isLoading,
+}: CreateDialogProps) {
   const [name, setName] = useState('');
   const error = name.length > 0 ? validateName(name) : null;
   const isFile = type === 'file';
@@ -84,7 +90,9 @@ export function CreateDialog({ type, open, onOpenChange, onConfirm, isLoading }:
             id="entry-name"
             placeholder={isFile ? 'e.g. index.ts' : 'e.g. src'}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !error && name.length > 0) handleConfirm();
             }}
@@ -93,13 +101,15 @@ export function CreateDialog({ type, open, onOpenChange, onConfirm, isLoading }:
           {error && <p className="text-xs text-destructive">{error}</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              handleOpenChange(false);
+            }}
+          >
             Cancel
           </Button>
-          <Button
-            onClick={handleConfirm}
-            disabled={!name || !!error || isLoading}
-          >
+          <Button onClick={handleConfirm} disabled={!name || !!error || isLoading}>
             {isLoading ? 'Creating...' : 'Create'}
           </Button>
         </DialogFooter>
@@ -175,7 +185,11 @@ interface DirNode {
   expanded: boolean;
 }
 
-function updateNode(nodes: DirNode[], targetPath: string, updater: (node: DirNode) => DirNode): DirNode[] {
+function updateNode(
+  nodes: DirNode[],
+  targetPath: string,
+  updater: (node: DirNode) => DirNode,
+): DirNode[] {
   return nodes.map((node) => {
     if (node.path === targetPath) {
       return updater(node);
@@ -200,7 +214,14 @@ async function fetchDirs(path: string): Promise<DirNode[]> {
     }));
 }
 
-export function MoveDialog({ name, currentDir, open, onOpenChange, onConfirm, isLoading }: MoveDialogProps) {
+export function MoveDialog({
+  name,
+  currentDir,
+  open,
+  onOpenChange,
+  onConfirm,
+  isLoading,
+}: MoveDialogProps) {
   const [roots, setRoots] = useState<DirNode[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -213,8 +234,12 @@ export function MoveDialog({ name, currentDir, open, onOpenChange, onConfirm, is
     setRoots([]);
 
     fetchDirs('/')
-      .then((dirs) => setRoots(dirs))
-      .catch(() => setFetchError('Failed to load directories.'));
+      .then((dirs) => {
+        setRoots(dirs);
+      })
+      .catch(() => {
+        setFetchError('Failed to load directories.');
+      });
   }, [open]);
 
   const handleToggle = useCallback(async (node: DirNode) => {
@@ -231,9 +256,7 @@ export function MoveDialog({ name, currentDir, open, onOpenChange, onConfirm, is
         // silently leave unexpanded on error
       }
     } else {
-      setRoots((prev) =>
-        updateNode(prev, node.path, (n) => ({ ...n, expanded: nextExpanded })),
-      );
+      setRoots((prev) => updateNode(prev, node.path, (n) => ({ ...n, expanded: nextExpanded })));
     }
   }, []);
 
@@ -331,15 +354,18 @@ export function MoveDialog({ name, currentDir, open, onOpenChange, onConfirm, is
             )}
           </div>
 
-          {fetchError && (
-            <p className="px-2 py-2 text-xs text-destructive">{fetchError}</p>
-          )}
+          {fetchError && <p className="px-2 py-2 text-xs text-destructive">{fetchError}</p>}
 
           {roots.map((node) => renderNode(node, 0))}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              handleOpenChange(false);
+            }}
+          >
             Cancel
           </Button>
           <Button onClick={handleConfirm} disabled={selected === null || isLoading}>
@@ -394,7 +420,13 @@ interface ConflictDialogProps {
   readonly onReload: () => void;
 }
 
-export function ConflictDialog({ filename, open, onOpenChange, onOverwrite, onReload }: ConflictDialogProps) {
+export function ConflictDialog({
+  filename,
+  open,
+  onOpenChange,
+  onOverwrite,
+  onReload,
+}: ConflictDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -404,8 +436,8 @@ export function ConflictDialog({ filename, open, onOpenChange, onOverwrite, onRe
             File Changed
           </AlertDialogTitle>
           <AlertDialogDescription>
-            <strong>{filename}</strong> was modified since you started editing. This may have
-            been caused by an agent or another process.
+            <strong>{filename}</strong> was modified since you started editing. This may have been
+            caused by an agent or another process.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

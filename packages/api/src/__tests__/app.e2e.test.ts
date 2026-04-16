@@ -62,7 +62,15 @@ describe('App E2E', () => {
         channel: {
           findMany: () =>
             Promise.resolve([
-              { id: 'web-ch-seed', type: 'web', name: 'Web Dashboard', config: {}, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+              {
+                id: 'web-ch-seed',
+                type: 'web',
+                name: 'Web Dashboard',
+                config: {},
+                isActive: true,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
             ]),
         },
         providerConfig: {

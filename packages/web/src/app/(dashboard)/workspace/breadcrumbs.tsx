@@ -40,7 +40,9 @@ export function WorkspaceBreadcrumbs({ currentPath, onNavigate }: WorkspaceBread
           ) : (
             <BreadcrumbLink
               className="flex cursor-pointer items-center gap-1.5"
-              onClick={() => onNavigate('/')}
+              onClick={() => {
+                onNavigate('/');
+              }}
             >
               <Home className="size-3.5" />
               Workspace
@@ -59,7 +61,9 @@ export function WorkspaceBreadcrumbs({ currentPath, onNavigate }: WorkspaceBread
                 ) : (
                   <BreadcrumbLink
                     className="cursor-pointer"
-                    onClick={() => onNavigate(segment.path)}
+                    onClick={() => {
+                      onNavigate(segment.path);
+                    }}
                   >
                     {segment.name}
                   </BreadcrumbLink>

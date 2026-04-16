@@ -94,7 +94,9 @@ export function FileEditor({ file, onSave, onCancel, onDirtyChange }: FileEditor
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [handleKeyDown]);
 
   return (
@@ -102,9 +104,7 @@ export function FileEditor({ file, onSave, onCancel, onDirtyChange }: FileEditor
       <CardHeader className="flex flex-row items-center gap-2 space-y-0 border-b px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="truncate text-sm font-medium">{file.name}</span>
-          {isDirty && (
-            <span className="text-amber-500 text-xs font-medium">● Modified</span>
-          )}
+          {isDirty && <span className="text-amber-500 text-xs font-medium">● Modified</span>}
           <Badge variant="secondary" className="shrink-0 text-xs">
             {file.type}
           </Badge>

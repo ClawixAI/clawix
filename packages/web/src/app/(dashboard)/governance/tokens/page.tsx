@@ -6,11 +6,7 @@ import anime from 'animejs';
 import { EASING, DURATION } from '@/lib/anime';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { authFetch } from '@/lib/auth';
 
 interface TokenSummary {
@@ -128,7 +124,11 @@ function UsageLineChart({ data, maxValue }: { data: DailyUsage[]; maxValue: numb
 
   return (
     <div className="w-full overflow-x-auto">
-      <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="h-[280px] w-full" preserveAspectRatio="xMidYMid meet">
+      <svg
+        viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+        className="h-[280px] w-full"
+        preserveAspectRatio="xMidYMid meet"
+      >
         {/* Y-axis grid lines and labels */}
         {yTicks.map((tick) => {
           const y = paddingTop + drawHeight - (tick / maxValue) * drawHeight;
@@ -160,7 +160,15 @@ function UsageLineChart({ data, maxValue }: { data: DailyUsage[]; maxValue: numb
         <path ref={areaRef} d={areaPath} fill="currentColor" fillOpacity={0} />
 
         {/* Line */}
-        <path ref={lineRef} d={linePath} fill="none" stroke="currentColor" strokeOpacity={0.6} strokeWidth={2} strokeLinejoin="round" />
+        <path
+          ref={lineRef}
+          d={linePath}
+          fill="none"
+          stroke="currentColor"
+          strokeOpacity={0.6}
+          strokeWidth={2}
+          strokeLinejoin="round"
+        />
 
         {/* Data points */}
         {points.map((p) => (
@@ -172,7 +180,11 @@ function UsageLineChart({ data, maxValue }: { data: DailyUsage[]; maxValue: numb
         {/* X-axis labels */}
         {points.map((p, i) => {
           // Show first, last, and evenly spaced labels
-          const showLabel = data.length <= 7 || i === 0 || i === data.length - 1 || i % Math.ceil(data.length / 6) === 0;
+          const showLabel =
+            data.length <= 7 ||
+            i === 0 ||
+            i === data.length - 1 ||
+            i % Math.ceil(data.length / 6) === 0;
           if (!showLabel) return null;
           return (
             <text
@@ -211,9 +223,7 @@ function UserBreakdownRow({ user }: { user: UserUsage }) {
   const loadAgents = useCallback(async () => {
     if (loaded) return;
     try {
-      const res = await authFetch<AgentUsage[]>(
-        `/api/v1/tokens/per-user/${user.userId}/agents`,
-      );
+      const res = await authFetch<AgentUsage[]>(`/api/v1/tokens/per-user/${user.userId}/agents`);
       setAgents(Array.isArray(res) ? res : []);
     } catch {
       // silently fail — row just won't expand
@@ -225,7 +235,9 @@ function UserBreakdownRow({ user }: { user: UserUsage }) {
     <Collapsible className="group/row">
       <CollapsibleTrigger
         className="flex w-full items-center gap-2 border-b px-4 py-3 text-left text-sm hover:bg-muted/50"
-        onClick={() => { void loadAgents(); }}
+        onClick={() => {
+          void loadAgents();
+        }}
       >
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]/row:rotate-90" />
         <span className="flex-1 font-medium">{user.userName}</span>
@@ -244,9 +256,7 @@ function UserBreakdownRow({ user }: { user: UserUsage }) {
       </CollapsibleTrigger>
       <CollapsibleContent>
         {agents.length === 0 && loaded ? (
-          <div className="px-10 py-3 text-sm text-muted-foreground">
-            No agent usage data.
-          </div>
+          <div className="px-10 py-3 text-sm text-muted-foreground">No agent usage data.</div>
         ) : (
           <div className="bg-muted/30">
             {agents.map((agent) => (
@@ -255,9 +265,7 @@ function UserBreakdownRow({ user }: { user: UserUsage }) {
                 className="flex items-center gap-2 border-b border-muted px-4 py-2 text-sm last:border-b-0"
               >
                 <span className="w-3.5" />
-                <span className="flex-1 pl-4 text-muted-foreground">
-                  {agent.agentName}
-                </span>
+                <span className="flex-1 pl-4 text-muted-foreground">{agent.agentName}</span>
                 <span className="w-24 text-right tabular-nums text-muted-foreground">
                   {formatNumber(agent.totalInputTokens)}
                 </span>
@@ -310,12 +318,9 @@ export default function TokenUsagePage() {
 
   const budgetTokens = summary?.budget.maxTokenBudget;
   const usedTokens = summary?.usage.totalTokens ?? 0;
-  const remainingTokens = budgetTokens !== null && budgetTokens !== undefined
-    ? budgetTokens - usedTokens
-    : null;
-  const utilization = budgetTokens
-    ? ((usedTokens / budgetTokens) * 100).toFixed(1)
-    : null;
+  const remainingTokens =
+    budgetTokens !== null && budgetTokens !== undefined ? budgetTokens - usedTokens : null;
+  const utilization = budgetTokens ? ((usedTokens / budgetTokens) * 100).toFixed(1) : null;
 
   const stats = [
     {
@@ -375,9 +380,7 @@ export default function TokenUsagePage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold tabular-nums">{stat.value}</div>
-              {stat.subtitle && (
-                <p className="text-xs text-muted-foreground">{stat.subtitle}</p>
-              )}
+              {stat.subtitle && <p className="text-xs text-muted-foreground">{stat.subtitle}</p>}
             </CardContent>
           </Card>
         ))}
@@ -395,9 +398,7 @@ export default function TokenUsagePage() {
           <Card>
             <CardHeader>
               <CardTitle>Usage Over Time</CardTitle>
-              <CardDescription>
-                Token consumption trend for the current month.
-              </CardDescription>
+              <CardDescription>Token consumption trend for the current month.</CardDescription>
             </CardHeader>
             <CardContent>
               {chartData.length === 0 ? (
@@ -433,9 +434,7 @@ export default function TokenUsagePage() {
                   No usage data for this period.
                 </div>
               ) : (
-                userBreakdown.map((user) => (
-                  <UserBreakdownRow key={user.userId} user={user} />
-                ))
+                userBreakdown.map((user) => <UserBreakdownRow key={user.userId} user={user} />)
               )}
             </CardContent>
           </Card>

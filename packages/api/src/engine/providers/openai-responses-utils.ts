@@ -6,12 +6,7 @@
  * Chat Completions API. This module handles the translation layer.
  */
 
-import type {
-  ChatMessage,
-  FinishReason,
-  ToolCallRequest,
-  ToolDefinition,
-} from '@clawix/shared';
+import type { ChatMessage, FinishReason, ToolCallRequest, ToolDefinition } from '@clawix/shared';
 import { createLogger } from '@clawix/shared';
 
 const log = createLogger('engine:openai-responses-utils');
@@ -33,7 +28,7 @@ export type ResponsesInputItem =
   | {
       readonly type: 'message';
       readonly role: 'user' | 'assistant';
-      readonly content: ReadonlyArray<{ readonly type: string; readonly text: string }>;
+      readonly content: readonly { readonly type: string; readonly text: string }[];
     }
   | {
       readonly type: 'function_call';
@@ -115,12 +110,11 @@ export function toResponsesInput(messages: readonly ChatMessage[]): ResponsesInp
     }
   }
 
-  const instructions =
-    systemMessages.length > 0 ? systemMessages.join('\n\n') : undefined;
+  const instructions = systemMessages.length > 0 ? systemMessages.join('\n\n') : undefined;
 
   // Simple case: single user message → plain string input
   const firstMsg = nonSystemMessages[0];
-  if (nonSystemMessages.length === 1 && firstMsg && firstMsg.role === 'user') {
+  if (nonSystemMessages.length === 1 && firstMsg?.role === 'user') {
     return { instructions, input: firstMsg.content };
   }
 
@@ -214,7 +208,7 @@ export function parseResponsesOutput(
         const args =
           typeof rawArgs === 'string'
             ? (JSON.parse(rawArgs) as Record<string, unknown>)
-            : (rawArgs as Record<string, unknown>) ?? {};
+            : ((rawArgs as Record<string, unknown>) ?? {});
 
         toolCalls.push({ id, name, arguments: args });
       } catch (error) {

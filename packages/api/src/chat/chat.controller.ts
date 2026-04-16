@@ -1,6 +1,7 @@
 import { Controller, Get, NotFoundException, Param, Post, Query, Req } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
+import { Prisma } from '../generated/prisma/client.js';
 import { SessionRepository } from '../db/session.repository.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { JwtPayload } from '../auth/auth.types.js';
@@ -31,7 +32,12 @@ export class ChatController {
     const limit = Math.min(Number(query.limit) || 20, 100);
     const includeArchived = query.includeArchived === 'true';
 
-    const result = await this.sessionRepo.findByUserId(req.user.sub, { page, limit }, query.channelId, includeArchived);
+    const result = await this.sessionRepo.findByUserId(
+      req.user.sub,
+      { page, limit },
+      query.channelId,
+      includeArchived,
+    );
 
     return {
       success: true,
@@ -41,10 +47,7 @@ export class ChatController {
   }
 
   @Get('agent-runs')
-  async listAgentRuns(
-    @Req() req: { user: JwtPayload },
-    @Query() query: { limit?: number },
-  ) {
+  async listAgentRuns(@Req() req: { user: JwtPayload }, @Query() query: { limit?: number }) {
     const limit = Math.min(Number(query.limit) || 20, 100);
 
     const runs = await this.prisma.agentRun.findMany({
@@ -58,6 +61,7 @@ export class ChatController {
         status: true,
         input: true,
         output: true,
+        error: true,
         tokenUsage: true,
         startedAt: true,
         completedAt: true,
@@ -69,6 +73,64 @@ export class ChatController {
     });
 
     return { success: true, data: runs };
+  }
+
+  @Get('agent-runs/:id')
+  async getAgentRun(@Req() req: { user: JwtPayload }, @Param('id') runId: string) {
+    const run = await this.prisma.agentRun.findUnique({
+      where: { id: runId },
+      select: {
+        id: true,
+        status: true,
+        input: true,
+        output: true,
+        error: true,
+        tokenUsage: true,
+        startedAt: true,
+        completedAt: true,
+        parentAgentRunId: true,
+        sessionId: true,
+        agentDefinition: {
+          select: { id: true, name: true, role: true },
+        },
+        session: {
+          select: { userId: true },
+        },
+      },
+    });
+
+    if (run?.session.userId !== req.user.sub) {
+      throw new NotFoundException('Agent run not found');
+    }
+
+    // Fetch session messages with tool calls for this run's time range
+    const messages = await this.prisma.sessionMessage.findMany({
+      where: {
+        sessionId: run.sessionId,
+        createdAt: {
+          gte: run.startedAt,
+          ...(run.completedAt ? { lte: run.completedAt } : {}),
+        },
+        toolCalls: { not: Prisma.JsonNull },
+      },
+      orderBy: { ordering: 'asc' },
+      select: {
+        id: true,
+        role: true,
+        content: true,
+        toolCalls: true,
+        toolCallId: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        ...run,
+        toolCallMessages: messages,
+      },
+    };
   }
 
   @Post('agent-runs/stop')
@@ -88,10 +150,7 @@ export class ChatController {
   }
 
   @Post('sessions/:id/deactivate')
-  async deactivateSession(
-    @Req() req: { user: JwtPayload },
-    @Param('id') sessionId: string,
-  ) {
+  async deactivateSession(@Req() req: { user: JwtPayload }, @Param('id') sessionId: string) {
     const session = await this.sessionRepo.findById(sessionId);
     if (session.userId !== req.user.sub) {
       throw new NotFoundException('Session not found');

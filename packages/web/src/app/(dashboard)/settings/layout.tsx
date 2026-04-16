@@ -2,11 +2,7 @@
 
 import { VantaBackground } from '@/components/ui/vanta-background';
 
-export default function SettingsLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   return (
     <VantaBackground effect="topology" className="min-h-[calc(100vh-3.5rem)] p-6">
       {children}

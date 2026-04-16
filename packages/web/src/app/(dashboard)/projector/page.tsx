@@ -4,11 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, MonitorPlay } from 'lucide-react';
 import { authFetch, getAccessToken } from '@/lib/auth';
 import { cn } from '@/lib/utils';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -61,7 +57,7 @@ export default function ProjectorPage() {
   // Listen for postMessage from iframe (save to workspace)
   useEffect(() => {
     const handler = async (event: MessageEvent) => {
-      if (!event.data || event.data.type !== 'projector:save') return;
+      if (event.data?.type !== 'projector:save') return;
 
       const msg = event.data as ProjectorSaveMessage;
       const outputPath = `/Output/Projector/${msg.filename}`;
@@ -104,7 +100,9 @@ export default function ProjectorPage() {
         }
 
         setSaveStatus(`Saved to workspace: ${outputPath}`);
-        setTimeout(() => setSaveStatus(''), 3000);
+        setTimeout(() => {
+          setSaveStatus('');
+        }, 3000);
 
         // Notify iframe that save succeeded
         iframeRef.current?.contentWindow?.postMessage(
@@ -114,7 +112,9 @@ export default function ProjectorPage() {
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Save failed';
         setSaveStatus(`Error: ${message}`);
-        setTimeout(() => setSaveStatus(''), 5000);
+        setTimeout(() => {
+          setSaveStatus('');
+        }, 5000);
 
         iframeRef.current?.contentWindow?.postMessage(
           { type: 'projector:save-result', success: false, error: message },
@@ -124,7 +124,9 @@ export default function ProjectorPage() {
     };
 
     window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
+    return () => {
+      window.removeEventListener('message', handler);
+    };
   }, []);
 
   const openItem = useCallback(async (name: string) => {
@@ -165,9 +167,7 @@ export default function ProjectorPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Projector</h1>
-        <p className="text-sm text-muted-foreground">
-          Micro-tools built by your agent
-        </p>
+        <p className="text-sm text-muted-foreground">Micro-tools built by your agent</p>
       </div>
 
       {/* Error */}
@@ -195,8 +195,7 @@ export default function ProjectorPage() {
               key={item.name}
               className={cn(
                 'flex items-center gap-2 rounded-lg border bg-card px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
-                activeItem === item.name &&
-                  'ring-2 ring-primary bg-accent text-accent-foreground',
+                activeItem === item.name && 'ring-2 ring-primary bg-accent text-accent-foreground',
               )}
               onClick={() => void openItem(item.name)}
             >
@@ -208,25 +207,30 @@ export default function ProjectorPage() {
       )}
 
       {/* Projector modal */}
-      <Dialog open={activeItem !== null} onOpenChange={(open) => { if (!open) closeViewer(); }}>
+      <Dialog
+        open={activeItem !== null}
+        onOpenChange={(open) => {
+          if (!open) closeViewer();
+        }}
+      >
         <DialogContent
           showCloseButton
           className="tv-effect flex h-[85vh] !w-[70vw] !max-w-none flex-col gap-0 p-0 overflow-hidden [&>[data-slot=dialog-close]]:z-50 [&>[data-slot=dialog-close]]:bg-background/80 [&>[data-slot=dialog-close]]:rounded-full [&>[data-slot=dialog-close]]:p-1"
         >
-          <DialogTitle className="sr-only">
-            {activeItem ?? 'Projector'}
-          </DialogTitle>
+          <DialogTitle className="sr-only">{activeItem ?? 'Projector'}</DialogTitle>
 
           {/* Save status bar */}
           {saveStatus && (
-            <div className={cn(
-              'px-4 py-2 text-xs font-medium',
-              saveStatus.startsWith('Error')
-                ? 'bg-destructive/20 text-destructive'
-                : saveStatus.startsWith('Saving')
-                  ? 'bg-amber-500/20 text-amber-400'
-                  : 'bg-green-500/20 text-green-400',
-            )}>
+            <div
+              className={cn(
+                'px-4 py-2 text-xs font-medium',
+                saveStatus.startsWith('Error')
+                  ? 'bg-destructive/20 text-destructive'
+                  : saveStatus.startsWith('Saving')
+                    ? 'bg-amber-500/20 text-amber-400'
+                    : 'bg-green-500/20 text-green-400',
+              )}
+            >
               {saveStatus}
             </div>
           )}

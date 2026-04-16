@@ -245,7 +245,6 @@ async function main(): Promise<void> {
   });
   console.log(`  Agent: ${defaultWorker.name} (worker, openai/gpt-4o)`);
 
-
   // --- User Agents (bind users to primary agent) ---
   await prisma.userAgent.create({
     data: {
@@ -305,7 +304,9 @@ async function main(): Promise<void> {
     data: {
       type: 'telegram',
       name: 'Telegram Bot',
-      config: encryptChannelConfig('telegram', { bot_token: '__TELEGRAM_BOT_TOKEN__' }) as Record<string, string>,
+      config: encryptChannelConfig('telegram', {
+        bot_token: process.env['TELEGRAM_BOT_TOKEN'] ?? '__TELEGRAM_BOT_TOKEN__',
+      }) as Record<string, string>,
       isActive: true,
     },
   });

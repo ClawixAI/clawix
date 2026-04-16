@@ -439,17 +439,32 @@ describe('MemoryConsolidationService', () => {
       // Chunk = [msg-0, msg-1] — one complete turn.
       const msgs = [
         makeSessionMessage({ id: 'msg-0', role: 'user', content: 'x'.repeat(4000), ordering: 1 }),
-        makeSessionMessage({ id: 'msg-1', role: 'assistant', content: 'y'.repeat(40), ordering: 2 }),
+        makeSessionMessage({
+          id: 'msg-1',
+          role: 'assistant',
+          content: 'y'.repeat(40),
+          ordering: 2,
+        }),
         makeSessionMessage({ id: 'msg-2', role: 'user', content: 'z'.repeat(40), ordering: 3 }),
-        makeSessionMessage({ id: 'msg-3', role: 'assistant', content: 'w'.repeat(40), ordering: 4 }),
+        makeSessionMessage({
+          id: 'msg-3',
+          role: 'assistant',
+          content: 'w'.repeat(40),
+          ordering: 4,
+        }),
         makeSessionMessage({ id: 'msg-4', role: 'user', content: 'a'.repeat(40), ordering: 5 }),
-        makeSessionMessage({ id: 'msg-5', role: 'assistant', content: 'b'.repeat(40), ordering: 6 }),
+        makeSessionMessage({
+          id: 'msg-5',
+          role: 'assistant',
+          content: 'b'.repeat(40),
+          ordering: 6,
+        }),
       ];
 
       mocks.mockSessionMessage.findMany
         .mockResolvedValueOnce(msgs) // estimateSessionTokens (initial)
         .mockResolvedValueOnce(msgs) // consolidation loop: find messages
-        .mockResolvedValueOnce([]);  // re-estimate after archival → 0 → stop
+        .mockResolvedValueOnce([]); // re-estimate after archival → 0 → stop
 
       mocks.mockProvider.chat.mockResolvedValue(makeSaveMemoryResponse());
       mocks.mockSessionMessage.updateMany.mockResolvedValue({ count: 2 });
@@ -491,7 +506,7 @@ describe('MemoryConsolidationService', () => {
       mocks.mockSessionMessage.findMany
         .mockResolvedValueOnce(msgs) // estimateSessionTokens (initial)
         .mockResolvedValueOnce(msgs) // consolidation loop: find messages
-        .mockResolvedValueOnce([]);  // re-estimate after archival → 0 → stop
+        .mockResolvedValueOnce([]); // re-estimate after archival → 0 → stop
 
       mocks.mockProvider.chat.mockResolvedValue(makeSaveMemoryResponse());
       mocks.mockSessionMessage.updateMany.mockResolvedValue({ count: 4 });
@@ -531,17 +546,32 @@ describe('MemoryConsolidationService', () => {
       //   Remaining = [user(5), assistant(6)] — a complete pair.
       const msgs = [
         makeSessionMessage({ id: 'msg-0', role: 'user', content: 'x'.repeat(100), ordering: 1 }),
-        makeSessionMessage({ id: 'msg-1', role: 'assistant', content: 'y'.repeat(100), ordering: 2 }),
+        makeSessionMessage({
+          id: 'msg-1',
+          role: 'assistant',
+          content: 'y'.repeat(100),
+          ordering: 2,
+        }),
         makeSessionMessage({ id: 'msg-2', role: 'user', content: 'z'.repeat(100), ordering: 3 }),
-        makeSessionMessage({ id: 'msg-3', role: 'assistant', content: 'w'.repeat(100), ordering: 4 }),
+        makeSessionMessage({
+          id: 'msg-3',
+          role: 'assistant',
+          content: 'w'.repeat(100),
+          ordering: 4,
+        }),
         makeSessionMessage({ id: 'msg-4', role: 'user', content: 'a'.repeat(100), ordering: 5 }),
-        makeSessionMessage({ id: 'msg-5', role: 'assistant', content: 'b'.repeat(100), ordering: 6 }),
+        makeSessionMessage({
+          id: 'msg-5',
+          role: 'assistant',
+          content: 'b'.repeat(100),
+          ordering: 6,
+        }),
       ];
 
       mocks.mockSessionMessage.findMany
-        .mockResolvedValueOnce(msgs)  // estimateSessionTokens (initial)
-        .mockResolvedValueOnce(msgs)  // consolidation loop: find messages
-        .mockResolvedValueOnce([]);   // re-estimate after archival → 0 → stop
+        .mockResolvedValueOnce(msgs) // estimateSessionTokens (initial)
+        .mockResolvedValueOnce(msgs) // consolidation loop: find messages
+        .mockResolvedValueOnce([]); // re-estimate after archival → 0 → stop
 
       mocks.mockProvider.chat.mockResolvedValue(makeSaveMemoryResponse());
       mocks.mockSessionMessage.updateMany.mockResolvedValue({ count: 4 });
@@ -1235,9 +1265,11 @@ describe('MemoryConsolidationService', () => {
 
       expect(mocks.mockProvider.chat).toHaveBeenCalledOnce();
       const chatArgs = mocks.mockProvider.chat.mock.calls[0]!;
-      const messages = chatArgs[0] as Array<{ role: string; content: string }>;
+      const messages = chatArgs[0] as { role: string; content: string }[];
       const userMessage = messages.find((m) => m.role === 'user');
-      expect(userMessage?.content).toContain('Additional instructions: focus on database migration decisions');
+      expect(userMessage?.content).toContain(
+        'Additional instructions: focus on database migration decisions',
+      );
     });
 
     it('does not include custom instructions block when not provided', async () => {
@@ -1259,7 +1291,7 @@ describe('MemoryConsolidationService', () => {
 
       expect(mocks.mockProvider.chat).toHaveBeenCalledOnce();
       const chatArgs = mocks.mockProvider.chat.mock.calls[0]!;
-      const messages = chatArgs[0] as Array<{ role: string; content: string }>;
+      const messages = chatArgs[0] as { role: string; content: string }[];
       const userMessage = messages.find((m) => m.role === 'user');
       expect(userMessage?.content).not.toContain('Additional instructions');
     });
@@ -1415,7 +1447,7 @@ describe('getTokenWarningState', () => {
     expect(state.warning).toBe('approaching');
     expect(state.threshold).toBe(100);
     expect(state.ratio).toBeGreaterThanOrEqual(0.75);
-    expect(state.ratio).toBeLessThan(0.90);
+    expect(state.ratio).toBeLessThan(0.9);
   });
 
   it("returns warning 'critical' when ratio is 0.90 or above", async () => {
@@ -1429,7 +1461,7 @@ describe('getTokenWarningState', () => {
 
     expect(state.warning).toBe('critical');
     expect(state.threshold).toBe(100);
-    expect(state.ratio).toBeGreaterThanOrEqual(0.90);
+    expect(state.ratio).toBeGreaterThanOrEqual(0.9);
   });
 
   it("returns warning 'none' for empty session", async () => {

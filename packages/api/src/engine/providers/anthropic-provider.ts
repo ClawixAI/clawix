@@ -68,9 +68,11 @@ function toAnthropicMessage(msg: ChatMessage): Anthropic.MessageParam {
   };
 }
 
-function toAnthropicTool(
-  tool: { name: string; description: string; inputSchema: Readonly<Record<string, unknown>> },
-): Anthropic.Tool {
+function toAnthropicTool(tool: {
+  name: string;
+  description: string;
+  inputSchema: Readonly<Record<string, unknown>>;
+}): Anthropic.Tool {
   return {
     name: tool.name,
     description: tool.description,

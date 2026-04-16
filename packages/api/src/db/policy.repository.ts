@@ -82,9 +82,15 @@ export class PolicyRepository {
             ? { allowedProviders: data.allowedProviders }
             : {}),
           ...(data.cronEnabled !== undefined ? { cronEnabled: data.cronEnabled } : {}),
-          ...(data.maxScheduledTasks !== undefined ? { maxScheduledTasks: data.maxScheduledTasks } : {}),
-          ...(data.minCronIntervalSecs !== undefined ? { minCronIntervalSecs: data.minCronIntervalSecs } : {}),
-          ...(data.maxTokensPerCronRun !== undefined ? { maxTokensPerCronRun: data.maxTokensPerCronRun } : {}),
+          ...(data.maxScheduledTasks !== undefined
+            ? { maxScheduledTasks: data.maxScheduledTasks }
+            : {}),
+          ...(data.minCronIntervalSecs !== undefined
+            ? { minCronIntervalSecs: data.minCronIntervalSecs }
+            : {}),
+          ...(data.maxTokensPerCronRun !== undefined
+            ? { maxTokensPerCronRun: data.maxTokensPerCronRun }
+            : {}),
           ...(data.features !== undefined ? { features: data.features } : {}),
         },
       });
@@ -109,9 +115,15 @@ export class PolicyRepository {
             ? { allowedProviders: data.allowedProviders }
             : {}),
           ...(data.cronEnabled !== undefined ? { cronEnabled: data.cronEnabled } : {}),
-          ...(data.maxScheduledTasks !== undefined ? { maxScheduledTasks: data.maxScheduledTasks } : {}),
-          ...(data.minCronIntervalSecs !== undefined ? { minCronIntervalSecs: data.minCronIntervalSecs } : {}),
-          ...(data.maxTokensPerCronRun !== undefined ? { maxTokensPerCronRun: data.maxTokensPerCronRun } : {}),
+          ...(data.maxScheduledTasks !== undefined
+            ? { maxScheduledTasks: data.maxScheduledTasks }
+            : {}),
+          ...(data.minCronIntervalSecs !== undefined
+            ? { minCronIntervalSecs: data.minCronIntervalSecs }
+            : {}),
+          ...(data.maxTokensPerCronRun !== undefined
+            ? { maxTokensPerCronRun: data.maxTokensPerCronRun }
+            : {}),
           ...(data.features !== undefined ? { features: data.features } : {}),
           ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
         },

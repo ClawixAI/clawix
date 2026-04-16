@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import type { SessionCommand, SessionCommandContext, SessionCommandResult } from './session-command.js';
+import type {
+  SessionCommand,
+  SessionCommandContext,
+  SessionCommandResult,
+} from './session-command.js';
 import { SessionManagerService } from '../engine/session-manager.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 

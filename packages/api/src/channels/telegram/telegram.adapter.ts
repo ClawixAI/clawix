@@ -92,7 +92,9 @@ export function createTelegramAdapter(config: ChannelAdapterConfig): ChannelAdap
       } else {
         logger.info('Starting Telegram bot in polling mode');
         bot.start({
-          onStart: () => logger.info('Telegram bot polling started'),
+          onStart: () => {
+            logger.info('Telegram bot polling started');
+          },
         });
       }
     },

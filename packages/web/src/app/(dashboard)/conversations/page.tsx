@@ -41,7 +41,12 @@ export default function ConversationsPage() {
 
   // Extract user message history (most recent first) for input history navigation
   const userMessageHistory = messages
-    .filter((m) => m.role === 'user' && !m.content.startsWith('[Sub-Agent Result]') && !m.content.startsWith('[Runtime Context]'))
+    .filter(
+      (m) =>
+        m.role === 'user' &&
+        !m.content.startsWith('[Sub-Agent Result]') &&
+        !m.content.startsWith('[Runtime Context]'),
+    )
     .map((m) => m.content)
     .reverse();
 
@@ -63,7 +68,6 @@ export default function ConversationsPage() {
 
       {/* Main chat area */}
       <div className="flex flex-1 flex-col">
-
         {error && (
           <div className="mx-6 mt-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
@@ -95,12 +99,22 @@ export default function ConversationsPage() {
                 </Button>
               </div>
             )}
-            <ChatInput onSend={handleSend} disabled={isTyping} isConnected={isConnected} userMessages={userMessageHistory} />
+            <ChatInput
+              onSend={handleSend}
+              disabled={isTyping}
+              isConnected={isConnected}
+              userMessages={userMessageHistory}
+            />
           </>
         ) : (
           <>
             <EmptyState onSelectSuggestion={handleSend} />
-            <ChatInput onSend={handleSend} disabled={isTyping} isConnected={isConnected} userMessages={userMessageHistory} />
+            <ChatInput
+              onSend={handleSend}
+              disabled={isTyping}
+              isConnected={isConnected}
+              userMessages={userMessageHistory}
+            />
           </>
         )}
       </div>

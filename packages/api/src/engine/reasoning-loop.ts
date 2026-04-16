@@ -1,11 +1,5 @@
 import { createLogger } from '@clawix/shared';
-import type {
-  ChatMessage,
-  ChatOptions,
-  LLMProvider,
-  LLMResponse,
-  LLMUsage,
-} from '@clawix/shared';
+import type { ChatMessage, ChatOptions, LLMProvider, LLMResponse, LLMUsage } from '@clawix/shared';
 
 import type { ToolRegistry } from './tool-registry.js';
 import type { LoopResult, ReasoningLoopConfig } from './reasoning-loop.types.js';
@@ -78,9 +72,24 @@ export class ReasoningLoop {
     // Link external signal
     if (externalSignal) {
       if (externalSignal.aborted) {
-        return { content: null, messages, totalUsage, iterations: 0, hitMaxIterations: false, hitTokenBudget: false, hitTimeout: true };
+        return {
+          content: null,
+          messages,
+          totalUsage,
+          iterations: 0,
+          hitMaxIterations: false,
+          hitTokenBudget: false,
+          hitTimeout: true,
+        };
       }
-      externalSignal.addEventListener('abort', () => { hitTimeout = true; abortController.abort(); }, { once: true });
+      externalSignal.addEventListener(
+        'abort',
+        () => {
+          hitTimeout = true;
+          abortController.abort();
+        },
+        { once: true },
+      );
     }
 
     // Wall-clock timeout
@@ -105,85 +114,91 @@ export class ReasoningLoop {
     };
 
     try {
-    while (iterations < maxIterations) {
-      if (abortController.signal.aborted) {
-        logger.warn({ iteration: iterations }, 'Reasoning loop aborted (timeout or external signal)');
-        break;
-      }
-
-      iterations += 1;
-
-      logger.debug({ iteration: iterations, maxIterations }, 'Starting iteration');
-      logger.debug({ iteration: iterations, messages }, 'Prompt messages sent to LLM');
-
-      const response = await this.provider.chat(messages, chatOptions);
-      lastResponse = response;
-      totalUsage = addUsage(totalUsage, response.usage);
-
-      // Check token budget (if configured)
-      if (tokenBudget && graceLimit) {
-        const used = totalUsage.inputTokens + totalUsage.outputTokens;
-
-        if (used >= graceLimit) {
+      while (iterations < maxIterations) {
+        if (abortController.signal.aborted) {
           logger.warn(
-            { used, budget: tokenBudget, graceLimit },
-            'Token budget exceeded — hard stop',
+            { iteration: iterations },
+            'Reasoning loop aborted (timeout or external signal)',
           );
-          messages.push({ role: 'assistant', content: response.content ?? '' });
-          hitTokenBudget = true;
           break;
         }
 
-        if (used >= tokenBudget && !graceInjected) {
+        iterations += 1;
+
+        logger.debug({ iteration: iterations, maxIterations }, 'Starting iteration');
+        logger.debug({ iteration: iterations, messages }, 'Prompt messages sent to LLM');
+
+        const response = await this.provider.chat(messages, chatOptions);
+        lastResponse = response;
+        totalUsage = addUsage(totalUsage, response.usage);
+
+        // Check token budget (if configured)
+        if (tokenBudget && graceLimit) {
+          const used = totalUsage.inputTokens + totalUsage.outputTokens;
+
+          if (used >= graceLimit) {
+            logger.warn(
+              { used, budget: tokenBudget, graceLimit },
+              'Token budget exceeded — hard stop',
+            );
+            messages.push({ role: 'assistant', content: response.content ?? '' });
+            hitTokenBudget = true;
+            break;
+          }
+
+          if (used >= tokenBudget && !graceInjected) {
+            messages.push({
+              role: 'system',
+              content:
+                'You are at your token limit. Summarize your findings and finish in this turn.',
+            });
+            graceInjected = true;
+            logger.info(
+              { used, budget: tokenBudget },
+              'Token budget reached — grace turn injected',
+            );
+          }
+        }
+
+        // Error finish reason: stop immediately
+        if (response.finishReason === 'error') {
+          logger.warn({ iteration: iterations }, 'LLM returned error finish reason');
+          messages.push({ role: 'assistant', content: response.content ?? '' });
+          break;
+        }
+
+        // No tool calls: final response
+        if (response.toolCalls.length === 0) {
+          messages.push({ role: 'assistant', content: response.content ?? '' });
+          break;
+        }
+
+        // Tool calls present: push assistant message with tool calls, then execute each
+        messages.push({
+          role: 'assistant',
+          content: response.content ?? '',
+          toolCalls: response.toolCalls,
+        });
+
+        // Build progress hint and call onProgress
+        if (config?.onProgress) {
+          const hints = response.toolCalls.map((tc) => `${tc.name}(${formatArgs(tc.arguments)})`);
+          config.onProgress(hints.join(', '));
+        }
+
+        // Execute each tool call and append result messages
+        for (const toolCall of response.toolCalls) {
+          logger.debug({ tool: toolCall.name, id: toolCall.id }, 'Executing tool call');
+
+          const result = await this.toolRegistry.execute(toolCall.name, toolCall.arguments);
+
           messages.push({
-            role: 'system',
-            content:
-              'You are at your token limit. Summarize your findings and finish in this turn.',
+            role: 'tool',
+            content: result.output,
+            toolCallId: toolCall.id,
           });
-          graceInjected = true;
-          logger.info({ used, budget: tokenBudget }, 'Token budget reached — grace turn injected');
         }
       }
-
-      // Error finish reason: stop immediately
-      if (response.finishReason === 'error') {
-        logger.warn({ iteration: iterations }, 'LLM returned error finish reason');
-        messages.push({ role: 'assistant', content: response.content ?? '' });
-        break;
-      }
-
-      // No tool calls: final response
-      if (response.toolCalls.length === 0) {
-        messages.push({ role: 'assistant', content: response.content ?? '' });
-        break;
-      }
-
-      // Tool calls present: push assistant message with tool calls, then execute each
-      messages.push({
-        role: 'assistant',
-        content: response.content ?? '',
-        toolCalls: response.toolCalls,
-      });
-
-      // Build progress hint and call onProgress
-      if (config?.onProgress) {
-        const hints = response.toolCalls.map((tc) => `${tc.name}(${formatArgs(tc.arguments)})`);
-        config.onProgress(hints.join(', '));
-      }
-
-      // Execute each tool call and append result messages
-      for (const toolCall of response.toolCalls) {
-        logger.debug({ tool: toolCall.name, id: toolCall.id }, 'Executing tool call');
-
-        const result = await this.toolRegistry.execute(toolCall.name, toolCall.arguments);
-
-        messages.push({
-          role: 'tool',
-          content: result.output,
-          toolCallId: toolCall.id,
-        });
-      }
-    }
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
     }

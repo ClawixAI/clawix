@@ -330,7 +330,9 @@ describe('CronSchedulerService', () => {
     it('is safe to call when not started', () => {
       const { service } = makeService();
 
-      expect(() => service.stop()).not.toThrow();
+      expect(() => {
+        service.stop();
+      }).not.toThrow();
     });
   });
 

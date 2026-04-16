@@ -1,12 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Loader2,
-  MoreHorizontal,
-  Plus,
-  Users,
-} from 'lucide-react';
+import { Loader2, MoreHorizontal, Plus, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -56,7 +51,7 @@ export interface ApiGroup {
   createdById: string;
   createdAt: string;
   _count: { members: number };
-  members: Array<{ role: string; user: { id: string; name: string; email: string } }>;
+  members: { role: string; user: { id: string; name: string; email: string } }[];
 }
 
 interface PaginatedGroups {
@@ -107,7 +102,9 @@ export function GroupsTab() {
     }
   }, []);
 
-  useEffect(() => { void fetchGroups(); }, [fetchGroups]);
+  useEffect(() => {
+    void fetchGroups();
+  }, [fetchGroups]);
 
   async function handleCreate(form: FormData) {
     setSaving(true);
@@ -170,7 +167,12 @@ export function GroupsTab() {
         <p className="text-sm text-muted-foreground">
           Manage user groups for memory sharing and access control.
         </p>
-        <Button size="sm" onClick={() => { setCreateOpen(true); }}>
+        <Button
+          size="sm"
+          onClick={() => {
+            setCreateOpen(true);
+          }}
+        >
           <Plus className="mr-1 size-4" />
           Add Group
         </Button>
@@ -232,15 +234,25 @@ export function GroupsTab() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => { setEditGroup(group); }}>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setEditGroup(group);
+                          }}
+                        >
                           Edit
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => { setMembersGroup(group); }}>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setMembersGroup(group);
+                          }}
+                        >
                           Members
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
-                          onSelect={() => { setDeleteGroup(group); }}
+                          onSelect={() => {
+                            setDeleteGroup(group);
+                          }}
                         >
                           Remove
                         </DropdownMenuItem>
@@ -265,7 +277,9 @@ export function GroupsTab() {
       <EditGroupDialog
         key={editGroup?.id ?? 'edit-none'}
         group={editGroup}
-        onOpenChange={(open) => { if (!open) setEditGroup(null); }}
+        onOpenChange={(open) => {
+          if (!open) setEditGroup(null);
+        }}
         saving={saving}
         onSubmit={handleUpdate}
       />
@@ -273,27 +287,33 @@ export function GroupsTab() {
       <MembersDialog
         key={membersGroup?.id ?? 'members-none'}
         group={membersGroup}
-        onOpenChange={(open) => { if (!open) setMembersGroup(null); }}
+        onOpenChange={(open) => {
+          if (!open) setMembersGroup(null);
+        }}
       />
 
       <AlertDialog
         open={deleteGroup !== null}
-        onOpenChange={(open) => { if (!open) setDeleteGroup(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeleteGroup(null);
+        }}
       >
         {deleteGroup && (
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Remove Group</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to remove <strong>{deleteGroup.name}</strong>?
-                This will remove the group and all its member associations.
+                Are you sure you want to remove <strong>{deleteGroup.name}</strong>? This will
+                remove the group and all its member associations.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => { void handleDelete(deleteGroup.id); }}
+                onClick={() => {
+                  void handleDelete(deleteGroup.id);
+                }}
                 disabled={saving}
               >
                 {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
@@ -306,7 +326,9 @@ export function GroupsTab() {
 
       <SuccessDialog
         open={successMessage !== ''}
-        onOpenChange={(open) => { if (!open) setSuccessMessage(''); }}
+        onOpenChange={(open) => {
+          if (!open) setSuccessMessage('');
+        }}
         title="Group Created"
         description={successMessage}
       />

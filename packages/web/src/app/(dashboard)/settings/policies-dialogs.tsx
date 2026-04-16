@@ -72,7 +72,9 @@ export function CreatePolicyDialog({
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Policy</DialogTitle>
-          <DialogDescription>Define a new governance policy with quotas and limits.</DialogDescription>
+          <DialogDescription>
+            Define a new governance policy with quotas and limits.
+          </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -83,7 +85,13 @@ export function CreatePolicyDialog({
         >
           <PolicyFormFields />
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
@@ -119,9 +127,7 @@ export function EditPolicyDialog({
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Policy</DialogTitle>
-          <DialogDescription>
-            Update settings for {policy.name}.
-          </DialogDescription>
+          <DialogDescription>Update settings for {policy.name}.</DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
@@ -132,7 +138,13 @@ export function EditPolicyDialog({
         >
           <PolicyFormFields policy={policy} />
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+            >
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HealthCheckService } from '@nestjs/terminus';
+import type { HealthCheckService } from '@nestjs/terminus';
 import { HealthController } from '../health.controller.js';
 import type { PrismaHealthIndicator } from '../prisma.health-indicator.js';
 import type { RedisHealthIndicator } from '../redis.health-indicator.js';
@@ -18,7 +18,7 @@ describe('HealthController', () => {
       isHealthy: vi.fn().mockResolvedValue({ redis: { status: 'up' } }),
     };
     healthCheckService = {
-      check: vi.fn().mockImplementation(async (indicators: Array<() => Promise<unknown>>) => {
+      check: vi.fn().mockImplementation(async (indicators: (() => Promise<unknown>)[]) => {
         const info: Record<string, unknown> = {};
         for (const fn of indicators) {
           const result = await fn();

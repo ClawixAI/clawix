@@ -9,7 +9,9 @@ vi.mock('@uiw/react-codemirror', () => ({
     <textarea
       data-testid="codemirror-mock"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => {
+        onChange(e.target.value);
+      }}
     />
   ),
 }));
@@ -78,7 +80,12 @@ describe('FileEditor', () => {
   it('reports dirty state via onDirtyChange', async () => {
     const onDirtyChange = vi.fn();
     render(
-      <FileEditor file={mockFile} onSave={vi.fn()} onCancel={vi.fn()} onDirtyChange={onDirtyChange} />,
+      <FileEditor
+        file={mockFile}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+        onDirtyChange={onDirtyChange}
+      />,
     );
     const editor = screen.getByTestId('codemirror-mock');
     await userEvent.clear(editor);

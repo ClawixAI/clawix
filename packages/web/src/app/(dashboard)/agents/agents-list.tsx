@@ -21,16 +21,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { authFetch } from '@/lib/auth';
 import { useAnimeOnMount, staggerFadeUp, STAGGER } from '@/lib/anime';
 import { SuccessDialog } from '@/components/ui/success-dialog';
@@ -70,16 +60,22 @@ interface PaginatedAgents {
 
 type SortKey = 'name' | 'model' | 'role' | 'type' | 'enabled';
 type SortDir = 'asc' | 'desc';
-interface SortEntry { key: SortKey; dir: SortDir }
+interface SortEntry {
+  key: SortKey;
+  dir: SortDir;
+}
 
 const VALID_KEYS: SortKey[] = ['name', 'model', 'role', 'type', 'enabled'];
 
 function parseSorts(param: string | null): SortEntry[] {
   if (!param) return [{ key: 'role', dir: 'asc' }];
-  return param.split(',').map((s) => {
-    const [key, dir] = s.split(':') as [string, string];
-    return { key: key as SortKey, dir: (dir === 'desc' ? 'desc' : 'asc') as SortDir };
-  }).filter((s) => VALID_KEYS.includes(s.key));
+  return param
+    .split(',')
+    .map((s) => {
+      const [key, dir] = s.split(':') as [string, string];
+      return { key: key as SortKey, dir: (dir === 'desc' ? 'desc' : 'asc') as SortDir };
+    })
+    .filter((s) => VALID_KEYS.includes(s.key));
 }
 
 function serializeSorts(sorts: SortEntry[]): string {
@@ -99,7 +95,6 @@ export function AgentsList() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editAgent, setEditAgent] = useState<ApiAgent | null>(null);
-  const [deleteAgent, setDeleteAgent] = useState<ApiAgent | null>(null);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -112,7 +107,7 @@ export function AgentsList() {
     if (!existing) {
       newSorts = [...sorts, { key, dir: 'asc' }];
     } else if (existing.dir === 'asc') {
-      newSorts = sorts.map((s) => s.key === key ? { ...s, dir: 'desc' as SortDir } : s);
+      newSorts = sorts.map((s) => (s.key === key ? { ...s, dir: 'desc' as SortDir } : s));
     } else {
       newSorts = sorts.filter((s) => s.key !== key);
     }
@@ -139,15 +134,23 @@ export function AgentsList() {
       for (const { key, dir } of sorts) {
         let cmp = 0;
         switch (key) {
-          case 'name': cmp = a.name.localeCompare(b.name); break;
-          case 'model': cmp = `${a.provider}/${a.model}`.localeCompare(`${b.provider}/${b.model}`); break;
+          case 'name':
+            cmp = a.name.localeCompare(b.name);
+            break;
+          case 'model':
+            cmp = `${a.provider}/${a.model}`.localeCompare(`${b.provider}/${b.model}`);
+            break;
           case 'role': {
             const roleOrder: Record<string, number> = { primary: 0, worker: 1 };
             cmp = (roleOrder[a.role] ?? 99) - (roleOrder[b.role] ?? 99);
             break;
           }
-          case 'type': cmp = Number(b.isOfficial) - Number(a.isOfficial); break;
-          case 'enabled': cmp = Number(b.isActive) - Number(a.isActive); break;
+          case 'type':
+            cmp = Number(b.isOfficial) - Number(a.isOfficial);
+            break;
+          case 'enabled':
+            cmp = Number(b.isActive) - Number(a.isActive);
+            break;
         }
         if (cmp !== 0) return dir === 'desc' ? -cmp : cmp;
       }
@@ -168,7 +171,9 @@ export function AgentsList() {
     }
   }, []);
 
-  useEffect(() => { void fetchAgents(); }, [fetchAgents]);
+  useEffect(() => {
+    void fetchAgents();
+  }, [fetchAgents]);
 
   async function handleCreate(form: FormData) {
     setSaving(true);
@@ -185,10 +190,11 @@ export function AgentsList() {
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
           maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
-          skillIds: (form.get('skillIds') as string)
-            ?.split(',')
-            .map((s) => s.trim())
-            .filter(Boolean) || [],
+          skillIds:
+            (form.get('skillIds') as string)
+              ?.split(',')
+              .map((s) => s.trim())
+              .filter(Boolean) || [],
         }),
       });
       setCreateOpen(false);
@@ -216,10 +222,11 @@ export function AgentsList() {
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
           maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
-          skillIds: (form.get('skillIds') as string)
-            ?.split(',')
-            .map((s) => s.trim())
-            .filter(Boolean) || [],
+          skillIds:
+            (form.get('skillIds') as string)
+              ?.split(',')
+              .map((s) => s.trim())
+              .filter(Boolean) || [],
         }),
       });
       setEditAgent(null);
@@ -247,20 +254,6 @@ export function AgentsList() {
     }
   }
 
-  async function handleDelete(id: string) {
-    setSaving(true);
-    setError('');
-    try {
-      await authFetch(`/api/v1/agents/${id}`, { method: 'DELETE' });
-      setDeleteAgent(null);
-      await fetchAgents();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete agent');
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -270,7 +263,11 @@ export function AgentsList() {
             Manage AI agent definitions and monitor their runs.
           </p>
         </div>
-        <Button onClick={() => { setCreateOpen(true); }}>
+        <Button
+          onClick={() => {
+            setCreateOpen(true);
+          }}
+        >
           <Plus className="mr-2 size-4" />
           Create Agent
         </Button>
@@ -295,20 +292,45 @@ export function AgentsList() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('name'); }}>
+                <TableHead
+                  className="cursor-pointer select-none"
+                  onClick={() => {
+                    toggleSort('name');
+                  }}
+                >
                   Agent {getSortIcon('name')}
                 </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('model'); }}>
+                <TableHead
+                  className="cursor-pointer select-none"
+                  onClick={() => {
+                    toggleSort('model');
+                  }}
+                >
                   Model {getSortIcon('model')}
                 </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('role'); }}>
+                <TableHead
+                  className="cursor-pointer select-none"
+                  onClick={() => {
+                    toggleSort('role');
+                  }}
+                >
                   Role {getSortIcon('role')}
                 </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('type'); }}>
+                <TableHead
+                  className="cursor-pointer select-none"
+                  onClick={() => {
+                    toggleSort('type');
+                  }}
+                >
                   Type {getSortIcon('type')}
                 </TableHead>
                 <TableHead>Skills</TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('enabled'); }}>
+                <TableHead
+                  className="cursor-pointer select-none"
+                  onClick={() => {
+                    toggleSort('enabled');
+                  }}
+                >
                   Enabled {getSortIcon('enabled')}
                 </TableHead>
                 <TableHead className="w-[50px]" />
@@ -327,9 +349,7 @@ export function AgentsList() {
                     {agent.provider} / {agent.model}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant={agent.role === 'primary' ? 'default' : 'secondary'}
-                    >
+                    <Badge variant={agent.role === 'primary' ? 'default' : 'secondary'}>
                       {agent.role}
                     </Badge>
                   </TableCell>
@@ -341,14 +361,14 @@ export function AgentsList() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">
-                      {agent.skillIds.length} skills
-                    </Badge>
+                    <Badge variant="outline">{agent.skillIds.length} skills</Badge>
                   </TableCell>
                   <TableCell>
                     <Switch
                       checked={agent.isActive}
-                      onCheckedChange={() => { void handleToggleActive(agent); }}
+                      onCheckedChange={() => {
+                        void handleToggleActive(agent);
+                      }}
                       disabled={saving}
                     />
                   </TableCell>
@@ -360,17 +380,15 @@ export function AgentsList() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => { setEditAgent(agent); }}>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setEditAgent(agent);
+                          }}
+                        >
                           Edit
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
                           <Link href={`/agents/${agent.id}`}>View Runs</Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onSelect={() => { setDeleteAgent(agent); }}
-                        >
-                          Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -393,42 +411,18 @@ export function AgentsList() {
       <EditAgentDialog
         key={editAgent?.id ?? 'none'}
         agent={editAgent}
-        onOpenChange={(open) => { if (!open) setEditAgent(null); }}
+        onOpenChange={(open) => {
+          if (!open) setEditAgent(null);
+        }}
         saving={saving}
         onSubmit={handleUpdate}
       />
 
-      <AlertDialog
-        open={deleteAgent !== null}
-        onOpenChange={(open) => { if (!open) setDeleteAgent(null); }}
-      >
-        {deleteAgent && (
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Agent</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to delete <strong>{deleteAgent.name}</strong>?
-                This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => { void handleDelete(deleteAgent.id); }}
-                disabled={saving}
-              >
-                {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        )}
-      </AlertDialog>
-
       <SuccessDialog
         open={successMessage !== ''}
-        onOpenChange={(open) => { if (!open) setSuccessMessage(''); }}
+        onOpenChange={(open) => {
+          if (!open) setSuccessMessage('');
+        }}
         title="Agent Created"
         description={successMessage}
       />

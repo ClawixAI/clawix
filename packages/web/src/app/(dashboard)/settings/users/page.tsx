@@ -2,7 +2,21 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, EyeIcon, EyeOff, Loader2, Minus, MoreHorizontal, Plus, Shield, ShieldCheck, Eye } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Check,
+  EyeIcon,
+  EyeOff,
+  Loader2,
+  Minus,
+  MoreHorizontal,
+  Plus,
+  Shield,
+  ShieldCheck,
+  Eye,
+} from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -106,9 +120,11 @@ interface PermissionGroup {
 }
 
 function PermissionIcon({ allowed }: { allowed: boolean }) {
-  return allowed
-    ? <Check className="mx-auto size-4 text-green-500" aria-label="Allowed" />
-    : <Minus className="mx-auto size-4 text-muted-foreground/40" aria-label="Not allowed" />;
+  return allowed ? (
+    <Check className="mx-auto size-4 text-green-500" aria-label="Allowed" />
+  ) : (
+    <Minus className="mx-auto size-4 text-muted-foreground/40" aria-label="Not allowed" />
+  );
 }
 
 const permissionMatrix: PermissionGroup[] = [
@@ -155,11 +171,13 @@ const permissionMatrix: PermissionGroup[] = [
 const roleDescriptions: Record<string, { icon: typeof ShieldCheck; description: string }> = {
   admin: {
     icon: ShieldCheck,
-    description: 'Full platform control: org settings, user management, RBAC, agent lifecycle, channel config, skill approval, providers, system health.',
+    description:
+      'Full platform control: org settings, user management, RBAC, agent lifecycle, channel config, skill approval, providers, system health.',
   },
   developer: {
     icon: Shield,
-    description: 'Build & operate: create agents, write skills, run agents, schedule tasks, monitor usage, manage channels, SDK integration.',
+    description:
+      'Build & operate: create agents, write skills, run agents, schedule tasks, monitor usage, manage channels, SDK integration.',
   },
   viewer: {
     icon: Eye,
@@ -173,14 +191,20 @@ const roleDescriptions: Record<string, { icon: typeof ShieldCheck; description: 
 
 type SortKey = 'name' | 'email' | 'role' | 'plan' | 'status';
 type SortDir = 'asc' | 'desc';
-interface SortEntry { key: SortKey; dir: SortDir }
+interface SortEntry {
+  key: SortKey;
+  dir: SortDir;
+}
 
 function parseSorts(param: string | null): SortEntry[] {
   if (!param) return [{ key: 'role', dir: 'asc' }]; // default sort
-  return param.split(',').map((s) => {
-    const [key, dir] = s.split(':') as [string, string];
-    return { key: key as SortKey, dir: (dir === 'desc' ? 'desc' : 'asc') as SortDir };
-  }).filter((s) => ['name', 'email', 'role', 'plan', 'status'].includes(s.key));
+  return param
+    .split(',')
+    .map((s) => {
+      const [key, dir] = s.split(':') as [string, string];
+      return { key: key as SortKey, dir: (dir === 'desc' ? 'desc' : 'asc') as SortDir };
+    })
+    .filter((s) => ['name', 'email', 'role', 'plan', 'status'].includes(s.key));
 }
 
 function serializeSorts(sorts: SortEntry[]): string {
@@ -208,7 +232,7 @@ export default function UsersPage() {
   const [saving, setSaving] = useState(false);
 
   // Agent assignment state (for post-create flow)
-  const [agentDefs, setAgentDefs] = useState<Array<{ id: string; name: string }>>([]);
+  const [agentDefs, setAgentDefs] = useState<{ id: string; name: string }[]>([]);
   const [assigningAgent, setAssigningAgent] = useState(false);
 
   const fetchData = useCallback(async () => {
@@ -228,7 +252,9 @@ export default function UsersPage() {
     }
   }, []);
 
-  useEffect(() => { void fetchData(); }, [fetchData]);
+  useEffect(() => {
+    void fetchData();
+  }, [fetchData]);
 
   async function handleCreate(form: FormData) {
     setSaving(true);
@@ -249,15 +275,19 @@ export default function UsersPage() {
       setSelectedAgentId('');
       setCreateStep('assign');
       // Fetch agent definitions for assignment step
-      void authFetch<{ data: Array<{ id: string; name: string; role: string; isActive: boolean }> }>(
+      void authFetch<{ data: { id: string; name: string; role: string; isActive: boolean }[] }>(
         '/api/v1/agents?limit=100&role=primary',
-      ).then((res) => {
-        setAgentDefs(
-          Array.isArray(res.data)
-            ? res.data.filter((a) => a.isActive).map((a) => ({ id: a.id, name: a.name }))
-            : [],
-        );
-      }).catch(() => { /* silent */ });
+      )
+        .then((res) => {
+          setAgentDefs(
+            Array.isArray(res.data)
+              ? res.data.filter((a) => a.isActive).map((a) => ({ id: a.id, name: a.name }))
+              : [],
+          );
+        })
+        .catch(() => {
+          /* silent */
+        });
       await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user');
@@ -331,7 +361,7 @@ export default function UsersPage() {
       newSorts = [...sorts, { key, dir: 'asc' }];
     } else if (existing.dir === 'asc') {
       // Flip to desc
-      newSorts = sorts.map((s) => s.key === key ? { ...s, dir: 'desc' as SortDir } : s);
+      newSorts = sorts.map((s) => (s.key === key ? { ...s, dir: 'desc' as SortDir } : s));
     } else {
       // Remove this sort
       newSorts = sorts.filter((s) => s.key !== key);
@@ -360,11 +390,21 @@ export default function UsersPage() {
       for (const { key, dir } of sorts) {
         let cmp = 0;
         switch (key) {
-          case 'name': cmp = a.name.localeCompare(b.name); break;
-          case 'email': cmp = a.email.localeCompare(b.email); break;
-          case 'role': cmp = (roleOrder[a.role] ?? 99) - (roleOrder[b.role] ?? 99); break;
-          case 'plan': cmp = (policyMap.get(a.policyId) ?? '').localeCompare(policyMap.get(b.policyId) ?? ''); break;
-          case 'status': cmp = Number(b.isActive) - Number(a.isActive); break;
+          case 'name':
+            cmp = a.name.localeCompare(b.name);
+            break;
+          case 'email':
+            cmp = a.email.localeCompare(b.email);
+            break;
+          case 'role':
+            cmp = (roleOrder[a.role] ?? 99) - (roleOrder[b.role] ?? 99);
+            break;
+          case 'plan':
+            cmp = (policyMap.get(a.policyId) ?? '').localeCompare(policyMap.get(b.policyId) ?? '');
+            break;
+          case 'status':
+            cmp = Number(b.isActive) - Number(a.isActive);
+            break;
         }
         if (cmp !== 0) return dir === 'desc' ? -cmp : cmp;
       }
@@ -384,9 +424,7 @@ export default function UsersPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">User Management</h1>
-        <p className="text-sm text-muted-foreground">
-          Manage users, roles, and groups.
-        </p>
+        <p className="text-sm text-muted-foreground">Manage users, roles, and groups.</p>
       </div>
 
       {error && (
@@ -395,7 +433,12 @@ export default function UsersPage() {
         </div>
       )}
 
-      <Tabs value={tab} onValueChange={(v) => { setTab(v); }}>
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          setTab(v);
+        }}
+      >
         <div className="flex items-center justify-between">
           <TabsList className="h-10 rounded-full p-1">
             <TabsTrigger value="users" className="rounded-full px-4">
@@ -409,7 +452,12 @@ export default function UsersPage() {
             </TabsTrigger>
           </TabsList>
           {tab === 'users' && (
-            <Button size="sm" onClick={() => { setCreateOpen(true); }}>
+            <Button
+              size="sm"
+              onClick={() => {
+                setCreateOpen(true);
+              }}
+            >
               <Plus className="mr-1 size-4" />
               Create User
             </Button>
@@ -431,19 +479,44 @@ export default function UsersPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('name'); }}>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => {
+                        toggleSort('name');
+                      }}
+                    >
                       Name {getSortIcon('name')}
                     </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('email'); }}>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => {
+                        toggleSort('email');
+                      }}
+                    >
                       Email {getSortIcon('email')}
                     </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('role'); }}>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => {
+                        toggleSort('role');
+                      }}
+                    >
                       Role {getSortIcon('role')}
                     </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('plan'); }}>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => {
+                        toggleSort('plan');
+                      }}
+                    >
                       Plan {getSortIcon('plan')}
                     </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => { toggleSort('status'); }}>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => {
+                        toggleSort('status');
+                      }}
+                    >
                       Status {getSortIcon('status')}
                     </TableHead>
                     <TableHead className="w-[50px]" />
@@ -475,12 +548,18 @@ export default function UsersPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => { setEditUser(user); }}>
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                setEditUser(user);
+                              }}
+                            >
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive"
-                              onSelect={() => { setDeleteUser(user); }}
+                              onSelect={() => {
+                                setDeleteUser(user);
+                              }}
                             >
                               Remove
                             </DropdownMenuItem>
@@ -510,7 +589,9 @@ export default function UsersPage() {
                     </div>
                     <div>
                       <h3 className="font-semibold capitalize">{role}</h3>
-                      <p className="text-xs text-muted-foreground">{count} user{count !== 1 ? 's' : ''}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {count} user{count !== 1 ? 's' : ''}
+                      </p>
                     </div>
                   </div>
                   <p className="mt-3 text-sm text-muted-foreground">{def.description}</p>
@@ -535,16 +616,25 @@ export default function UsersPage() {
                   {permissionMatrix.map((group) => (
                     <Fragment key={group.category}>
                       <TableRow>
-                        <TableCell colSpan={4} className="bg-muted/50 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        <TableCell
+                          colSpan={4}
+                          className="bg-muted/50 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                        >
                           {group.category}
                         </TableCell>
                       </TableRow>
                       {group.permissions.map((perm) => (
                         <TableRow key={perm.name}>
                           <TableCell className="text-sm">{perm.name}</TableCell>
-                          <TableCell className="text-center"><PermissionIcon allowed={perm.admin} /></TableCell>
-                          <TableCell className="text-center"><PermissionIcon allowed={perm.developer} /></TableCell>
-                          <TableCell className="text-center"><PermissionIcon allowed={perm.viewer} /></TableCell>
+                          <TableCell className="text-center">
+                            <PermissionIcon allowed={perm.admin} />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <PermissionIcon allowed={perm.developer} />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <PermissionIcon allowed={perm.viewer} />
+                          </TableCell>
                         </TableRow>
                       ))}
                     </Fragment>
@@ -564,7 +654,12 @@ export default function UsersPage() {
       </Tabs>
 
       {/* ---- Create User Dialog (two-step) ---- */}
-      <Dialog open={createOpen} onOpenChange={(open) => { if (!open) closeCreateDialog(); }}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (!open) closeCreateDialog();
+        }}
+      >
         <DialogContent>
           {createStep === 'form' && (
             <>
@@ -590,20 +685,38 @@ export default function UsersPage() {
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="create-password">Password</Label>
                   <div className="relative">
-                    <Input id="create-password" name="password" type={showPassword ? 'text' : 'password'} minLength={8} required className="pr-10" />
+                    <Input
+                      id="create-password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      minLength={8}
+                      required
+                      className="pr-10"
+                    />
                     <button
                       type="button"
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      onClick={() => { setShowPassword((v) => !v); }}
+                      onClick={() => {
+                        setShowPassword((v) => !v);
+                      }}
                       tabIndex={-1}
                     >
-                      {showPassword ? <EyeOff className="size-4" /> : <EyeIcon className="size-4" />}
+                      {showPassword ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <EyeIcon className="size-4" />
+                      )}
                     </button>
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="create-role">Role</Label>
-                  <select name="role" id="create-role" className="rounded-md border bg-background px-3 py-2 text-sm" defaultValue="developer">
+                  <select
+                    name="role"
+                    id="create-role"
+                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                    defaultValue="developer"
+                  >
                     <option value="admin">Admin</option>
                     <option value="developer">Developer</option>
                     <option value="viewer">Viewer</option>
@@ -611,14 +724,27 @@ export default function UsersPage() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="create-plan">Plan</Label>
-                  <select name="policyId" id="create-plan" className="rounded-md border bg-background px-3 py-2 text-sm" defaultValue={policies.find((p) => p.name === 'Standard')?.id ?? policies[0]?.id ?? ''}>
-                    {policies.filter((p) => p.isActive).map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
+                  <select
+                    name="policyId"
+                    id="create-plan"
+                    className="rounded-md border bg-background px-3 py-2 text-sm"
+                    defaultValue={
+                      policies.find((p) => p.name === 'Standard')?.id ?? policies[0]?.id ?? ''
+                    }
+                  >
+                    {policies
+                      .filter((p) => p.isActive)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={closeCreateDialog}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={closeCreateDialog}>
+                    Cancel
+                  </Button>
                   <Button type="submit" disabled={saving}>
                     {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
                     Create
@@ -646,12 +772,16 @@ export default function UsersPage() {
                     id="assign-agent-def"
                     className="rounded-md border bg-background px-3 py-2 text-sm"
                     value={selectedAgentId}
-                    onChange={(e) => { setSelectedAgentId(e.target.value); }}
+                    onChange={(e) => {
+                      setSelectedAgentId(e.target.value);
+                    }}
                     disabled={assigningAgent}
                   >
                     <option value="">Select an agent...</option>
                     {agentDefs.map((a) => (
-                      <option key={a.id} value={a.id}>{a.name}</option>
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground">
@@ -659,10 +789,14 @@ export default function UsersPage() {
                   </p>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={closeCreateDialog}>Skip</Button>
+                  <Button variant="outline" onClick={closeCreateDialog}>
+                    Skip
+                  </Button>
                   <Button
                     disabled={!selectedAgentId || assigningAgent}
-                    onClick={() => { void handleAssignAgent(); }}
+                    onClick={() => {
+                      void handleAssignAgent();
+                    }}
                   >
                     {assigningAgent && <Loader2 className="mr-2 size-4 animate-spin" />}
                     Assign
@@ -690,7 +824,14 @@ export default function UsersPage() {
       </Dialog>
 
       {/* ---- Edit User Dialog ---- */}
-      <Dialog open={editUser !== null} onOpenChange={(open) => { if (!open) { setEditUser(null); } }}>
+      <Dialog
+        open={editUser !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditUser(null);
+          }
+        }}
+      >
         {editUser && (
           <DialogContent>
             <DialogHeader>
@@ -716,7 +857,12 @@ export default function UsersPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="edit-role">Role</Label>
-                <select name="role" id="edit-role" className="rounded-md border bg-background px-3 py-2 text-sm" defaultValue={editUser.role}>
+                <select
+                  name="role"
+                  id="edit-role"
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  defaultValue={editUser.role}
+                >
                   <option value="admin">Admin</option>
                   <option value="developer">Developer</option>
                   <option value="viewer">Viewer</option>
@@ -724,21 +870,43 @@ export default function UsersPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="edit-plan">Plan</Label>
-                <select name="policyId" id="edit-plan" className="rounded-md border bg-background px-3 py-2 text-sm" defaultValue={editUser.policyId}>
-                  {policies.filter((p) => p.isActive).map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                <select
+                  name="policyId"
+                  id="edit-plan"
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  defaultValue={editUser.policyId}
+                >
+                  {policies
+                    .filter((p) => p.isActive)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="edit-status">Status</Label>
-                <select name="isActive" id="edit-status" className="rounded-md border bg-background px-3 py-2 text-sm" defaultValue={String(editUser.isActive)}>
+                <select
+                  name="isActive"
+                  id="edit-status"
+                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  defaultValue={String(editUser.isActive)}
+                >
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
                 </select>
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => { setEditUser(null); }}>Cancel</Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEditUser(null);
+                  }}
+                >
+                  Cancel
+                </Button>
                 <Button type="submit" disabled={saving}>
                   {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
                   Save
@@ -750,20 +918,30 @@ export default function UsersPage() {
       </Dialog>
 
       {/* ---- Delete User Confirm ---- */}
-      <AlertDialog open={deleteUser !== null} onOpenChange={(open) => { if (!open) { setDeleteUser(null); } }}>
+      <AlertDialog
+        open={deleteUser !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteUser(null);
+          }
+        }}
+      >
         {deleteUser && (
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Remove User</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to remove <strong>{deleteUser.name}</strong> ({deleteUser.email})? This action cannot be undone.
+                Are you sure you want to remove <strong>{deleteUser.name}</strong> (
+                {deleteUser.email})? This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={() => { void handleDelete(deleteUser.id); }}
+                onClick={() => {
+                  void handleDelete(deleteUser.id);
+                }}
                 disabled={saving}
               >
                 {saving && <Loader2 className="mr-2 size-4 animate-spin" />}

@@ -32,10 +32,15 @@ const ANTHROPIC_SPEC: ProviderSpec = {
   supportsTools: true,
   supportsThinking: true,
   pricing: [
+    // Version-specific models (must come first for longest-prefix matching)
     { model: 'claude-opus-4-6', inputPerMillion: 15, outputPerMillion: 75 },
     { model: 'claude-sonnet-4-6', inputPerMillion: 3, outputPerMillion: 15 },
     { model: 'claude-sonnet-4-5', inputPerMillion: 3, outputPerMillion: 15 },
     { model: 'claude-haiku-4-5', inputPerMillion: 0.8, outputPerMillion: 4 },
+    // Base model names (aliases for latest versions)
+    { model: 'claude-opus-4', inputPerMillion: 15, outputPerMillion: 75 },
+    { model: 'claude-sonnet-4', inputPerMillion: 3, outputPerMillion: 15 },
+    { model: 'claude-haiku-4', inputPerMillion: 0.8, outputPerMillion: 4 },
   ],
 };
 
@@ -92,7 +97,12 @@ const CUSTOM_SPEC: ProviderSpec = {
   pricing: null,
 };
 
-const PROVIDERS: readonly ProviderSpec[] = [ANTHROPIC_SPEC, OPENAI_SPEC, ZAI_CODING_SPEC, CUSTOM_SPEC];
+const PROVIDERS: readonly ProviderSpec[] = [
+  ANTHROPIC_SPEC,
+  OPENAI_SPEC,
+  ZAI_CODING_SPEC,
+  CUSTOM_SPEC,
+];
 
 /**
  * Find a provider spec by its name. Returns null if not found.
@@ -147,7 +157,10 @@ export function estimateCost(
     return null;
   }
 
-  const pricing = pricingTable.find((p) => model.startsWith(p.model));
+  // Find the most specific match (longest model name that matches as a prefix)
+  const pricing = pricingTable
+    .filter((p) => model.startsWith(p.model))
+    .sort((a, b) => b.model.length - a.model.length)[0];
 
   if (pricing === undefined) {
     return null;
