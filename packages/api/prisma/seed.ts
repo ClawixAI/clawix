@@ -111,7 +111,7 @@ async function main(): Promise<void> {
       maxSkills: 500,
       maxMemoryItems: 50000,
       maxGroupsOwned: 50,
-      allowedProviders: ['openai', 'anthropic', 'azure', 'deepseek', 'gemini'],
+      allowedProviders: ['openai', 'anthropic', 'azure', 'deepseek', 'gemini', 'zai-coding'],
       cronEnabled: true,
       features: { swarmOrchestration: true, heartbeat: true, customProviders: true },
     },
@@ -282,51 +282,63 @@ async function main(): Promise<void> {
   console.log(`  Skills: custom skill directories created under ${customSkillsBase}`);
 
   // --- Provider Configs (org-level, conditional on env vars) ---
-  const providerEnvKeys: Record<string, string> = {
-    openai: 'OPENAI_API_KEY',
-    'zai-coding': 'ZAI_API_KEY',
-  };
-  const insertedProviders = new Set<string>();
-
-  if (process.env['OPENAI_API_KEY']) {
-    await prisma.providerConfig.upsert({
-      where: { provider: 'openai' },
-      update: {},
-      create: {
-        provider: 'openai',
-        displayName: 'OpenAI',
-        apiKey: encrypt(process.env['OPENAI_API_KEY']),
-        isDefault: defaultProvider === 'openai',
-      },
+  interface ProviderSeed {
+    readonly provider: string;
+    readonly displayName: string;
+    readonly envKey: string;
+    readonly baseUrl?: string;
+  }
+  const providerSeeds: ProviderSeed[] = [
+    { provider: 'anthropic', displayName: 'Anthropic', envKey: 'ANTHROPIC_API_KEY' },
+    { provider: 'openai', displayName: 'OpenAI', envKey: 'OPENAI_API_KEY' },
+    {
+      provider: 'zai-coding',
+      displayName: 'Z.AI Coding Plan',
+      envKey: 'ZAI_CODING_API_KEY',
+      baseUrl: 'https://api.z.ai/api/coding/paas/v4',
+    },
+  ];
+  const customName = process.env['CUSTOM_PROVIDER_NAME'];
+  const customBase = process.env['CUSTOM_PROVIDER_BASE_URL'];
+  if (customName && customBase) {
+    providerSeeds.push({
+      provider: customName,
+      displayName: process.env['CUSTOM_PROVIDER_DISPLAY_NAME'] ?? customName,
+      envKey: 'CUSTOM_PROVIDER_API_KEY',
+      baseUrl: customBase,
     });
-    insertedProviders.add('openai');
-    console.log(`  Provider: openai${defaultProvider === 'openai' ? ' (default)' : ''}`);
   }
 
-  if (process.env['ZAI_API_KEY']) {
+  const insertedProviders = new Set<string>();
+  for (const seed of providerSeeds) {
+    const apiKey = process.env[seed.envKey];
+    if (!apiKey) continue;
     await prisma.providerConfig.upsert({
-      where: { provider: 'zai-coding' },
+      where: { provider: seed.provider },
       update: {},
       create: {
-        provider: 'zai-coding',
-        displayName: 'Zai Coding',
-        apiKey: encrypt(process.env['ZAI_API_KEY']),
-        apiBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
-        isDefault: defaultProvider === 'zai-coding',
+        provider: seed.provider,
+        displayName: seed.displayName,
+        apiKey: encrypt(apiKey),
+        apiBaseUrl: seed.baseUrl ?? null,
+        isDefault: defaultProvider === seed.provider,
       },
     });
-    insertedProviders.add('zai-coding');
-    console.log(`  Provider: zai-coding${defaultProvider === 'zai-coding' ? ' (default)' : ''}`);
+    insertedProviders.add(seed.provider);
+    console.log(
+      `  Provider: ${seed.provider}${defaultProvider === seed.provider ? ' (default)' : ''}`,
+    );
   }
 
   if (insertedProviders.size === 0) {
-    throw new Error('No provider API keys found. Set at least one of: OPENAI_API_KEY, ZAI_API_KEY');
+    const envKeyList = providerSeeds.map((s) => s.envKey).join(', ');
+    throw new Error(`No provider API keys found. Set at least one of: ${envKeyList}`);
   }
 
   if (!insertedProviders.has(defaultProvider)) {
-    const envKey = providerEnvKeys[defaultProvider];
-    const hint = envKey
-      ? `Set ${envKey} in your .env file.`
+    const seed = providerSeeds.find((s) => s.provider === defaultProvider);
+    const hint = seed
+      ? `Set ${seed.envKey} in your .env file.`
       : `Add a provider entry for "${defaultProvider}" in the seed script.`;
     throw new Error(
       `DEFAULT_PROVIDER is "${defaultProvider}" but no API key was provided for it. ${hint}`,

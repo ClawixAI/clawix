@@ -126,6 +126,8 @@ Pluggable tools with approval workflows. Bundle built-in skills, create custom o
 - **Node.js 20+** and **pnpm 9+**
 - **Docker** (for agent containers, PostgreSQL, and Redis)
 
+> **Self-hosting in production?** Skip ahead to [Production Deployment](#production-deployment-first-run) — the installer handles `.env` generation, image builds, and bootstrap for you. The steps below are for local development.
+
 ### 1. Clone & Install
 
 ```bash
@@ -176,6 +178,66 @@ pnpm run dev    # API on :3001, Dashboard on :3000
 ```
 
 That's it. Open `http://localhost:3000` or message your Telegram bot.
+
+---
+
+## Production Deployment (First Run)
+
+Two helper scripts wrap the full production flow:
+
+| Command                   | What it does                                                               |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `pnpm run install:clawix` | Interactive first-time setup: generates `.env`, builds images, starts stack |
+| `pnpm run update:clawix`  | Non-interactive rebuild + restart (use after `git pull` or config changes) |
+
+### First run
+
+```bash
+pnpm run install:clawix
+```
+
+The installer will:
+
+1. Check prerequisites (Node 20+, pnpm, Docker, Docker Compose)
+2. Ask for deployment mode (production / development), provider (OpenAI or Zai-Coding) + API key, admin email/password (production only), and optional Telegram bot token
+3. Generate `.env` with cryptographically random `JWT_SECRET`, `PROVIDER_ENCRYPTION_KEY`, `POSTGRES_PASSWORD` (file permissions set to `600`)
+4. Build `clawix-agent:latest` (agent image used for isolated per-task containers)
+5. Run `docker compose … up -d --build`
+6. Wait for `http://localhost:3001/health` to go green (migrations + bootstrap run inside the API container on first start)
+
+When it finishes, open `http://localhost:3000` and sign in with the admin credentials you entered.
+
+> Re-running `install:clawix` with an existing `.env` is safe — it keeps your secrets, skips the prompts, and just rebuilds/restarts. To reconfigure from scratch, delete `.env` and re-run.
+
+### Updates and restarts
+
+```bash
+pnpm run update:clawix              # rebuild + restart (default)
+pnpm run update:clawix -- --pull    # git pull --ff-only, then rebuild + restart
+pnpm run update:clawix -- --no-build # plain restart, reuse existing images
+```
+
+The updater reads `CLAWIX_DEPLOY_MODE` from `.env` and picks the right compose file automatically. Prisma migrations and the idempotent bootstrap run inside the container on every start — bootstrap no-ops once the admin exists.
+
+### What happens under the hood
+
+- `infra/docker/api/entrypoint.sh` runs `prisma migrate deploy`, then `node dist/bootstrap.js`.
+- `bootstrap.ts` only writes when the admin doesn't already exist and only uses `upsert` / guarded `create` — never deletes data.
+- The production compose file **fails fast** at `docker compose up` time if any of `POSTGRES_PASSWORD`, `JWT_SECRET`, `CORS_ALLOWED_ORIGINS`, or `PROVIDER_ENCRYPTION_KEY` are missing.
+- Generate the encryption key manually (if not using the installer) with `openssl rand -hex 32`.
+
+### Manual equivalent (no installer)
+
+```bash
+cp .env.example .env
+# edit .env — set POSTGRES_PASSWORD, JWT_SECRET, CORS_ALLOWED_ORIGINS,
+# PROVIDER_ENCRYPTION_KEY, DEFAULT_PROVIDER, <PROVIDER>_API_KEY,
+# INITIAL_ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD, INITIAL_ADMIN_NAME
+
+docker build -t clawix-agent:latest -f infra/docker/agent/Dockerfile .
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml logs api | grep '\[bootstrap\]'
+```
 
 ---
 
@@ -269,6 +331,10 @@ pnpm run test             # Run all tests
 pnpm run test:coverage    # Tests with coverage report
 pnpm run lint             # ESLint + type check
 pnpm run format           # Prettier format
+
+# Production deployment
+pnpm run install:clawix   # Interactive first-time setup (generates .env, builds, starts)
+pnpm run update:clawix    # Rebuild + restart after git pull or config changes
 
 # Infrastructure
 pnpm run docker:dev       # Start Postgres, Redis, pgAdmin

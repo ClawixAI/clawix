@@ -1,6 +1,6 @@
 'use client';
 
-import { X, FileWarning, Loader2, Pencil } from 'lucide-react';
+import { X, FileWarning, Loader2, Pencil, Eye } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -14,9 +14,10 @@ interface FilePreviewProps {
   readonly isLoading: boolean;
   readonly onClose: () => void;
   readonly onEdit?: () => void;
+  readonly onFullPreview?: () => void;
 }
 
-export function FilePreview({ file, isLoading, onClose, onEdit }: FilePreviewProps) {
+export function FilePreview({ file, isLoading, onClose, onEdit, onFullPreview }: FilePreviewProps) {
   if (isLoading) {
     return (
       <Card className="flex h-full items-center justify-center">
@@ -46,6 +47,17 @@ export function FilePreview({ file, isLoading, onClose, onEdit }: FilePreviewPro
           </span>
         </div>
         <div className="flex items-center gap-1">
+          {onFullPreview && file.content !== null && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 shrink-0"
+              onClick={onFullPreview}
+              title="Full preview"
+            >
+              <Eye className="size-3.5" />
+            </Button>
+          )}
           {onEdit &&
             ['text', 'code', 'markdown', 'json'].includes(file.type) &&
             file.content !== null && (

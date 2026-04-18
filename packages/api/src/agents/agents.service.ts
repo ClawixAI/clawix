@@ -41,7 +41,8 @@ export class AgentsService {
     input: CreateAgentDefinitionInput,
     createdById?: string,
   ): Promise<AgentDefinition> {
-    return this.agentDefRepo.create({ ...input, createdById });
+    // User-created agents are always custom (not official)
+    return this.agentDefRepo.create({ ...input, createdById, isOfficial: false });
   }
 
   async updateAgent(

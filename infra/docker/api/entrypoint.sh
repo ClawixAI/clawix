@@ -19,6 +19,13 @@ cd /app
 npx prisma migrate deploy --schema=prisma/schema.prisma
 echo "Migrations complete!"
 
+# Bootstrap initial admin + baseline config (idempotent; silent no-op when
+# INITIAL_ADMIN_EMAIL is unset).
+if [ -f /app/dist/bootstrap.js ]; then
+  echo "Running bootstrap..."
+  node /app/dist/bootstrap.js
+fi
+
 # Start the application
 echo "Starting Clawix API..."
 exec node dist/main.js

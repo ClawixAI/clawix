@@ -81,7 +81,7 @@ services:
              pnpm install --frozen-lockfile &&
              pnpm --filter @clawix/shared build &&
              pnpm --filter @clawix/api exec prisma migrate deploy --schema=prisma/schema.prisma &&
-             node -e \"
+             pnpm --filter @clawix/api exec node -e \"
                const { Client } = require('pg');
                const c = new Client({ connectionString: process.env.DATABASE_URL });
                c.connect()

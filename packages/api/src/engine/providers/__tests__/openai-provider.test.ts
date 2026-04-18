@@ -296,6 +296,20 @@ describe('OpenAIProvider', () => {
       expect(callArgs['top_p']).toBe(0.9);
     });
 
+    it('uses max_completion_tokens for o-series reasoning models', async () => {
+      stubSimpleResponse();
+
+      await provider.chat([{ role: 'user', content: 'Hi' }], {
+        model: 'o3-mini',
+        settings: { maxTokens: 8192 },
+      });
+
+      const callArgs = getCallArgs();
+      expect(callArgs['model']).toBe('o3-mini');
+      expect(callArgs['max_completion_tokens']).toBe(8192);
+      expect(callArgs['max_tokens']).toBeUndefined();
+    });
+
     it('accepts custom baseURL in constructor', () => {
       const custom = new OpenAIProvider('key', 'https://custom.api.com/v1');
       expect(custom.name).toBe('openai');

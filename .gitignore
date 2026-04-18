@@ -7,6 +7,7 @@
 
 # env
 .env
+.env.prod
 !.env.example
 
 # dependencies

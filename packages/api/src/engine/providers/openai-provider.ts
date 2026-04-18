@@ -27,6 +27,14 @@ const DEFAULT_MAX_TOKENS = 4096;
 const log = createLogger('engine:openai');
 
 /**
+ * Returns true for o-series models (o1, o3, o4, etc.) that require
+ * max_completion_tokens instead of max_tokens.
+ */
+function isReasoningModel(model: string): boolean {
+  return /^o[1-9]/.test(model);
+}
+
+/**
  * LLM provider for OpenAI models (GPT-4o, GPT-4o-mini, etc.).
  *
  * Wraps the official `openai` SDK and normalizes responses to the
@@ -51,10 +59,15 @@ export class OpenAIProvider implements LLMProvider {
 
     const toolChoiceParam = mapToolChoice(options?.toolChoice);
 
+    // o-series reasoning models use max_completion_tokens instead of max_tokens
+    const useCompletionTokens = isReasoningModel(model);
+
     const requestBody: OpenAI.ChatCompletionCreateParamsNonStreaming = {
       model,
       messages: messages.map(toOpenAIMessage),
-      max_tokens: maxTokens,
+      ...(useCompletionTokens
+        ? { max_completion_tokens: maxTokens }
+        : { max_tokens: maxTokens }),
       ...(options?.settings?.temperature !== undefined && {
         temperature: options.settings.temperature,
       }),

@@ -14,7 +14,7 @@ services:
       - '5433:5432'
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-clawix}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clawix_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-clawix}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -29,7 +29,7 @@ services:
     container_name: clawix-redis
     restart: unless-stopped
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -51,11 +51,22 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-clawix}:${POSTGRES_PASSWORD:-clawix_dev}@postgres:5432/${POSTGRES_DB:-clawix}?schema=public
+      DATABASE_URL: postgresql://${POSTGRES_USER:-clawix}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-clawix}?schema=public
       REDIS_URL: redis://redis:6379
       PORT: '3001'
       HOST: '0.0.0.0'
       LOG_LEVEL: info
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required}
+      PROVIDER_ENCRYPTION_KEY: ${PROVIDER_ENCRYPTION_KEY:?PROVIDER_ENCRYPTION_KEY is required (64 hex chars)}
+      # Bootstrap (optional — consumed by dist/bootstrap.js on first start,
+      # skipped silently if INITIAL_ADMIN_EMAIL is empty)
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+      INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-}
+      DEFAULT_PROVIDER: ${DEFAULT_PROVIDER:-openai}
+      DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-gpt-4o}
       TEMPLATES_DIR: /app/infra/templates
       WORKSPACE_BASE_PATH: /data
       WORKSPACE_HOST_BASE_PATH: ${CLAWIX_HOST_DATA_DIR:-${PWD}/data}

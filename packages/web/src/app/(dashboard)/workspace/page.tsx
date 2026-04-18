@@ -18,6 +18,7 @@ import {
   MoveDialog,
   DiscardDialog,
   ConflictDialog,
+  FullPreviewDialog,
 } from './workspace-dialogs';
 import { UploadZone } from './upload-zone';
 import type {
@@ -49,6 +50,7 @@ export default function WorkspacePage() {
   const [showConflictDialog, setShowConflictDialog] = useState(false);
   const [pendingContent, setPendingContent] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const [showFullPreview, setShowFullPreview] = useState(false);
 
   useAnimeOnMount(staggerFadeUp('[data-animate="workspace-rows"] tr', { stagger: STAGGER.tight }));
 
@@ -424,6 +426,7 @@ export default function WorkspacePage() {
                 isLoading={isLoadingFile}
                 onClose={handleClosePreview}
                 onEdit={handleEdit}
+                onFullPreview={() => setShowFullPreview(true)}
               />
             </div>
           )}
@@ -501,6 +504,14 @@ export default function WorkspacePage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Full preview modal */}
+      <FullPreviewDialog
+        file={selectedFile}
+        open={showFullPreview}
+        onOpenChange={setShowFullPreview}
+        onEdit={handleEdit}
+      />
     </div>
   );
 }

@@ -1,10 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, ChevronRight, Folder } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AlertTriangle, ChevronRight, Folder, Pencil, X } from 'lucide-react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import mermaid from 'mermaid';
 import { authFetch } from '@/lib/auth';
 import { cn } from '@/lib/utils';
-import type { DirectoryListing } from '@clawix/shared';
+import { formatFileSize } from '@/lib/format';
+import { Badge } from '@/components/ui/badge';
+import type { DirectoryListing, FileContent } from '@clawix/shared';
 import {
   Dialog,
   DialogContent,
@@ -454,5 +459,187 @@ export function ConflictDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/* ---------- MermaidBlock ---------- */
+
+function MermaidBlock({ code }: { code: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [svg, setSvg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      securityLevel: 'loose',
+    });
+
+    const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
+
+    mermaid
+      .render(id, code)
+      .then(({ svg: renderedSvg }) => {
+        if (!cancelled) {
+          setSvg(renderedSvg);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to render diagram');
+          setSvg(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
+
+  if (error) {
+    return (
+      <div className="rounded border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+        <p className="font-medium">Mermaid Error</p>
+        <pre className="mt-1 text-xs">{error}</pre>
+      </div>
+    );
+  }
+
+  if (svg) {
+    return (
+      <div
+        ref={containerRef}
+        className="my-4 flex justify-center overflow-x-auto"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    );
+  }
+
+  return <div className="my-4 h-32 animate-pulse rounded bg-muted" />;
+}
+
+/* ---------- FullPreviewDialog ---------- */
+
+interface FullPreviewDialogProps {
+  readonly file: FileContent | null;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onEdit?: () => void;
+}
+
+export function FullPreviewDialog({
+  file,
+  open,
+  onOpenChange,
+  onEdit,
+}: FullPreviewDialogProps) {
+  if (!file) return null;
+
+  const isMarkdown = file.type === 'markdown';
+  const canEdit = ['text', 'code', 'markdown', 'json'].includes(file.type) && file.content !== null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden p-0">
+        {/* Header */}
+        <div className="flex items-center gap-2 border-b px-6 py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span className="truncate text-lg font-semibold">{file.name}</span>
+            <Badge variant="secondary" className="shrink-0">
+              {file.type}
+            </Badge>
+            <span className="shrink-0 text-sm text-muted-foreground">
+              {formatFileSize(file.size)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            {onEdit && canEdit && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                onClick={() => {
+                  onOpenChange(false);
+                  onEdit();
+                }}
+                title="Edit file"
+              >
+                <Pencil className="size-4" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-auto p-6">
+          {file.content === null ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+              <p className="text-sm text-muted-foreground">
+                {file.truncated
+                  ? 'File is too large to preview (> 1 MB)'
+                  : 'Binary file — preview not available'}
+              </p>
+            </div>
+          ) : isMarkdown ? (
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <Markdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  code({ className, children, ...props }) {
+                    const match = /language-(\w+)/.exec(className ?? '');
+                    const lang = match?.[1];
+                    const codeStr = String(children).replace(/\n$/, '');
+
+                    if (lang === 'mermaid') {
+                      return <MermaidBlock code={codeStr} />;
+                    }
+
+                    // Inline code vs block code
+                    const isInline = !className;
+                    if (isInline) {
+                      return (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    }
+
+                    return (
+                      <pre className="overflow-x-auto rounded-md bg-muted p-4">
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      </pre>
+                    );
+                  },
+                  pre({ children }) {
+                    // Return children directly to avoid double-wrapping
+                    return <>{children}</>;
+                  },
+                }}
+              >
+                {file.content}
+              </Markdown>
+            </div>
+          ) : (
+            <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-foreground/90">
+              {file.content}
+            </pre>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
