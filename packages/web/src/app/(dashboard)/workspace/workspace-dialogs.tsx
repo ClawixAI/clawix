@@ -305,7 +305,7 @@ export function MoveDialog({
             type="button"
             aria-label={node.expanded ? 'Collapse' : 'Expand'}
             className={cn(
-              'flex h-4 w-4 shrink-0 items-center justify-center rounded transition-transform',
+              'flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded transition-transform',
               !hasChildren && 'invisible',
             )}
             onClick={(e) => {
@@ -531,12 +531,7 @@ interface FullPreviewDialogProps {
   readonly onEdit?: () => void;
 }
 
-export function FullPreviewDialog({
-  file,
-  open,
-  onOpenChange,
-  onEdit,
-}: FullPreviewDialogProps) {
+export function FullPreviewDialog({ file, open, onOpenChange, onEdit }: FullPreviewDialogProps) {
   if (!file) return null;
 
   const isMarkdown = file.type === 'markdown';
@@ -545,6 +540,10 @@ export function FullPreviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col overflow-hidden p-0">
+        <DialogTitle className="sr-only">Preview: {file.name}</DialogTitle>
+        <DialogDescription className="sr-only">
+          Full preview of {file.name} ({file.type}, {formatFileSize(file.size)})
+        </DialogDescription>
         {/* Header */}
         <div className="flex items-center gap-2 border-b px-6 py-4">
           <div className="flex min-w-0 flex-1 items-center gap-3">

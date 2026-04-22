@@ -28,6 +28,7 @@ export function createMockPrismaService() {
     message: createModelMock(),
     task: createModelMock(),
     taskRun: createModelMock(),
+    taskRunMessage: createModelMock(),
     session: createModelMock(),
     auditLog: createModelMock(),
     tokenUsage: createModelMock(),

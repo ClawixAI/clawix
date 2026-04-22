@@ -17,7 +17,15 @@ vi.mock('@clawix/shared', async (importOriginal) => {
 });
 
 function mockSocket(overrides?: Record<string, unknown>) {
-  return { readyState: 1, send: vi.fn(), close: vi.fn(), on: vi.fn(), ...overrides };
+  return {
+    readyState: 1,
+    send: vi.fn(),
+    close: vi.fn(),
+    on: vi.fn(),
+    ping: vi.fn(),
+    terminate: vi.fn(),
+    ...overrides,
+  };
 }
 
 function mockRequest(url: string): IncomingMessage {
@@ -27,9 +35,9 @@ function mockRequest(url: string): IncomingMessage {
 const mockJwtService = { verifyAsync: vi.fn() };
 const mockConfigService = { getOrThrow: vi.fn().mockReturnValue('test-jwt-secret') };
 const mockAdapter = {
-  addConnection: vi.fn(),
+  addConnection: vi.fn().mockReturnValue(true),
   removeConnection: vi.fn(),
-  handleClientMessage: vi.fn().mockResolvedValue(undefined),
+  handleClientMessage: vi.fn().mockResolvedValue(true),
 };
 const mockHttpAdapterHost = {
   httpAdapter: {
@@ -44,7 +52,8 @@ describe('WebChatGateway', () => {
     vi.clearAllMocks();
     mockJwtService.verifyAsync.mockReset();
     mockConfigService.getOrThrow.mockReturnValue('test-jwt-secret');
-    mockAdapter.handleClientMessage.mockResolvedValue(undefined);
+    mockAdapter.addConnection.mockReturnValue(true);
+    mockAdapter.handleClientMessage.mockResolvedValue(true);
     gateway = new WebChatGateway(
       mockJwtService as never,
       mockConfigService as never,
@@ -94,6 +103,22 @@ describe('WebChatGateway', () => {
 
       expect(socket.close).toHaveBeenCalledWith(4001, 'unauthorized');
       expect(mockAdapter.addConnection).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleConnection — connection limit exceeded', () => {
+    it('closes socket with 4002 when addConnection returns false', async () => {
+      const payload = { sub: 'user-1', email: 'test@example.com', role: 'developer' };
+      mockJwtService.verifyAsync.mockResolvedValue(payload);
+      mockAdapter.addConnection.mockReturnValue(false);
+
+      const socket = mockSocket();
+      const req = mockRequest('/ws/chat?token=valid.jwt.token');
+
+      await gateway.handleConnection(socket as never, req);
+
+      expect(socket.close).toHaveBeenCalledWith(4002, 'connection_limit_exceeded');
+      expect(socket.send).not.toHaveBeenCalled();
     });
   });
 

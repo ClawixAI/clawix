@@ -1,6 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ContextBuilderService } from '../context-builder.service.js';
 import type { ContextBuildParams } from '../context-builder.types.js';
+import type { SystemSettingsService } from '../../system-settings/system-settings.service.js';
+
+const noopSystemSettings = {
+  get: vi.fn().mockResolvedValue({
+    cronDefaultTokenBudget: 10000,
+    cronExecutionTimeoutMs: 300000,
+    cronTokenGracePercent: 10,
+    defaultTimezone: 'UTC',
+  }),
+} as unknown as SystemSettingsService;
 
 describe('ContextBuilderService - skill summary integration', () => {
   it('includes skill summary between system prompt and memory', async () => {
@@ -20,6 +30,7 @@ describe('ContextBuilderService - skill summary integration', () => {
       mockSkillLoader as any,
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
+      noopSystemSettings,
     );
 
     const params: ContextBuildParams = {
@@ -51,6 +62,7 @@ describe('ContextBuilderService - skill summary integration', () => {
       mockSkillLoader as any,
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
+      noopSystemSettings,
     );
 
     const params: ContextBuildParams = {

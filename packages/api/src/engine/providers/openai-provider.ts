@@ -65,9 +65,7 @@ export class OpenAIProvider implements LLMProvider {
     const requestBody: OpenAI.ChatCompletionCreateParamsNonStreaming = {
       model,
       messages: messages.map(toOpenAIMessage),
-      ...(useCompletionTokens
-        ? { max_completion_tokens: maxTokens }
-        : { max_tokens: maxTokens }),
+      ...(useCompletionTokens ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
       ...(options?.settings?.temperature !== undefined && {
         temperature: options.settings.temperature,
       }),

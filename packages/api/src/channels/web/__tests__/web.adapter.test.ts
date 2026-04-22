@@ -67,7 +67,8 @@ describe('createWebAdapter', () => {
   describe('connection management', () => {
     it('adds a connection and reports correct count', () => {
       const socket = makeMockSocket();
-      adapter.addConnection('user-1', socket as never);
+      const added = adapter.addConnection('user-1', socket as never);
+      expect(added).toBe(true);
       expect(adapter.getConnectionCount('user-1')).toBe(1);
     });
 
@@ -97,6 +98,20 @@ describe('createWebAdapter', () => {
 
     it('returns 0 for unknown user', () => {
       expect(adapter.getConnectionCount('unknown')).toBe(0);
+    });
+
+    it('rejects connections beyond the limit (10 per user)', () => {
+      for (let i = 0; i < 10; i++) {
+        const socket = makeMockSocket();
+        const added = adapter.addConnection('user-1', socket as never);
+        expect(added).toBe(true);
+      }
+      expect(adapter.getConnectionCount('user-1')).toBe(10);
+
+      const extraSocket = makeMockSocket();
+      const added = adapter.addConnection('user-1', extraSocket as never);
+      expect(added).toBe(false);
+      expect(adapter.getConnectionCount('user-1')).toBe(10);
     });
   });
 
@@ -251,14 +266,73 @@ describe('createWebAdapter', () => {
       expect(payload.payload.code).toBe('INVALID_MESSAGE');
     });
 
-    it('handleClientMessage does not throw when no handler registered for message.send', async () => {
-      await expect(
-        adapter.handleClientMessage(
+    it('handleClientMessage returns false when no handler registered for message.send', async () => {
+      const result = await adapter.handleClientMessage(
+        'user-1',
+        'Alice',
+        JSON.stringify({ type: 'message.send', payload: { content: 'Hi' } }),
+      );
+      expect(result).toBe(false);
+    });
+
+    it('handleClientMessage returns true for successful message', async () => {
+      const handler = vi.fn().mockResolvedValue(undefined);
+      adapter.onMessage(handler);
+
+      const result = await adapter.handleClientMessage(
+        'user-1',
+        'Alice',
+        JSON.stringify({ type: 'message.send', payload: { content: 'Hello' } }),
+      );
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('rate limiting', () => {
+    it('allows up to 30 messages per minute', async () => {
+      const handler = vi.fn().mockResolvedValue(undefined);
+      adapter.onMessage(handler);
+
+      for (let i = 0; i < 30; i++) {
+        const result = await adapter.handleClientMessage(
           'user-1',
           'Alice',
-          JSON.stringify({ type: 'message.send', payload: { content: 'Hi' } }),
-        ),
-      ).resolves.toBeUndefined();
+          JSON.stringify({ type: 'message.send', payload: { content: `msg ${i}` } }),
+        );
+        expect(result).toBe(true);
+      }
+      expect(handler).toHaveBeenCalledTimes(30);
+    });
+
+    it('blocks messages beyond rate limit', async () => {
+      const socket = makeMockSocket();
+      adapter.addConnection('user-1', socket as never);
+      const handler = vi.fn().mockResolvedValue(undefined);
+      adapter.onMessage(handler);
+
+      for (let i = 0; i < 30; i++) {
+        await adapter.handleClientMessage(
+          'user-1',
+          'Alice',
+          JSON.stringify({ type: 'message.send', payload: { content: `msg ${i}` } }),
+        );
+      }
+
+      socket.send.mockClear();
+      const result = await adapter.handleClientMessage(
+        'user-1',
+        'Alice',
+        JSON.stringify({ type: 'message.send', payload: { content: 'blocked' } }),
+      );
+      expect(result).toBe(false);
+      expect(handler).toHaveBeenCalledTimes(30);
+
+      const payload = JSON.parse(socket.send.mock.calls[0]![0] as string) as {
+        type: string;
+        payload: { code: string };
+      };
+      expect(payload.type).toBe('error');
+      expect(payload.payload.code).toBe('RATE_LIMITED');
     });
   });
 });

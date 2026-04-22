@@ -31,6 +31,10 @@ vi.mock('../tools/index.js', () => ({
   registerCronTools: vi.fn(),
 }));
 
+vi.mock('../../system-settings/system-settings.service.js', () => ({
+  SystemSettingsService: vi.fn(),
+}));
+
 vi.mock('../tools/spawn.js', () => ({
   createSpawnTool: vi
     .fn()
@@ -337,6 +341,17 @@ function buildMocks() {
     resolveProvider: vi.fn().mockResolvedValue({ apiKey: 'test-api-key', apiBaseUrl: null }),
   };
 
+  const mockSystemSettings: {
+    get: ReturnType<typeof vi.fn>;
+  } = {
+    get: vi.fn().mockResolvedValue({
+      cronDefaultTokenBudget: 10000,
+      cronExecutionTimeoutMs: 300000,
+      cronTokenGracePercent: 10,
+      defaultTimezone: 'UTC',
+    }),
+  };
+
   return {
     mockSessionManager,
     mockContainerRunner,
@@ -354,6 +369,7 @@ function buildMocks() {
     mockTaskRepo,
     mockCronGuardService,
     mockProviderConfig,
+    mockSystemSettings,
   };
 }
 
@@ -402,6 +418,13 @@ describe('AgentRunnerService', () => {
       mocks.mockTaskRepo as unknown as import('../../db/task.repository.js').TaskRepository,
       mocks.mockCronGuardService as unknown as import('../cron-guard.service.js').CronGuardService,
       mocks.mockProviderConfig as unknown as import('../../provider-config/provider-config.service.js').ProviderConfigService,
+      {
+        findByTaskIdWithLimit: vi.fn().mockResolvedValue([]),
+      } as unknown as import('../../db/task-run.repository.js').TaskRunRepository,
+      {
+        findByTaskRunId: vi.fn().mockResolvedValue([]),
+      } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
+      mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
     );
   });
 
@@ -859,5 +882,84 @@ describe('AgentRunnerService', () => {
     });
 
     expect(vi.mocked(createSpawnTool)).toHaveBeenCalled();
+  });
+});
+
+// ------------------------------------------------------------------ //
+//  AgentRunnerService — with messageStore                             //
+// ------------------------------------------------------------------ //
+
+describe('AgentRunnerService — with messageStore', () => {
+  let service: AgentRunnerService;
+  let mocks: ReturnType<typeof buildMocks>;
+  let mockLoopInstance: { run: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env['OPENAI_API_KEY'] = 'test-key';
+
+    mocks = buildMocks();
+
+    mockLoopInstance = { run: vi.fn().mockResolvedValue(mockLoopResult) };
+    vi.mocked(ReasoningLoop).mockImplementation(() => mockLoopInstance as unknown as ReasoningLoop);
+    vi.mocked(createProvider).mockReturnValue(mockProvider);
+
+    service = new AgentRunnerService(
+      mocks.mockSessionManager as unknown as SessionManagerService,
+      mocks.mockContainerRunner as unknown as ContainerRunner,
+      mocks.mockContainerPool as unknown as ContainerPoolService,
+      mocks.mockTokenCounter as unknown as TokenCounterService,
+      mocks.mockAgentRunRepo as unknown as AgentRunRepository,
+      mocks.mockAgentDefRepo as unknown as AgentDefinitionRepository,
+      mocks.mockUserRepo as unknown as UserRepository,
+      mocks.mockUserAgentRepo as unknown as UserAgentRepository,
+      mocks.mockMemoryConsolidation as unknown as MemoryConsolidationService,
+      mocks.mockContextBuilder as unknown as ContextBuilderService,
+      {} as unknown as SearchProviderRegistry,
+      { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
+      {} as unknown as import('../../prisma/prisma.service.js').PrismaService,
+      {
+        findVisibleToUser: vi.fn().mockResolvedValue([]),
+      } as unknown as import('../../db/memory-item.repository.js').MemoryItemRepository,
+      mocks.mockWorkspaceSeeder as unknown as import('../workspace-seeder.service.js').WorkspaceSeederService,
+      mocks.mockPolicyRepo as unknown as import('../../db/policy.repository.js').PolicyRepository,
+      {} as unknown as import('../../db/channel.repository.js').ChannelRepository,
+      mocks.mockTaskRepo as unknown as import('../../db/task.repository.js').TaskRepository,
+      mocks.mockCronGuardService as unknown as import('../cron-guard.service.js').CronGuardService,
+      mocks.mockProviderConfig as unknown as import('../../provider-config/provider-config.service.js').ProviderConfigService,
+      {
+        findByTaskIdWithLimit: vi.fn().mockResolvedValue([]),
+      } as unknown as import('../../db/task-run.repository.js').TaskRunRepository,
+      {
+        findByTaskRunId: vi.fn().mockResolvedValue([]),
+      } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
+      mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
+    );
+  });
+
+  afterEach(() => {
+    delete process.env['OPENAI_API_KEY'];
+  });
+
+  it('does not call sessionManager when messageStore is provided, and returns null sessionId', async () => {
+    const store = {
+      loadMessages: vi.fn().mockResolvedValue([]),
+      saveMessages: vi.fn().mockResolvedValue([]),
+    };
+
+    const result = await service.run({
+      agentDefinitionId: 'agent-def-1',
+      input: 'Hello!',
+      userId: 'user-1',
+      messageStore: store,
+      isScheduledTask: true,
+    });
+
+    expect(mocks.mockSessionManager.getOrCreate).not.toHaveBeenCalled();
+    expect(mocks.mockSessionManager.loadMessages).not.toHaveBeenCalled();
+    expect(mocks.mockSessionManager.saveMessages).not.toHaveBeenCalled();
+    expect(store.loadMessages).toHaveBeenCalled();
+    expect(store.saveMessages).toHaveBeenCalled();
+    expect(result.sessionId).toBeNull();
   });
 });

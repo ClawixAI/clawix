@@ -9,6 +9,7 @@ export { ProviderConfigRepository } from './provider-config.repository.js';
 export { ChannelRepository } from './channel.repository.js';
 export { TaskRepository } from './task.repository.js';
 export { TaskRunRepository } from './task-run.repository.js';
+export { TaskRunMessageRepository } from './task-run-message.repository.js';
 export { SessionRepository } from './session.repository.js';
 export { AuditLogRepository } from './audit-log.repository.js';
 export { TokenUsageRepository } from './token-usage.repository.js';

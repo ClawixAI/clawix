@@ -112,7 +112,7 @@ function LoginForm() {
                       onClick={() => {
                         setShowPassword(!showPassword);
                       }}
-                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
+                      className="absolute inset-y-0 right-0 flex cursor-pointer items-center pr-3 text-muted-foreground hover:text-foreground"
                       tabIndex={-1}
                     >
                       {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}

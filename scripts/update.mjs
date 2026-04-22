@@ -50,7 +50,13 @@ function parseArgs(argv) {
     else if (a === '--no-build') flags.build = false;
     else if (a.startsWith('--mode=')) flags.mode = a.slice('--mode='.length);
     else if (a === '-h' || a === '--help') {
-      console.log(readFileSync(new URL(import.meta.url)).toString().split('\n').slice(1, 18).join('\n'));
+      console.log(
+        readFileSync(new URL(import.meta.url))
+          .toString()
+          .split('\n')
+          .slice(1, 18)
+          .join('\n'),
+      );
       process.exit(0);
     }
   }
@@ -105,9 +111,7 @@ async function main() {
 
   step('Restarting stack');
   const buildFlag = flags.build ? '--build' : '';
-  runVisible(
-    `docker compose -f "${composeFile}" up -d --remove-orphans ${buildFlag}`.trim(),
-  );
+  runVisible(`docker compose -f "${composeFile}" up -d --remove-orphans ${buildFlag}`.trim());
   ok('Containers up');
 
   step('Waiting for API /health');

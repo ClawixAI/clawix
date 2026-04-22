@@ -194,7 +194,7 @@ export default function ProjectorPage() {
             <button
               key={item.name}
               className={cn(
-                'flex items-center gap-2 rounded-lg border bg-card px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
+                'flex cursor-pointer items-center gap-2 rounded-lg border bg-card px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
                 activeItem === item.name && 'ring-2 ring-primary bg-accent text-accent-foreground',
               )}
               onClick={() => void openItem(item.name)}
@@ -215,7 +215,7 @@ export default function ProjectorPage() {
       >
         <DialogContent
           showCloseButton
-          className="tv-effect flex h-[85vh] !w-[70vw] !max-w-none flex-col gap-0 p-0 overflow-hidden [&>[data-slot=dialog-close]]:z-50 [&>[data-slot=dialog-close]]:bg-background/80 [&>[data-slot=dialog-close]]:rounded-full [&>[data-slot=dialog-close]]:p-1"
+          className="flex h-[85vh] !w-[70vw] !max-w-none flex-col gap-0 p-0 overflow-hidden [&>[data-slot=dialog-close]]:z-50 [&>[data-slot=dialog-close]]:bg-background/80 [&>[data-slot=dialog-close]]:rounded-full [&>[data-slot=dialog-close]]:p-1"
         >
           <DialogTitle className="sr-only">{activeItem ?? 'Projector'}</DialogTitle>
 

@@ -61,7 +61,7 @@ describe('CronGuardService.canCreate', () => {
     const { service } = makeService();
     const schedule: CronSchedule = { type: 'every', interval: '10m' };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(true);
     expect(result.reason).toBeUndefined();
@@ -72,7 +72,7 @@ describe('CronGuardService.canCreate', () => {
     const schedule: CronSchedule = { type: 'every', interval: '10m' };
     const policy: PolicyLimits = { ...basePolicy, cronEnabled: false };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, policy);
+    const result = await service.canCreate('user-1', schedule, notInCron, policy, 'UTC');
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('not available on your policy');
@@ -82,7 +82,7 @@ describe('CronGuardService.canCreate', () => {
     const { service } = makeService();
     const schedule: CronSchedule = { type: 'every', interval: '10m' };
 
-    const result = await service.canCreate('user-1', schedule, inCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, inCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('during scheduled execution');
@@ -92,7 +92,7 @@ describe('CronGuardService.canCreate', () => {
     const { service } = makeService({ activeCount: 5 });
     const schedule: CronSchedule = { type: 'every', interval: '10m' };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('5 scheduled tasks');
@@ -102,20 +102,21 @@ describe('CronGuardService.canCreate', () => {
     const { service } = makeService();
     const schedule: CronSchedule = { type: 'at', time: '2020-01-01T00:00:00Z' };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('in the past');
   });
 
-  it('rejects at-type schedule with invalid date', async () => {
+  it('rejects at-type schedule missing a timezone offset', async () => {
     const { service } = makeService();
     const schedule: CronSchedule = { type: 'at', time: 'not-a-date' };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('Invalid date/time');
+    // bare strings without timezone offset are caught by the offset check first
+    expect(result.reason).toMatch(/timezone offset/i);
   });
 
   it('allows at-type schedule with future time', async () => {
@@ -123,7 +124,7 @@ describe('CronGuardService.canCreate', () => {
     const futureTime = new Date(Date.now() + 3600000).toISOString();
     const schedule: CronSchedule = { type: 'at', time: futureTime };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(true);
   });
@@ -132,7 +133,7 @@ describe('CronGuardService.canCreate', () => {
     const { service } = makeService();
     const schedule: CronSchedule = { type: 'every', interval: '30s' };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('300 seconds');
@@ -142,7 +143,7 @@ describe('CronGuardService.canCreate', () => {
     const { service } = makeService();
     const schedule: CronSchedule = { type: 'every', interval: 'bad-interval' };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('Invalid interval format');
@@ -153,7 +154,7 @@ describe('CronGuardService.canCreate', () => {
     const { service } = makeService();
     const schedule: CronSchedule = { type: 'cron', expression: 'not-a-cron' };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('Invalid cron expression');
@@ -163,7 +164,7 @@ describe('CronGuardService.canCreate', () => {
     const { service } = makeService();
     const schedule: CronSchedule = { type: 'cron', expression: '0 */6 * * *', tz: 'Not/ATimezone' };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('Unknown timezone');
@@ -179,7 +180,7 @@ describe('CronGuardService.canCreate', () => {
       tz: 'America/New_York',
     };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(true);
   });
@@ -189,10 +190,150 @@ describe('CronGuardService.canCreate', () => {
     // "* * * * *" fires every 60 seconds, which is below minCronIntervalSecs=300
     const schedule: CronSchedule = { type: 'cron', expression: '* * * * *' };
 
-    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy);
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
 
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('300 seconds');
+  });
+});
+
+// ------------------------------------------------------------------ //
+//  canCreate — at schedule offset requirement                         //
+// ------------------------------------------------------------------ //
+
+describe('canCreate — at schedule offset requirement', () => {
+  it('allows at with trailing Z', async () => {
+    const { service } = makeService();
+    const future = new Date(Date.now() + 3600_000).toISOString(); // ends with Z
+    const result = await service.canCreate(
+      'user-1',
+      { type: 'at', time: future },
+      { isInCronExecution: false },
+      basePolicy,
+      'UTC',
+    );
+    expect(result.allowed).toBe(true);
+  });
+
+  it('allows at with explicit +HH:MM offset', async () => {
+    const { service } = makeService();
+    // Use a far-future date so offset replacement doesn't shift into the past
+    const future = new Date(Date.now() + 365 * 24 * 3600_000).toISOString().replace('Z', '+05:30');
+    const result = await service.canCreate(
+      'user-1',
+      { type: 'at', time: future },
+      { isInCronExecution: false },
+      basePolicy,
+      'UTC',
+    );
+    expect(result.allowed).toBe(true);
+  });
+
+  it('rejects bare at datetime with a clear message', async () => {
+    const { service } = makeService();
+    const result = await service.canCreate(
+      'user-1',
+      { type: 'at', time: '2099-01-01T09:00:00' },
+      { isInCronExecution: false },
+      basePolicy,
+      'UTC',
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toMatch(/timezone offset/i);
+  });
+
+  it('rejects at-type schedule that passes offset check but is otherwise unparseable', async () => {
+    const { service } = makeService();
+    const result = await service.canCreate(
+      'user-1',
+      { type: 'at', time: 'not-a-dateZ' },
+      { isInCronExecution: false },
+      basePolicy,
+      'UTC',
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('Invalid date/time');
+  });
+});
+
+// ------------------------------------------------------------------ //
+//  canCreate — cron schedule uses defaultTz                           //
+// ------------------------------------------------------------------ //
+
+describe('canCreate — cron schedule uses defaultTz', () => {
+  it('validates a cron expression under defaultTz when tz is absent', async () => {
+    const { service } = makeService();
+    const result = await service.canCreate(
+      'user-1',
+      { type: 'cron', expression: '0 9 * * *' },
+      { isInCronExecution: false },
+      basePolicy,
+      'America/New_York',
+    );
+    expect(result.allowed).toBe(true);
+  });
+});
+
+// ------------------------------------------------------------------ //
+//  canUpdate                                                          //
+// ------------------------------------------------------------------ //
+
+describe('CronGuardService.canUpdate', () => {
+  it('rejects when cronEnabled is false', async () => {
+    const { service, taskRepo } = makeService();
+    const policy: PolicyLimits = { ...basePolicy, cronEnabled: false };
+    const schedule: CronSchedule = { type: 'every', interval: '10m' };
+
+    const result = await service.canUpdate(schedule, policy, 'UTC');
+
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('not available on your policy');
+    expect(taskRepo.findActiveCountByUser).not.toHaveBeenCalled();
+  });
+
+  it('allows when schedule is valid and cronEnabled is true', async () => {
+    const { service, taskRepo } = makeService();
+    const schedule: CronSchedule = { type: 'every', interval: '10m' };
+
+    const result = await service.canUpdate(schedule, basePolicy, 'UTC');
+
+    expect(result.allowed).toBe(true);
+    expect(taskRepo.findActiveCountByUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects bare at datetime without offset (same message as canCreate)', async () => {
+    const { service } = makeService();
+    const schedule: CronSchedule = { type: 'at', time: '2099-01-01T09:00:00' };
+
+    const result = await service.canUpdate(schedule, basePolicy, 'UTC');
+
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toMatch(/timezone offset/i);
+  });
+
+  it('does NOT call taskRepo.findActiveCountByUser (no count check)', async () => {
+    const { service, taskRepo } = makeService();
+    const schedule: CronSchedule = { type: 'every', interval: '10m' };
+
+    await service.canUpdate(schedule, basePolicy, 'UTC');
+
+    expect(taskRepo.findActiveCountByUser).not.toHaveBeenCalled();
+  });
+});
+
+// ------------------------------------------------------------------ //
+//  canCreate — regression: count check not dropped by refactor       //
+// ------------------------------------------------------------------ //
+
+describe('canCreate — count limit regression', () => {
+  it('still rejects when activeCount >= maxScheduledTasks after refactor', async () => {
+    const { service } = makeService({ activeCount: 5 });
+    const schedule: CronSchedule = { type: 'every', interval: '10m' };
+
+    const result = await service.canCreate('user-1', schedule, notInCron, basePolicy, 'UTC');
+
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain('5 scheduled tasks');
   });
 });
 

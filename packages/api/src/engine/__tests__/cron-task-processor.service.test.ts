@@ -29,6 +29,7 @@ import { CronTaskProcessorService } from '../cron-task-processor.service.js';
 import type { ProcessableTask } from '../cron-task-processor.service.js';
 import { computeNextRun } from '../cron-next-run.js';
 import { PUBSUB_CHANNELS } from '../../cache/cache.constants.js';
+import { TaskRunMessageStore } from '../message-store/task-run-message-store.js';
 
 // ------------------------------------------------------------------ //
 //  Helpers                                                            //
@@ -109,11 +110,20 @@ function makePubSub() {
   };
 }
 
+function makeTaskRunMessageRepo() {
+  return {
+    appendMany: vi.fn().mockResolvedValue([]),
+    findByTaskRunId: vi.fn().mockResolvedValue([]),
+    countByTaskRunId: vi.fn().mockResolvedValue(0),
+  };
+}
+
 function makeService(
   options: {
     agentRunner?: ReturnType<typeof makeAgentRunner>;
     taskRepo?: ReturnType<typeof makeTaskRepo>;
     taskRunRepo?: ReturnType<typeof makeTaskRunRepo>;
+    taskRunMessageRepo?: ReturnType<typeof makeTaskRunMessageRepo>;
     systemSettingsService?: ReturnType<typeof makeSystemSettingsService>;
     policyRepo?: ReturnType<typeof makePolicyRepo>;
     userRepo?: ReturnType<typeof makeUserRepo>;
@@ -123,6 +133,7 @@ function makeService(
   const agentRunner = options.agentRunner ?? makeAgentRunner();
   const taskRepo = options.taskRepo ?? makeTaskRepo();
   const taskRunRepo = options.taskRunRepo ?? makeTaskRunRepo();
+  const taskRunMessageRepo = options.taskRunMessageRepo ?? makeTaskRunMessageRepo();
   const systemSettingsService = options.systemSettingsService ?? makeSystemSettingsService();
   const policyRepo = options.policyRepo ?? makePolicyRepo();
   const userRepo = options.userRepo ?? makeUserRepo();
@@ -132,6 +143,7 @@ function makeService(
     agentRunner as never,
     taskRepo as never,
     taskRunRepo as never,
+    taskRunMessageRepo as never,
     systemSettingsService as never,
     policyRepo as never,
     userRepo as never,
@@ -143,6 +155,7 @@ function makeService(
     agentRunner,
     taskRepo,
     taskRunRepo,
+    taskRunMessageRepo,
     systemSettingsService,
     policyRepo,
     userRepo,
@@ -225,7 +238,8 @@ describe('CronTaskProcessorService.execute', () => {
 
     await service.execute(baseTask);
 
-    expect(computeNextRun).toHaveBeenCalledWith(baseTask.schedule);
+    // baseSystemSettings.defaultTimezone is 'UTC' by default
+    expect(computeNextRun).toHaveBeenCalledWith(baseTask.schedule, 'UTC');
     expect(taskRepo.updateNextRunAt).toHaveBeenCalledWith('task-1', expectedNextRun);
   });
 
@@ -486,5 +500,98 @@ describe('CronTaskProcessorService.execute', () => {
     await service.execute(baseTask);
 
     expect(taskRepo.incrementFailures).toHaveBeenCalledWith('task-1');
+  });
+
+  it('passes a TaskRunMessageStore bound to the created TaskRun.id to agentRunner.run', async () => {
+    const taskRunRepo = makeTaskRunRepo({
+      create: vi.fn().mockResolvedValue({ id: 'run-abc' }),
+    });
+    const { service, agentRunner } = makeService({ taskRunRepo });
+
+    await service.execute(baseTask);
+
+    expect(agentRunner.run).toHaveBeenCalledTimes(1);
+    const runArgs = agentRunner.run.mock.calls[0][0] as Record<string, unknown>;
+    expect(runArgs.messageStore).toBeDefined();
+    expect(runArgs.messageStore).toBeInstanceOf(TaskRunMessageStore);
+  });
+
+  it('binds TaskRunMessageStore to the correct taskRunId', async () => {
+    const taskRunRepo = makeTaskRunRepo({
+      create: vi.fn().mockResolvedValue({ id: 'run-xyz' }),
+    });
+    const taskRunMessageRepo = makeTaskRunMessageRepo();
+    let capturedStore: TaskRunMessageStore | undefined;
+    const agentRunner = makeAgentRunner({
+      run: vi.fn().mockImplementation(async (opts: { messageStore?: TaskRunMessageStore }) => {
+        capturedStore = opts.messageStore;
+        return successfulRunResult;
+      }),
+    });
+    makeService({ agentRunner, taskRunRepo, taskRunMessageRepo });
+    const service = new CronTaskProcessorService(
+      agentRunner as never,
+      makeTaskRepo() as never,
+      taskRunRepo as never,
+      taskRunMessageRepo as never,
+      makeSystemSettingsService() as never,
+      makePolicyRepo() as never,
+      makeUserRepo() as never,
+      makePubSub() as never,
+    );
+
+    await service.execute(baseTask);
+
+    expect(capturedStore).toBeDefined();
+    // Trigger saveMessages to verify the store is bound to 'run-xyz'
+    await capturedStore!.saveMessages([{ role: 'user', content: 'hello' }]);
+    expect(taskRunMessageRepo.appendMany).toHaveBeenCalledWith(
+      'run-xyz',
+      expect.arrayContaining([expect.objectContaining({ role: 'user', content: 'hello' })]),
+    );
+  });
+
+  it('marks TaskRun failed when systemSettingsService.get() throws', async () => {
+    const systemSettingsService = makeSystemSettingsService();
+    systemSettingsService.get.mockRejectedValueOnce(new Error('settings DB down'));
+
+    const taskRunRepo = makeTaskRunRepo();
+    const taskRepo = makeTaskRepo();
+    const { service } = makeService({ systemSettingsService, taskRunRepo, taskRepo });
+
+    await service.execute({
+      ...baseTask,
+      schedule: { type: 'cron', expression: '0 9 * * *' },
+    });
+
+    expect(taskRunRepo.update).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        status: 'failed',
+        error: expect.stringContaining('settings DB down'),
+      }),
+    );
+    expect(taskRepo.incrementFailures).toHaveBeenCalled();
+    expect(computeNextRun).toHaveBeenCalledWith({ type: 'cron', expression: '0 9 * * *' }, 'UTC');
+    expect(taskRepo.updateNextRunAt).toHaveBeenCalled();
+  });
+
+  it('passes settings.defaultTimezone to computeNextRun after a successful run', async () => {
+    const systemSettingsService = makeSystemSettingsService({
+      defaultTimezone: 'Asia/Tokyo',
+    });
+    const task: ProcessableTask = {
+      ...baseTask,
+      schedule: { type: 'cron', expression: '0 9 * * *' },
+    };
+    const { service, taskRepo } = makeService({ systemSettingsService });
+
+    await service.execute(task);
+
+    expect(computeNextRun).toHaveBeenCalledWith(
+      { type: 'cron', expression: '0 9 * * *' },
+      'Asia/Tokyo',
+    );
+    expect(taskRepo.updateNextRunAt).toHaveBeenCalledWith('task-1', expect.any(Date));
   });
 });

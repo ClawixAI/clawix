@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { MoreHorizontal, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -101,7 +102,11 @@ export default function TasksPage() {
           <TableBody>
             {tasks.map((task) => (
               <TableRow key={task.id} className={!task.enabled ? 'opacity-50' : undefined}>
-                <TableCell className="font-medium">{task.name}</TableCell>
+                <TableCell className="font-medium">
+                  <Link href={`/tasks/${task.id}`} className="hover:underline">
+                    {task.name}
+                  </Link>
+                </TableCell>
                 <TableCell className="text-muted-foreground">{task.agent}</TableCell>
                 <TableCell>
                   <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{task.schedule}</code>

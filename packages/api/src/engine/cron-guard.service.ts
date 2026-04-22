@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createLogger } from '@clawix/shared';
+import { createLogger, isValidIanaTimezone } from '@clawix/shared';
 import type { CronSchedule } from '@clawix/shared';
 import { CronExpressionParser } from 'cron-parser';
 
@@ -41,14 +41,9 @@ function isValidCronExpression(expression: string, tz?: string): boolean {
   }
 }
 
-/** Validate IANA timezone. */
-function isValidTimezone(tz: string): boolean {
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
+/** Returns true if the string ends with Z or an explicit ±HH:MM / ±HHMM offset. */
+function hasExplicitOffset(s: string): boolean {
+  return /(Z|[+-]\d{2}:?\d{2})$/.test(s);
 }
 
 export interface GuardResult {
@@ -71,29 +66,20 @@ export interface PolicyLimits {
 export class CronGuardService {
   constructor(private readonly taskRepo: TaskRepository) {}
 
-  async canCreate(
-    userId: string,
+  /** Validate the shape of a schedule without checking per-user counts or execution context. */
+  private validateSchedule(
     schedule: CronSchedule,
-    context: CronContext,
     policy: PolicyLimits,
-  ): Promise<GuardResult> {
-    if (!policy.cronEnabled) {
-      return { allowed: false, reason: 'Cron is not available on your policy' };
-    }
-
-    if (context.isInCronExecution) {
-      return { allowed: false, reason: 'Cannot create cron jobs during scheduled execution' };
-    }
-
-    const activeCount = await this.taskRepo.findActiveCountByUser(userId);
-    if (activeCount >= policy.maxScheduledTasks) {
-      return {
-        allowed: false,
-        reason: `You've reached your limit of ${policy.maxScheduledTasks} scheduled tasks`,
-      };
-    }
-
+    defaultTz: string,
+  ): GuardResult {
     if (schedule.type === 'at') {
+      if (!hasExplicitOffset(schedule.time)) {
+        return {
+          allowed: false,
+          reason:
+            "Schedule time must include a timezone offset (e.g. '2026-04-01T09:00:00Z' or '2026-04-01T09:00:00-05:00')",
+        };
+      }
       const time = new Date(schedule.time).getTime();
       if (isNaN(time)) {
         return { allowed: false, reason: `Invalid date/time: ${schedule.time}` };
@@ -120,11 +106,11 @@ export class CronGuardService {
     }
 
     if (schedule.type === 'cron') {
-      if ('tz' in schedule && schedule.tz && !isValidTimezone(schedule.tz)) {
+      if (schedule.tz && !isValidIanaTimezone(schedule.tz)) {
         return { allowed: false, reason: `Unknown timezone: ${schedule.tz}` };
       }
 
-      const tz = 'tz' in schedule ? schedule.tz : undefined;
+      const tz = schedule.tz ?? defaultTz;
       if (!isValidCronExpression(schedule.expression, tz)) {
         return { allowed: false, reason: `Invalid cron expression: ${schedule.expression}` };
       }
@@ -138,8 +124,49 @@ export class CronGuardService {
       }
     }
 
-    logger.debug({ userId, scheduleType: schedule.type }, 'canCreate: allowed');
     return { allowed: true };
+  }
+
+  async canCreate(
+    userId: string,
+    schedule: CronSchedule,
+    context: CronContext,
+    policy: PolicyLimits,
+    defaultTz: string,
+  ): Promise<GuardResult> {
+    if (!policy.cronEnabled) {
+      return { allowed: false, reason: 'Cron is not available on your policy' };
+    }
+
+    if (context.isInCronExecution) {
+      return { allowed: false, reason: 'Cannot create cron jobs during scheduled execution' };
+    }
+
+    const activeCount = await this.taskRepo.findActiveCountByUser(userId);
+    if (activeCount >= policy.maxScheduledTasks) {
+      return {
+        allowed: false,
+        reason: `You've reached your limit of ${policy.maxScheduledTasks} scheduled tasks`,
+      };
+    }
+
+    const result = this.validateSchedule(schedule, policy, defaultTz);
+    if (result.allowed) {
+      logger.debug({ userId, scheduleType: schedule.type }, 'canCreate: allowed');
+    }
+    return result;
+  }
+
+  async canUpdate(
+    schedule: CronSchedule,
+    policy: PolicyLimits,
+    defaultTz: string,
+  ): Promise<GuardResult> {
+    if (!policy.cronEnabled) {
+      return { allowed: false, reason: 'Cron is not available on your policy' };
+    }
+
+    return this.validateSchedule(schedule, policy, defaultTz);
   }
 
   async canDispatch(

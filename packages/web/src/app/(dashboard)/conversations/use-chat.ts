@@ -1,8 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { authFetch, getAccessToken } from '@/lib/auth';
+
+function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return ((...args: unknown[]) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn(...args);
+    }, ms);
+  }) as T;
+}
+
+const TYPING_TIMEOUT = 60_000;
 
 /* ------------------------------------------------------------------ */
 /*  Public types                                                       */
@@ -20,6 +32,7 @@ export interface ChatSession {
   agentDefinitionId: string;
   channelId: string | null;
   isActive: boolean;
+  topic: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +107,7 @@ export function useChat() {
   const pongReceivedRef = useRef(true);
   const reconnectAttemptsRef = useRef(0);
   const currentSessionIdRef = useRef<string | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const fetchSessionsRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
@@ -116,6 +130,12 @@ export function useChat() {
       setLoadingSessions(false);
     }
   }, [webChannelId]);
+
+  // Debounced session refresh to avoid excessive API calls
+  const debouncedFetchSessions = useMemo(
+    () => debounce(() => void fetchSessions(), 2000),
+    [fetchSessions],
+  );
 
   // Keep ref in sync so WebSocket handler can call latest fetchSessions without dependency.
   useEffect(() => {
@@ -258,17 +278,24 @@ export function useChat() {
               void fetchSessionsRef.current?.();
             }, 1500);
           } else {
-            void fetchSessionsRef.current?.();
+            debouncedFetchSessions();
           }
           break;
         }
 
         case 'typing.start':
           setIsTyping(true);
+          // Clear any existing typing timeout
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          // Auto-clear typing if server doesn't respond within timeout
+          typingTimeoutRef.current = setTimeout(() => {
+            setIsTyping(false);
+          }, TYPING_TIMEOUT);
           break;
 
         case 'typing.stop':
           setIsTyping(false);
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
           break;
 
         case 'error':
@@ -379,7 +406,7 @@ export function useChat() {
     }
 
     const optimistic: ChatMessage = {
-      id: `tmp-${Date.now()}`,
+      id: `tmp-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
       role: 'user',
       content,
       createdAt: new Date().toISOString(),
@@ -440,16 +467,16 @@ export function useChat() {
     return () => {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
   }, []);
-  /* ---- fallback: poll REST while waiting for response ---- */
+  /* ---- adaptive polling: fast (2s) when waiting, slow (30s) when idle ---- */
   useEffect(() => {
-    if (!isTyping && !hasPending) return;
-    const interval = setInterval(() => {
+    const pollMessages = () => {
       const sid = currentSessionIdRef.current;
       if (!sid) return;
       void authFetch<PaginatedMessages>(
@@ -463,47 +490,6 @@ export function useChat() {
             createdAt: m.createdAt,
           }));
           setMessages((prev) => {
-            if (fetched.length > prev.length) {
-              const prevIds = new Set(prev.map((m) => m.id));
-              const newAssistant = fetched.filter(
-                (m) => m.role === 'assistant' && !prevIds.has(m.id),
-              );
-              pendingCountRef.current = Math.max(0, pendingCountRef.current - newAssistant.length);
-              if (pendingCountRef.current === 0) {
-                setIsTyping(false);
-                setHasPending(false);
-              }
-              return fetched;
-            }
-            return prev;
-          });
-        })
-        .catch(() => {
-          /* silent */
-        });
-    }, 2000);
-    return () => {
-      clearInterval(interval);
-    };
-  }, [isTyping, hasPending]);
-
-  /* ---- background sync: catch missed messages every 10s ---- */
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const sid = currentSessionIdRef.current;
-      if (!sid) return;
-      void authFetch<PaginatedMessages>(
-        `/api/v1/chat/sessions/${sid}/messages?limit=${MESSAGE_LIMIT}`,
-      )
-        .then((res) => {
-          const fetched: ChatMessage[] = (Array.isArray(res.data) ? res.data : []).map((m) => ({
-            id: m.id,
-            role: m.role as ChatMessage['role'],
-            content: m.content,
-            createdAt: m.createdAt,
-          }));
-          setMessages((prev) => {
-            // Only update if server has messages we don't (skip temp/optimistic)
             const realPrev = prev.filter((m) => !m.id.startsWith('tmp-'));
             if (fetched.length > realPrev.length) {
               const prevIds = new Set(realPrev.map((m) => m.id));
@@ -519,8 +505,8 @@ export function useChat() {
                   setIsTyping(false);
                   setHasPending(false);
                 }
-                return fetched;
               }
+              return fetched;
             }
             return prev;
           });
@@ -528,11 +514,15 @@ export function useChat() {
         .catch(() => {
           /* silent */
         });
-    }, 10_000);
+    };
+
+    // Fast polling when waiting for response, slow polling when idle
+    const pollInterval = isTyping || hasPending ? 2000 : 30_000;
+    const interval = setInterval(pollMessages, pollInterval);
     return () => {
       clearInterval(interval);
     };
-  }, []);
+  }, [isTyping, hasPending]);
 
   /* ---- lifecycle: fetch sessions when channel ID resolves ---- */
   useEffect(() => {
@@ -556,5 +546,6 @@ export function useChat() {
     sendMessage,
     startNewChat,
     loadMore,
+    refreshSessions: fetchSessions,
   };
 }

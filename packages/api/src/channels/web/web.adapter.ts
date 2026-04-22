@@ -12,13 +12,16 @@ import { parseClientMessage, serializeServerMessage } from './web.protocol.js';
 
 const logger = createLogger('channels:web');
 
+const MAX_CONNECTIONS_PER_USER = 10;
+const MAX_MESSAGES_PER_MINUTE = 30;
+
 /**
  * Extended channel adapter interface for the web (WebSocket) channel.
  * Adds connection lifecycle methods used by the WebSocket gateway.
  */
 export interface WebAdapterExtended extends ChannelAdapter {
-  /** Add a WebSocket connection for a user (multi-tab support). */
-  addConnection(userId: string, socket: WebSocket): void;
+  /** Add a WebSocket connection for a user (multi-tab support). Returns false if limit exceeded. */
+  addConnection(userId: string, socket: WebSocket): boolean;
   /** Remove a specific WebSocket connection for a user. */
   removeConnection(userId: string, socket: WebSocket): void;
   /** Return the number of open connections for a user. */
@@ -26,8 +29,9 @@ export interface WebAdapterExtended extends ChannelAdapter {
   /**
    * Parse and dispatch a raw client message received on a WebSocket.
    * Handles ping/pong internally; routes message.send to the registered handler.
+   * Returns false if rate limited.
    */
-  handleClientMessage(userId: string, userName: string, raw: string): Promise<void>;
+  handleClientMessage(userId: string, userName: string, raw: string): Promise<boolean>;
 }
 
 /**
@@ -36,15 +40,39 @@ export interface WebAdapterExtended extends ChannelAdapter {
  */
 export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtended {
   const connections = new Map<string, Set<WebSocket>>();
+  const rateLimits = new Map<string, { count: number; resetAt: number }>();
   let messageHandler: MessageHandler | null = null;
 
   function sendToUser(userId: string, payload: string): void {
     const sockets = connections.get(userId);
-    if (!sockets) return;
+    if (!sockets || sockets.size === 0) {
+      logger.debug({ userId }, 'No sockets for user');
+      return;
+    }
+
+    logger.debug({ userId, socketCount: sockets.size }, 'Sending to user sockets');
+
     for (const ws of sockets) {
-      if (ws.readyState === 1) {
-        ws.send(payload);
+      try {
+        if (ws.readyState === 1) {
+          ws.send(payload);
+        } else {
+          logger.warn(
+            { userId, readyState: ws.readyState },
+            'Socket not open, removing stale connection',
+          );
+          sockets.delete(ws);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error({ userId, error: msg }, 'Failed to send to socket, removing');
+        sockets.delete(ws);
       }
+    }
+
+    // Clean up empty set
+    if (sockets.size === 0) {
+      connections.delete(userId);
     }
   }
 
@@ -69,6 +97,11 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
     async sendMessage(message: OutboundMessage): Promise<void> {
       const messageId = (message.metadata?.['messageId'] as string | undefined) ?? '';
       const sessionId = (message.metadata?.['sessionId'] as string | undefined) ?? '';
+
+      logger.info(
+        { recipientId: message.recipientId, messageId, sessionId },
+        'Sending message to user',
+      );
 
       const payload = serializeServerMessage({
         type: 'message.create',
@@ -103,13 +136,18 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
       messageHandler = handler;
     },
 
-    addConnection(userId: string, socket: WebSocket): void {
+    addConnection(userId: string, socket: WebSocket): boolean {
       let sockets = connections.get(userId);
       if (!sockets) {
         sockets = new Set<WebSocket>();
         connections.set(userId, sockets);
       }
+      if (sockets.size >= MAX_CONNECTIONS_PER_USER) {
+        logger.warn({ userId, count: sockets.size }, 'Connection limit exceeded');
+        return false;
+      }
       sockets.add(socket);
+      return true;
     },
 
     removeConnection(userId: string, socket: WebSocket): void {
@@ -125,7 +163,7 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
       return connections.get(userId)?.size ?? 0;
     },
 
-    async handleClientMessage(userId: string, userName: string, raw: string): Promise<void> {
+    async handleClientMessage(userId: string, userName: string, raw: string): Promise<boolean> {
       const parsed = parseClientMessage(raw);
 
       if (!parsed) {
@@ -135,19 +173,40 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
           payload: { code: 'INVALID_MESSAGE', message: 'Invalid or unrecognized message format' },
         });
         sendToUser(userId, errorPayload);
-        return;
+        return false;
       }
 
       if (parsed.type === 'ping') {
         const pong = serializeServerMessage({ type: 'pong', payload: {} });
         sendToUser(userId, pong);
-        return;
+        return true;
       }
 
       if (parsed.type === 'message.send') {
+        // Rate limiting
+        const now = Date.now();
+        const limit = rateLimits.get(userId) ?? { count: 0, resetAt: now + 60_000 };
+        if (now > limit.resetAt) {
+          limit.count = 0;
+          limit.resetAt = now + 60_000;
+        }
+        if (limit.count >= MAX_MESSAGES_PER_MINUTE) {
+          logger.warn({ userId }, 'Rate limit exceeded');
+          sendToUser(
+            userId,
+            serializeServerMessage({
+              type: 'error',
+              payload: { code: 'RATE_LIMITED', message: 'Too many messages, please slow down' },
+            }),
+          );
+          return false;
+        }
+        limit.count++;
+        rateLimits.set(userId, limit);
+
         if (!messageHandler) {
           logger.warn({ userId }, 'No message handler registered, ignoring message.send');
-          return;
+          return false;
         }
 
         const inbound: InboundMessage = {
@@ -161,11 +220,15 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
 
         try {
           await messageHandler(inbound);
+          return true;
         } catch (error: unknown) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           logger.error({ userId, error: errorMsg }, 'Error handling web message');
+          return false;
         }
       }
+
+      return true;
     },
   };
 

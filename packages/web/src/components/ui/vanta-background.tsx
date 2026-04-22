@@ -19,6 +19,14 @@ export function VantaBackground({ effect, children, className }: VantaBackground
     let cancelled = false;
 
     async function init() {
+      // Suppress THREE.js deprecation warnings from vanta.js
+      const originalWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        const msg = args[0];
+        if (typeof msg === 'string' && msg.includes('vertexColors')) return;
+        originalWarn.apply(console, args);
+      };
+
       try {
         if (effect === 'net') {
           const THREE = await import('three');
@@ -72,6 +80,9 @@ export function VantaBackground({ effect, children, className }: VantaBackground
       } catch (e) {
         // Silently degrade — don't let Vanta errors bubble to error overlay
         console.debug('[VantaBackground] init skipped:', e);
+      } finally {
+        // Restore original console.warn
+        console.warn = originalWarn;
       }
     }
 

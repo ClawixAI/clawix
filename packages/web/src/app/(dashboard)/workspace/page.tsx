@@ -399,7 +399,7 @@ export default function WorkspacePage() {
       ) : (
         <div className="flex min-h-0 flex-1 gap-4">
           {/* File list */}
-          <div className={selectedFile || isLoadingFile ? 'w-3/5' : 'w-full'}>
+          <div className={(selectedFile || isLoadingFile) && !showFullPreview ? 'w-3/5' : 'w-full'}>
             <FileList
               entries={listing?.entries ?? []}
               selectedPath={selectedPath}
@@ -418,8 +418,8 @@ export default function WorkspacePage() {
             />
           </div>
 
-          {/* Preview panel */}
-          {(selectedFile || isLoadingFile) && (
+          {/* Preview panel (hidden when full preview modal is open) */}
+          {(selectedFile || isLoadingFile) && !showFullPreview && (
             <div className="w-2/5">
               <FilePreview
                 file={selectedFile}
@@ -491,7 +491,7 @@ export default function WorkspacePage() {
       >
         <DialogContent
           showCloseButton={false}
-          className="tv-effect flex h-[85vh] !w-[40vw] !max-w-none flex-col gap-0 p-0 overflow-hidden [&>*]:h-full"
+          className="flex h-[85vh] !w-[40vw] !max-w-none flex-col gap-0 p-0 overflow-hidden [&>*]:h-full"
         >
           <DialogTitle className="sr-only">Edit {selectedFile?.name ?? 'file'}</DialogTitle>
           {editing && selectedFile && (

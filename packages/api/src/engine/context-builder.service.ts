@@ -9,6 +9,7 @@ import { BootstrapFileService } from './bootstrap-file.service.js';
 import { SkillLoaderService } from './skill-loader.service.js';
 import { PolicyRepository } from '../db/policy.repository.js';
 import { UserRepository } from '../db/user.repository.js';
+import { SystemSettingsService } from '../system-settings/system-settings.service.js';
 import type { ContextBuildParams, WorkerSummary } from './context-builder.types.js';
 import {
   MEMORY_FILE_TOKEN_BUDGET,
@@ -35,13 +36,14 @@ export class ContextBuilderService {
     private readonly skillLoader: SkillLoaderService,
     private readonly policyRepo: PolicyRepository,
     private readonly userRepo: UserRepository,
+    private readonly systemSettingsService: SystemSettingsService,
   ) {}
 
   /**
    * Build the complete message array for an LLM call.
    */
   async buildMessages(params: ContextBuildParams): Promise<readonly ChatMessage[]> {
-    const { agentDef, history, input, userId, isSubAgent } = params;
+    const { agentDef, history, input, userId, isSubAgent, isScheduledTask } = params;
     const channel = params.channel ?? 'internal';
     const chatId = params.chatId ?? 'system';
     const userName = params.userName ?? 'System';
@@ -51,9 +53,10 @@ export class ContextBuilderService {
       userId,
       params.workspacePath,
       isSubAgent,
+      isScheduledTask,
       params.workers,
     );
-    const userContent = this.buildUserMessage(input, channel, chatId, userName);
+    const userContent = await this.buildUserMessage(input, channel, chatId, userName);
 
     const systemMessage: ChatMessage = { role: 'system', content: systemPrompt };
     const userMessage: ChatMessage = { role: 'user', content: userContent };
@@ -66,6 +69,7 @@ export class ContextBuilderService {
     userId: string,
     workspacePath?: string,
     isSubAgent?: boolean,
+    isScheduledTask?: boolean,
     workers?: readonly WorkerSummary[],
   ): Promise<string> {
     const sections: string[] = [];
@@ -111,7 +115,13 @@ export class ContextBuilderService {
       );
     }
 
-    // 7. Cron/scheduling guidance (only if policy allows)
+    // 7. Execution Context (when running as a scheduled task)
+    const executionSection = this.buildExecutionContextSection(Boolean(isScheduledTask));
+    if (executionSection) {
+      sections.push(executionSection);
+    }
+
+    // 8. Cron/scheduling guidance (only if policy allows)
     if (!isSubAgent) {
       const cronSection = await this.buildCronSection(userId);
       if (cronSection) {
@@ -119,7 +129,7 @@ export class ContextBuilderService {
       }
     }
 
-    // 8. Memory (optional)
+    // 9. Memory (optional)
     const memorySection = await this.buildMemorySection(userId, workspacePath);
     if (memorySection) {
       sections.push(memorySection);
@@ -200,6 +210,12 @@ export class ContextBuilderService {
       'When writing Python scripts, use only the standard library (json, csv, os, re, etc.).',
       'If a user asks for a script requiring external packages, write it but note they must run it outside the container.',
       '',
+      '## Skills',
+      '',
+      '**ALWAYS use the skill-creator skill when creating or updating skills.**',
+      'Before any skill creation task: read_file("/skills/builtin/skill-creator/SKILL.md") for the required format.',
+      'Skills MUST have YAML frontmatter with `name` and `description` fields — skills without valid frontmatter will not load.',
+      '',
       '## Projector',
       '',
       'You can create interactive tools for the user as projector items (calculators, converters, editors, visualizers).',
@@ -255,6 +271,21 @@ export class ContextBuilderService {
       '- The schedule parameter must be a JSON string.',
       '- You can only receive messages from supported channels: Telegram, Slack, WhatsApp, and Web.',
       '- You cannot create, modify, or delete cron jobs while running inside a scheduled task.',
+      '',
+      "If the user references output from a prior scheduled task, use `action:'runs'`",
+      "to locate the job and `action:'runDetail'` with the `runId` to retrieve the full",
+      'transcript of what was done. Scheduled-task output is not part of this',
+      "conversation's history.",
+    ].join('\n');
+  }
+
+  private buildExecutionContextSection(isScheduledTask: boolean): string | null {
+    if (!isScheduledTask) return null;
+    return [
+      '# Execution Context',
+      '',
+      'You are running as a scheduled task. The user is not present and cannot respond.',
+      'Produce a self-contained result. Do not ask clarifying questions or invite follow-up.',
     ].join('\n');
   }
 
@@ -334,16 +365,29 @@ export class ContextBuilderService {
     return new Map([...grouped.entries()].sort((a, b) => b[0].localeCompare(a[0])));
   }
 
-  private buildUserMessage(
+  private async buildUserMessage(
     input: string,
     channel: string,
     chatId: string,
     userName: string,
-  ): string {
+  ): Promise<string> {
     const now = new Date();
-    const dayName = now.toLocaleDateString('en-US', { weekday: 'long' });
-    const dateStr = now.toISOString().slice(0, 16).replace('T', ' ');
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const { defaultTimezone } = await this.systemSettingsService.get();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: defaultTimezone,
+      weekday: 'long',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+    const dayName = get('weekday');
+    const dateStr = `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
+    const tz = defaultTimezone;
 
     const runtimeContext = [
       '[Runtime Context]',

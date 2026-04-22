@@ -138,6 +138,18 @@ export class TaskRunRepository {
     return result.count;
   }
 
+  async findByTaskIdWithLimit(
+    taskId: string,
+    limit: number,
+    status?: TaskStatus,
+  ): Promise<TaskRun[]> {
+    return this.prisma.taskRun.findMany({
+      where: { taskId, ...(status ? { status } : {}) },
+      orderBy: { startedAt: 'desc' },
+      take: limit,
+    });
+  }
+
   async delete(id: string): Promise<TaskRun> {
     try {
       return await this.prisma.taskRun.delete({ where: { id } });

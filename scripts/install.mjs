@@ -149,7 +149,9 @@ async function main() {
     console.log('  1) Anthropic           (default model: claude-sonnet-4-5)');
     console.log('  2) OpenAI              (default model: gpt-4o)');
     console.log('  3) Z.AI Coding Plan    (default model: glm-4.7)');
-    console.log('  4) Custom              (any OpenAI-compatible endpoint — local LLM, OpenRouter, vLLM, etc.)');
+    console.log(
+      '  4) Custom              (any OpenAI-compatible endpoint — local LLM, OpenRouter, vLLM, etc.)',
+    );
 
     /** Catalog of built-in providers. Mirrors packages/shared/src/providers/provider-registry.ts. */
     const CATALOG = {
@@ -205,7 +207,13 @@ async function main() {
         let id;
         while (true) {
           id = (await ask('  Provider id (lowercase, a–z 0–9 -, used as DB key): ')).trim();
-          if (/^[a-z0-9][a-z0-9-]*$/.test(id) && id !== 'anthropic' && id !== 'openai' && id !== 'zai-coding') break;
+          if (
+            /^[a-z0-9][a-z0-9-]*$/.test(id) &&
+            id !== 'anthropic' &&
+            id !== 'openai' &&
+            id !== 'zai-coding'
+          )
+            break;
           warn('Use lowercase letters, digits, and hyphens. Cannot reuse a built-in provider id.');
         }
         const displayName = (await ask(`  Display name ${dim(`[${id}]`)}: `)).trim() || id;
@@ -256,9 +264,11 @@ async function main() {
     }
 
     const defaultModel =
-      (await ask(
-        `  Default model for ${defaultProvider.displayName} ${dim(`[${defaultProvider.defaultModel}]`)}: `,
-      )).trim() || defaultProvider.defaultModel;
+      (
+        await ask(
+          `  Default model for ${defaultProvider.displayName} ${dim(`[${defaultProvider.defaultModel}]`)}: `,
+        )
+      ).trim() || defaultProvider.defaultModel;
 
     let adminEmail = 'admin@clawix.test';
     let adminPassword = '';
@@ -383,6 +393,10 @@ async function main() {
   runVisible('pnpm --filter @clawix/shared run build');
   ok('Built');
 
+  step('Generating Prisma client');
+  runVisible('pnpm --filter @clawix/api run db:generate');
+  ok('Prisma client generated');
+
   step('Building agent Docker image');
   runVisible('docker build -t clawix-agent:latest -f infra/docker/agent/Dockerfile .');
   ok('clawix-agent:latest built');
@@ -417,7 +431,9 @@ async function main() {
   }
   console.log(`\n  ${bold('Next:')}`);
   console.log(`    ${dim('node scripts/update.mjs')}  rebuild & restart after code changes`);
-  console.log(`    ${dim(`docker compose -f ${composeFile.replace(ROOT + '/', '')} logs -f`)}  tail logs`);
+  console.log(
+    `    ${dim(`docker compose -f ${composeFile.replace(ROOT + '/', '')} logs -f`)}  tail logs`,
+  );
   console.log('');
 }
 

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Square } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { PanelLeftClose, PanelLeftOpen, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { authFetch } from '@/lib/auth';
 import { useChat } from './use-chat';
@@ -10,6 +10,7 @@ import { ChatInput, EmptyState } from './chat-input';
 import { SessionSidebar } from './session-sidebar';
 
 export default function ConversationsPage() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const {
     sessions,
     currentSessionId,
@@ -25,6 +26,7 @@ export default function ConversationsPage() {
     sendMessage,
     startNewChat,
     loadMore,
+    refreshSessions,
   } = useChat();
 
   // Auto-select the latest active session when sessions load
@@ -38,6 +40,8 @@ export default function ConversationsPage() {
   }, [loadingSessions, sessions, currentSessionId, selectSession]);
 
   const hasConversation = currentSessionId !== null || messages.length > 0;
+  const currentSession = sessions.find((s) => s.id === currentSessionId);
+  const isArchived = currentSession?.isActive === false;
 
   // Extract user message history (most recent first) for input history navigation
   const userMessageHistory = messages
@@ -57,17 +61,40 @@ export default function ConversationsPage() {
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)]">
-      {/* Session sidebar */}
-      <SessionSidebar
-        sessions={sessions}
-        selectedId={currentSessionId}
-        loading={loadingSessions}
-        onSelect={(id) => void selectSession(id)}
-        onNewChat={startNewChat}
-      />
+      {/* Session sidebar (hidden by default) */}
+      {sidebarOpen && (
+        <SessionSidebar
+          sessions={sessions}
+          selectedId={currentSessionId}
+          loading={loadingSessions}
+          onSelect={(id) => void selectSession(id)}
+          onNewChat={startNewChat}
+          onSessionUpdated={() => void refreshSessions()}
+        />
+      )}
 
       {/* Main chat area */}
       <div className="flex flex-1 flex-col">
+        {/* Toggle sidebar button */}
+        <div className="flex items-center gap-2 border-b px-4 py-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            title={sidebarOpen ? 'Hide sessions' : 'Show sessions'}
+          >
+            {sidebarOpen ? (
+              <PanelLeftClose className="size-4" />
+            ) : (
+              <PanelLeftOpen className="size-4" />
+            )}
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {currentSession?.topic ?? 'Conversations'}
+            {isArchived && <span className="ml-2 text-xs opacity-60">(Archived)</span>}
+          </span>
+        </div>
         {error && (
           <div className="mx-6 mt-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
@@ -99,12 +126,18 @@ export default function ConversationsPage() {
                 </Button>
               </div>
             )}
-            <ChatInput
-              onSend={handleSend}
-              disabled={isTyping}
-              isConnected={isConnected}
-              userMessages={userMessageHistory}
-            />
+            {isArchived ? (
+              <div className="border-t px-6 py-4 text-center text-sm text-muted-foreground">
+                This conversation is archived and read-only.
+              </div>
+            ) : (
+              <ChatInput
+                onSend={handleSend}
+                disabled={isTyping}
+                isConnected={isConnected}
+                userMessages={userMessageHistory}
+              />
+            )}
           </>
         ) : (
           <>

@@ -9,6 +9,7 @@ import { ProviderConfigRepository } from './provider-config.repository.js';
 import { ChannelRepository } from './channel.repository.js';
 import { TaskRepository } from './task.repository.js';
 import { TaskRunRepository } from './task-run.repository.js';
+import { TaskRunMessageRepository } from './task-run-message.repository.js';
 import { SessionRepository } from './session.repository.js';
 import { AuditLogRepository } from './audit-log.repository.js';
 import { TokenUsageRepository } from './token-usage.repository.js';
@@ -26,6 +27,7 @@ const repositories = [
   ChannelRepository,
   TaskRepository,
   TaskRunRepository,
+  TaskRunMessageRepository,
   SessionRepository,
   AuditLogRepository,
   TokenUsageRepository,

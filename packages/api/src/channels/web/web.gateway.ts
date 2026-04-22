@@ -11,6 +11,13 @@ import { serializeServerMessage } from './web.protocol.js';
 
 const logger = createLogger('channels:web:gateway');
 
+const HEARTBEAT_INTERVAL = 30_000;
+
+interface SocketWithAlive extends WebSocket {
+  isAlive?: boolean;
+  heartbeatInterval?: ReturnType<typeof setInterval>;
+}
+
 interface JwtPayload {
   sub: string;
   email: string;
@@ -86,8 +93,13 @@ export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
     }
 
     const adapter = this.adapter;
+    const extSocket = socket as SocketWithAlive;
 
-    adapter.addConnection(userId, socket);
+    const added = adapter.addConnection(userId, socket);
+    if (!added) {
+      socket.close(4002, 'connection_limit_exceeded');
+      return;
+    }
 
     socket.send(
       serializeServerMessage({
@@ -95,6 +107,21 @@ export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
         payload: { userId },
       }),
     );
+
+    // Server-side heartbeat to detect dead connections
+    extSocket.isAlive = true;
+    socket.on('pong', () => {
+      extSocket.isAlive = true;
+    });
+    extSocket.heartbeatInterval = setInterval(() => {
+      if (!extSocket.isAlive) {
+        logger.info({ userId }, 'WebSocket terminated — no pong received');
+        socket.terminate();
+        return;
+      }
+      extSocket.isAlive = false;
+      socket.ping();
+    }, HEARTBEAT_INTERVAL);
 
     socket.on('message', (data: Buffer | ArrayBuffer | Buffer[]) => {
       void (async () => {
@@ -116,8 +143,13 @@ export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
       })();
     });
 
+    socket.on('error', (err: Error) => {
+      logger.error({ userId, error: err.message }, 'WebSocket error');
+    });
+
     socket.on('close', () => {
       logger.info({ userId }, 'WebSocket connection closed');
+      if (extSocket.heartbeatInterval) clearInterval(extSocket.heartbeatInterval);
       adapter.removeConnection(userId, socket);
     });
   }

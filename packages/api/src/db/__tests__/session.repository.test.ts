@@ -82,7 +82,12 @@ describe('SessionRepository', () => {
 
   describe('findByUserId', () => {
     it('should return paginated sessions for a user', async () => {
-      mockPrisma.session.findMany.mockResolvedValue([mockSession]);
+      const sessionWithMessages = {
+        ...mockSession,
+        topic: null,
+        sessionMessages: [{ content: 'Hello world' }],
+      };
+      mockPrisma.session.findMany.mockResolvedValue([sessionWithMessages]);
       mockPrisma.session.count.mockResolvedValue(1);
 
       const result = await repository.findByUserId('user-1', {
@@ -90,13 +95,50 @@ describe('SessionRepository', () => {
         limit: 10,
       });
 
-      expect(result.data).toEqual([mockSession]);
+      // Topic should be derived from first user message
+      expect(result.data[0]?.topic).toBe('Hello world');
       expect(mockPrisma.session.findMany).toHaveBeenCalledWith({
         where: { userId: 'user-1', isActive: true },
         skip: 0,
         take: 10,
         orderBy: { createdAt: 'desc' },
+        include: {
+          sessionMessages: {
+            where: { role: 'user' },
+            orderBy: { ordering: 'asc' },
+            take: 1,
+            select: { content: true },
+          },
+        },
       });
+    });
+
+    it('should use stored topic over derived topic', async () => {
+      const sessionWithTopic = {
+        ...mockSession,
+        topic: 'Custom Topic',
+        sessionMessages: [{ content: 'Hello world' }],
+      };
+      mockPrisma.session.findMany.mockResolvedValue([sessionWithTopic]);
+      mockPrisma.session.count.mockResolvedValue(1);
+
+      const result = await repository.findByUserId('user-1', { page: 1, limit: 10 });
+
+      expect(result.data[0]?.topic).toBe('Custom Topic');
+    });
+
+    it('should return null topic when no messages', async () => {
+      const sessionNoMessages = {
+        ...mockSession,
+        topic: null,
+        sessionMessages: [],
+      };
+      mockPrisma.session.findMany.mockResolvedValue([sessionNoMessages]);
+      mockPrisma.session.count.mockResolvedValue(1);
+
+      const result = await repository.findByUserId('user-1', { page: 1, limit: 10 });
+
+      expect(result.data[0]?.topic).toBeNull();
     });
   });
 

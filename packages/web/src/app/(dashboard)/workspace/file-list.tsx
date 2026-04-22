@@ -273,7 +273,7 @@ export function FileList({
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
-                        className="flex size-8 items-center justify-center rounded-md hover:bg-accent"
+                        className="flex size-8 cursor-pointer items-center justify-center rounded-md hover:bg-accent"
                         onClick={(e) => {
                           e.stopPropagation();
                         }}

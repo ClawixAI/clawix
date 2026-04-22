@@ -232,8 +232,15 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // Send to channel
-      await adapter.sendMessage({ recipientId, text: output });
+      // Send to channel with metadata for WebSocket message delivery
+      await adapter.sendMessage({
+        recipientId,
+        text: output,
+        metadata: {
+          messageId: `reinvoke-${sessionId}-${Date.now()}`,
+          sessionId,
+        },
+      });
 
       logger.info(
         { sessionId, channelId: session.channelId, recipientId },

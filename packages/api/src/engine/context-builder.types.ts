@@ -23,6 +23,8 @@ export interface ContextBuildParams {
   readonly workspacePath?: string;
   /** When true, skips bootstrap files and adds sub-agent framing to the system prompt. */
   readonly isSubAgent?: boolean;
+  /** When true, a scheduled task is running (adds execution context, blocks cron mutations). */
+  readonly isScheduledTask?: boolean;
   /** Available worker agents for the primary agent to spawn. Omit for sub-agents. */
   readonly workers?: readonly WorkerSummary[];
 }

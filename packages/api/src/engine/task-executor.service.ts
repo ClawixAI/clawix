@@ -172,6 +172,12 @@ export class TaskExecutorService implements OnModuleInit {
 
         for (const run of pendingRuns) {
           try {
+            // Skip recovery for cron runs that have no session
+            if (!run.sessionId) {
+              logger.warn({ agentRunId: run.id }, 'Skipping recovery for sessionless AgentRun');
+              continue;
+            }
+
             const session = await this.sessionRepo.findById(run.sessionId);
 
             this.submit(run.id, {
@@ -280,6 +286,13 @@ export class TaskExecutorService implements OnModuleInit {
       };
 
       const parentSessionId = parentRun.sessionId;
+      if (!parentSessionId) {
+        logger.warn(
+          { agentRunId, parentAgentRunId: childRun.parentAgentRunId },
+          'Skipping result publish for sessionless parent AgentRun',
+        );
+        return;
+      }
       const queueKey = KEY_PREFIXES.agentResults + parentSessionId;
       await this.redis.lpush(queueKey, JSON.stringify(payload));
       await this.redis.expire(queueKey, DEFAULT_TTL.agentResults);
@@ -317,6 +330,13 @@ export class TaskExecutorService implements OnModuleInit {
       };
 
       const parentSessionId = parentRun.sessionId;
+      if (!parentSessionId) {
+        logger.warn(
+          { agentRunId, parentAgentRunId: childRun.parentAgentRunId },
+          'Skipping result publish for sessionless parent AgentRun',
+        );
+        return;
+      }
       const queueKey = KEY_PREFIXES.agentResults + parentSessionId;
       await this.redis.lpush(queueKey, JSON.stringify(payload));
       await this.redis.expire(queueKey, DEFAULT_TTL.agentResults);
@@ -394,6 +414,16 @@ export class TaskExecutorService implements OnModuleInit {
       try {
         const result = JSON.parse(raw) as ResultPayload;
         const parentRun = await this.agentRunRepo.findById(result.parentAgentRunId);
+
+        if (!parentRun.sessionId) {
+          logger.warn(
+            { parentAgentRunId: result.parentAgentRunId },
+            'Skipping reinvocation for sessionless AgentRun',
+          );
+          await this.redis.lrem(processingKey, 1, raw);
+          continue;
+        }
+
         const session = await this.sessionRepo.findById(parentRun.sessionId);
 
         // Count remaining items for the injection message

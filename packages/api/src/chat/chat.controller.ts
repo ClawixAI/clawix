@@ -1,4 +1,14 @@
-import { Controller, Get, NotFoundException, Param, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import { Prisma } from '../generated/prisma/client.js';
@@ -99,8 +109,12 @@ export class ChatController {
       },
     });
 
-    if (run?.session.userId !== req.user.sub) {
+    if (!run?.session || run.session.userId !== req.user.sub) {
       throw new NotFoundException('Agent run not found');
+    }
+
+    if (!run.sessionId) {
+      throw new NotFoundException('Agent run has no session');
     }
 
     // Fetch session messages with tool calls for this run's time range
@@ -157,6 +171,20 @@ export class ChatController {
     }
     await this.sessionRepo.update(sessionId, { isActive: false });
     return { success: true };
+  }
+
+  @Patch('sessions/:id')
+  async updateSession(
+    @Req() req: { user: JwtPayload },
+    @Param('id') sessionId: string,
+    @Body() body: { topic?: string | null },
+  ) {
+    const session = await this.sessionRepo.findById(sessionId);
+    if (session.userId !== req.user.sub) {
+      throw new NotFoundException('Session not found');
+    }
+    const updated = await this.sessionRepo.update(sessionId, { topic: body.topic ?? null });
+    return { success: true, data: updated };
   }
 
   @Get('sessions/:id/messages')

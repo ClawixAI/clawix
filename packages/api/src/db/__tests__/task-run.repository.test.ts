@@ -243,6 +243,32 @@ describe('TaskRunRepository', () => {
     });
   });
 
+  describe('findByTaskIdWithLimit', () => {
+    it('findByTaskIdWithLimit passes through filters and ordering', async () => {
+      mockPrisma.taskRun.findMany.mockResolvedValue([
+        { id: 'r1', taskId: 't1', status: 'completed', startedAt: new Date('2026-01-02') },
+        { id: 'r2', taskId: 't1', status: 'completed', startedAt: new Date('2026-01-01') },
+      ]);
+      const rows = await repository.findByTaskIdWithLimit('t1', 5, 'completed');
+      expect(rows).toHaveLength(2);
+      expect(mockPrisma.taskRun.findMany).toHaveBeenCalledWith({
+        where: { taskId: 't1', status: 'completed' },
+        orderBy: { startedAt: 'desc' },
+        take: 5,
+      });
+    });
+
+    it('omits status filter when status is undefined', async () => {
+      mockPrisma.taskRun.findMany.mockResolvedValue([]);
+      await repository.findByTaskIdWithLimit('t1', 10, undefined);
+      expect(mockPrisma.taskRun.findMany).toHaveBeenCalledWith({
+        where: { taskId: 't1' },
+        orderBy: { startedAt: 'desc' },
+        take: 10,
+      });
+    });
+  });
+
   describe('delete', () => {
     it('should delete a task run', async () => {
       mockPrisma.taskRun.delete.mockResolvedValue(mockTaskRun);
