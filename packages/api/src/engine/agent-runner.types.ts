@@ -1,5 +1,7 @@
 import type { AgentStatus, TokenUsageRecord } from '@clawix/shared';
 
+import type { MessageStore } from './message-store/message-store.js';
+
 /** Options for running an agent. */
 export interface RunOptions {
   readonly agentDefinitionId: string;
@@ -27,12 +29,15 @@ export interface RunOptions {
   readonly tokenGracePercent?: number;
   /** Wall-clock timeout for the entire agent run in milliseconds. Default: 300000 (5 min). */
   readonly timeoutMs?: number;
+  /** Caller-supplied persistence backend. When provided, agent-runner does NOT
+   *  create or resume a Session — all transcript persistence flows through the store. */
+  readonly messageStore?: MessageStore;
 }
 
 /** Result returned after an agent run completes (or fails). */
 export interface RunResult {
   readonly agentRunId: string;
-  readonly sessionId: string;
+  readonly sessionId: string | null;
   readonly output: string | null;
   readonly status: AgentStatus;
   readonly tokenUsage: TokenUsageRecord;

@@ -1,8 +1,25 @@
 'use client';
 
-import { Archive, Loader2, MessageSquarePlus, Search } from 'lucide-react';
+import { useState } from 'react';
+import { Archive, Loader2, MessageSquarePlus, Pencil, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { authFetch } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import type { ChatSession } from './use-chat';
 
 /* ------------------------------------------------------------------ */
@@ -15,6 +32,7 @@ interface SessionSidebarProps {
   loading: boolean;
   onSelect: (id: string) => void;
   onNewChat: () => void;
+  onSessionUpdated?: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -47,7 +65,12 @@ export function SessionSidebar({
   loading,
   onSelect,
   onNewChat,
+  onSessionUpdated,
 }: SessionSidebarProps) {
+  const [renameSession, setRenameSession] = useState<ChatSession | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [saving, setSaving] = useState(false);
+
   // Sort sessions by createdAt descending (newest first)
   const sorted = [...sessions].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -65,6 +88,28 @@ export function SessionSidebar({
   // Maintain consistent group ordering
   const groupOrder = ['Today', 'Yesterday', 'Previous 7 Days', 'Older'];
   const orderedGroups = groupOrder.filter((g) => groups[g] !== undefined);
+
+  const handleRename = (session: ChatSession) => {
+    setRenameSession(session);
+    setRenameValue(session.topic ?? '');
+  };
+
+  const handleRenameSubmit = async () => {
+    if (!renameSession) return;
+    setSaving(true);
+    try {
+      await authFetch(`/api/v1/chat/sessions/${renameSession.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ topic: renameValue.trim() || null }),
+      });
+      setRenameSession(null);
+      onSessionUpdated?.();
+    } catch {
+      // Silently fail - user can retry
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="flex w-[260px] shrink-0 flex-col border-r">
@@ -93,30 +138,70 @@ export function SessionSidebar({
             <div key={group}>
               <p className="px-3 py-2 text-xs font-medium text-muted-foreground">{group}</p>
               {(groups[group] ?? []).map((session) => (
-                <button
-                  key={session.id}
-                  onClick={() => {
-                    onSelect(session.id);
-                  }}
-                  className={cn(
-                    'mx-2 flex w-[calc(100%-16px)] items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50',
-                    selectedId === session.id && 'bg-muted',
-                    !session.isActive && 'opacity-60',
-                  )}
-                >
-                  {!session.isActive && (
-                    <Archive className="size-3 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="truncate">
-                    {session.isActive ? 'Session' : 'Archived'} &mdash;{' '}
-                    {formatShortDate(session.createdAt)}
-                  </span>
-                </button>
+                <ContextMenu key={session.id}>
+                  <ContextMenuTrigger asChild>
+                    <button
+                      onClick={() => {
+                        onSelect(session.id);
+                      }}
+                      className={cn(
+                        'mx-2 flex w-[calc(100%-16px)] cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50',
+                        selectedId === session.id && 'bg-muted',
+                        !session.isActive && 'opacity-60',
+                      )}
+                    >
+                      {!session.isActive && (
+                        <Archive className="size-3 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate">
+                        {session.topic ?? `Session — ${formatShortDate(session.createdAt)}`}
+                      </span>
+                    </button>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem onClick={() => handleRename(session)}>
+                      <Pencil className="mr-2 size-4" />
+                      Rename
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               ))}
             </div>
           ))
         )}
       </div>
+
+      {/* Rename Dialog */}
+      <Dialog
+        open={renameSession !== null}
+        onOpenChange={(open) => !open && setRenameSession(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Conversation</DialogTitle>
+            <DialogDescription>Enter a new name for this conversation.</DialogDescription>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            placeholder="Conversation topic..."
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !saving) {
+                void handleRenameSubmit();
+              }
+            }}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameSession(null)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleRenameSubmit()} disabled={saving}>
+              {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

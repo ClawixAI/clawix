@@ -24,6 +24,7 @@ import type { BootstrapFileService } from '../bootstrap-file.service.js';
 import type { SkillLoaderService } from '../skill-loader.service.js';
 import type { PolicyRepository } from '../../db/policy.repository.js';
 import type { UserRepository } from '../../db/user.repository.js';
+import type { SystemSettingsService } from '../../system-settings/system-settings.service.js';
 import type { ContextBuildParams } from '../context-builder.types.js';
 
 // Default mocks for cron section — cronEnabled: false so no section is injected
@@ -33,9 +34,20 @@ const noopPolicyRepo = {
 const noopUserRepo = {
   findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }),
 } as unknown as UserRepository;
+const noopSystemSettings: {
+  get: ReturnType<typeof vi.fn>;
+} = {
+  get: vi.fn().mockResolvedValue({
+    cronDefaultTokenBudget: 10000,
+    cronExecutionTimeoutMs: 300000,
+    cronTokenGracePercent: 10,
+    defaultTimezone: 'UTC',
+  }),
+};
 
 describe('ContextBuilderService', () => {
   let service: ContextBuilderService;
+  let systemSettingsService: { get: ReturnType<typeof vi.fn> };
   let mockMemoryRepo: {
     findVisibleToUser: ReturnType<typeof vi.fn>;
     findDailyNotes: ReturnType<typeof vi.fn>;
@@ -62,6 +74,14 @@ describe('ContextBuilderService', () => {
       findDailyNotes: vi.fn().mockResolvedValue([]),
       findDistinctTags: vi.fn().mockResolvedValue([]),
     };
+    systemSettingsService = {
+      get: vi.fn().mockResolvedValue({
+        cronDefaultTokenBudget: 10000,
+        cronExecutionTimeoutMs: 300000,
+        cronTokenGracePercent: 10,
+        defaultTimezone: 'UTC',
+      }),
+    };
     mockReadFile.mockRejectedValue(new Error('ENOENT'));
     const noopBootstrap = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
     const noopSkillLoader = { buildSkillsSummary: vi.fn().mockResolvedValue('') };
@@ -71,6 +91,7 @@ describe('ContextBuilderService', () => {
       noopSkillLoader as unknown as SkillLoaderService,
       noopPolicyRepo,
       noopUserRepo,
+      systemSettingsService as unknown as SystemSettingsService,
     );
   });
 
@@ -410,6 +431,7 @@ describe('ContextBuilderService', () => {
         noopSkillLoader as unknown as SkillLoaderService,
         noopPolicyRepo,
         noopUserRepo,
+        noopSystemSettings as unknown as SystemSettingsService,
       );
 
       const params = { ...baseParams, isSubAgent: true, workspacePath: '/workspace' };
@@ -470,6 +492,7 @@ describe('ContextBuilderService', () => {
         noopSkillLoader as unknown as SkillLoaderService,
         noopPolicyRepo,
         noopUserRepo,
+        noopSystemSettings as unknown as SystemSettingsService,
       );
     });
 
@@ -561,6 +584,75 @@ describe('ContextBuilderService', () => {
       const result = await service.buildMessages(baseParams);
       const system = result[0]!.content as string;
       expect(system).not.toContain('# Memory');
+    });
+  });
+
+  describe('execution context (scheduled tasks)', () => {
+    it('includes Execution Context section when isScheduledTask=true', async () => {
+      const params = {
+        ...baseParams,
+        isScheduledTask: true,
+      };
+      const result = await service.buildMessages(params);
+
+      const systemMsg = result.find((m) => m.role === 'system');
+      expect(systemMsg?.content).toContain('# Execution Context');
+      expect(systemMsg?.content).toContain('running as a scheduled task');
+    });
+
+    it('omits Execution Context section when isScheduledTask=false or undefined', async () => {
+      const result = await service.buildMessages(baseParams);
+
+      const systemMsg = result.find((m) => m.role === 'system');
+      expect(systemMsg?.content).not.toContain('# Execution Context');
+    });
+  });
+
+  describe('cron section cross-session reference guidance', () => {
+    it('includes cron reference guidance when cron enabled and not a scheduled task', async () => {
+      const cronEnabledPolicyRepo = {
+        findById: vi.fn().mockResolvedValue({ cronEnabled: true }),
+      } as unknown as PolicyRepository;
+      const noopSkillLoader = { buildSkillsSummary: vi.fn().mockResolvedValue('') };
+      const svc = new ContextBuilderService(
+        mockMemoryRepo as unknown as MemoryItemRepository,
+        service['bootstrapFileService'] as unknown as BootstrapFileService,
+        noopSkillLoader as unknown as SkillLoaderService,
+        cronEnabledPolicyRepo,
+        noopUserRepo,
+        noopSystemSettings as unknown as SystemSettingsService,
+      );
+
+      const result = await svc.buildMessages(baseParams);
+
+      const systemMsg = result.find((m) => m.role === 'system');
+      expect(systemMsg?.content).toContain("action:'runs'");
+      expect(systemMsg?.content).toContain("action:'runDetail'");
+      expect(systemMsg?.content).toContain('Scheduled-task output is not part of this');
+    });
+
+    it('omits cron reference guidance when cron is disabled', async () => {
+      const result = await service.buildMessages(baseParams);
+
+      const systemMsg = result.find((m) => m.role === 'system');
+      expect(systemMsg?.content).not.toContain("action:'runs'");
+      expect(systemMsg?.content).not.toContain("action:'runDetail'");
+    });
+  });
+
+  describe('ContextBuilderService — Server Time uses defaultTimezone', () => {
+    it('formats the Server Time line under SystemSettings.defaultTimezone', async () => {
+      systemSettingsService.get.mockResolvedValue({
+        cronDefaultTokenBudget: 10000,
+        cronExecutionTimeoutMs: 300000,
+        cronTokenGracePercent: 10,
+        defaultTimezone: 'Asia/Tokyo',
+      });
+
+      const result = await service.buildMessages(baseParams);
+
+      const userContent = result[result.length - 1]!.content as string;
+      expect(userContent).toContain('(Asia/Tokyo)');
     });
   });
 });

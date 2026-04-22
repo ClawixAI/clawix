@@ -144,6 +144,7 @@ export function ChatThread({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevHeightRef = useRef(0);
   const hasInitialScrolled = useRef(false);
+  const isLoadingOlderRef = useRef(false);
   const [showScrollDown, setShowScrollDown] = useState(false);
 
   // Preserve scroll position after loading older messages
@@ -152,13 +153,16 @@ export function ChatThread({
       const newHeight = scrollContainerRef.current.scrollHeight;
       scrollContainerRef.current.scrollTop = newHeight - prevHeightRef.current;
       prevHeightRef.current = 0;
+      // Reset flag after scroll position is restored
+      setTimeout(() => {
+        isLoadingOlderRef.current = false;
+      }, 100);
     }
   }, [loadingMore, messages.length]);
 
   // Auto-scroll to bottom only on first load — wait for DOM to stabilize
   useEffect(() => {
     if (hasInitialScrolled.current || loading || messages.length === 0) return;
-    hasInitialScrolled.current = true;
 
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -171,13 +175,14 @@ export function ChatThread({
         stableCount++;
         if (stableCount >= 3) {
           clearInterval(poll);
+          hasInitialScrolled.current = true;
           container.scrollTop = container.scrollHeight;
         }
       } else {
         stableCount = 0;
       }
       lastHeight = h;
-    }, 200);
+    }, 100);
 
     return () => {
       clearInterval(poll);
@@ -187,9 +192,16 @@ export function ChatThread({
   // Auto-scroll to bottom when new messages arrive.
   // Always scroll for user messages (they just sent it). For agent messages,
   // only scroll if user is near the bottom (within 600px).
+  // Skip when loading older messages (prepending at top).
   const prevMessageCountRef = useRef(messages.length);
   useEffect(() => {
     if (messages.length <= prevMessageCountRef.current) {
+      prevMessageCountRef.current = messages.length;
+      return;
+    }
+
+    // Skip auto-scroll when loading older messages
+    if (isLoadingOlderRef.current) {
       prevMessageCountRef.current = messages.length;
       return;
     }
@@ -221,6 +233,7 @@ export function ChatThread({
 
       if (hasMore && !loadingMore && el.scrollTop < 100) {
         prevHeightRef.current = el.scrollHeight;
+        isLoadingOlderRef.current = true;
         onLoadMore();
       }
     };
@@ -262,11 +275,12 @@ export function ChatThread({
           {hasMore && !loadingMore && (
             <div className="flex justify-center">
               <button
-                className="text-xs text-muted-foreground hover:text-foreground"
+                className="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
                 onClick={() => {
                   if (scrollContainerRef.current) {
                     prevHeightRef.current = scrollContainerRef.current.scrollHeight;
                   }
+                  isLoadingOlderRef.current = true;
                   onLoadMore();
                 }}
               >

@@ -184,6 +184,10 @@ describe('ChannelManagerService', () => {
       expect(channel.sendMessage).toHaveBeenCalledWith({
         recipientId: '12345',
         text: 'Here are the results...',
+        metadata: {
+          messageId: expect.stringContaining('reinvoke-sess-1-'),
+          sessionId: 'sess-1',
+        },
       });
     });
 
@@ -222,6 +226,10 @@ describe('ChannelManagerService', () => {
       expect(channel.sendMessage).toHaveBeenCalledWith({
         recipientId: '12345',
         text: 'Result text',
+        metadata: {
+          messageId: expect.stringContaining('reinvoke-sess-1-'),
+          sessionId: 'sess-1',
+        },
       });
     });
 
@@ -500,6 +508,10 @@ describe('ChannelManagerService', () => {
       expect(channel.sendMessage).toHaveBeenCalledWith({
         recipientId: 'user-web-1',
         text: 'Hello from web',
+        metadata: {
+          messageId: expect.stringContaining('reinvoke-sess-web-'),
+          sessionId: 'sess-web',
+        },
       });
     });
 
@@ -538,6 +550,10 @@ describe('ChannelManagerService', () => {
       expect(channel.sendMessage).toHaveBeenCalledWith({
         recipientId: '99999',
         text: 'Hello from tg',
+        metadata: {
+          messageId: expect.stringContaining('reinvoke-sess-tg-'),
+          sessionId: 'sess-tg',
+        },
       });
     });
   });

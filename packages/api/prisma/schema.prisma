@@ -122,7 +122,7 @@ enum AgentStatus {
 model AgentRun {
   id                String      @id @default(cuid())
   agentDefinitionId String
-  sessionId         String
+  sessionId         String?
   status            AgentStatus @default(idle)
   input             String
   output            String?
@@ -133,7 +133,7 @@ model AgentRun {
   parentAgentRunId  String?     @map("parent_agent_run_id")
 
   agentDefinition AgentDefinition @relation(fields: [agentDefinitionId], references: [id], onDelete: Cascade)
-  session         Session         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session         Session?        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   parentRun       AgentRun?       @relation("SubAgentRuns", fields: [parentAgentRunId], references: [id])
   childRuns       AgentRun[]      @relation("SubAgentRuns")
 
@@ -254,10 +254,26 @@ model TaskRun {
   completedAt DateTime?
   durationMs  Int?
 
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task     Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  messages TaskRunMessage[]
 
   @@index([taskId])
   @@index([taskId, startedAt])
+}
+
+model TaskRunMessage {
+  id         String   @id @default(cuid())
+  taskRunId  String
+  ordering   Int
+  role       String   // 'system' | 'user' | 'assistant' | 'tool'
+  content    String   @db.Text
+  toolCallId String?
+  toolCalls  Json?
+  createdAt  DateTime @default(now())
+
+  taskRun TaskRun @relation(fields: [taskRunId], references: [id], onDelete: Cascade)
+
+  @@index([taskRunId, ordering])
 }
 
 // ============================================================================
@@ -269,6 +285,7 @@ model Session {
   userId             String
   agentDefinitionId  String
   channelId          String?
+  topic              String?   // conversation topic/title (user-editable)
   lastConsolidatedAt DateTime? // memory consolidation pointer
   isActive           Boolean   @default(true)
   createdAt          DateTime  @default(now())

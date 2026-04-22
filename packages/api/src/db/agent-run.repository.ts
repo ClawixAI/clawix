@@ -13,7 +13,7 @@ type AgentRun = AgentRunModel;
 
 interface CreateAgentRunInput {
   readonly agentDefinitionId: string;
-  readonly sessionId: string;
+  readonly sessionId?: string;
   readonly input: string;
   readonly status?: AgentStatus;
   readonly parentAgentRunId?: string;
@@ -125,7 +125,7 @@ export class AgentRunRepository {
       return await this.prisma.agentRun.create({
         data: {
           agentDefinitionId: data.agentDefinitionId,
-          sessionId: data.sessionId,
+          ...(data.sessionId !== undefined ? { sessionId: data.sessionId } : {}),
           input: data.input,
           ...(data.status ? { status: data.status } : {}),
           ...(data.parentAgentRunId ? { parentAgentRunId: data.parentAgentRunId } : {}),

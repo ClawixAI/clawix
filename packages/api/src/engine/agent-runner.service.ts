@@ -7,7 +7,7 @@
  *  2.  Load user to get policyId
  *  3.  Check budget
  *  4.  Check provider allowed
- *  5.  Get or create session (BEFORE creating AgentRun — FK dependency)
+ *  5.  Resolve MessageStore — session path: get/create Session + SessionMessageStore; cron path: use caller-supplied store (no Session).
  *  6.  Create AgentRun (or reuse existing via agentRunId) with status 'running'
  *  7.  Load message history
  *  8.  Build initial messages (system + history + user)
@@ -50,7 +50,12 @@ import { UserAgentRepository } from '../db/user-agent.repository.js';
 import { PolicyRepository } from '../db/policy.repository.js';
 import { ChannelRepository } from '../db/channel.repository.js';
 import { TaskRepository } from '../db/task.repository.js';
+import { TaskRunRepository } from '../db/task-run.repository.js';
+import { TaskRunMessageRepository } from '../db/task-run-message.repository.js';
 import type { RunOptions, RunResult } from './agent-runner.types.js';
+import { SessionMessageStore } from './message-store/session-message-store.js';
+import type { MessageStore } from './message-store/message-store.js';
+import type { Session } from '../generated/prisma/client.js';
 import { ProviderConfigService } from '../provider-config/provider-config.service.js';
 import { createProvider } from './providers/provider-factory.js';
 import { ResilientLLMProvider } from './resilience.js';
@@ -66,6 +71,7 @@ import { SearchProviderRegistry } from './tools/web/search-provider.js';
 import { registerWebTools } from './tools/web/index.js';
 import { resolveWorkspacePaths } from './workspace-resolver.js';
 import type { TaskExecutorService } from './task-executor.service.js';
+import { SystemSettingsService } from '../system-settings/system-settings.service.js';
 
 const logger = createLogger('engine:agent-runner');
 
@@ -104,6 +110,9 @@ export class AgentRunnerService {
     private readonly taskRepo: TaskRepository,
     private readonly cronGuardService: CronGuardService,
     private readonly providerConfig: ProviderConfigService,
+    private readonly taskRunRepo: TaskRunRepository,
+    private readonly taskRunMessageRepo: TaskRunMessageRepository,
+    private readonly systemSettingsService: SystemSettingsService,
   ) {}
 
   /** Lazy accessor to break circular dependency with TaskExecutorService. */
@@ -163,36 +172,48 @@ export class AgentRunnerService {
       throw new Error(`Provider '${agentDef.provider}' is not allowed by policy '${policyId}'`);
     }
 
-    // ── Step 5: Get or create session ──────────────────────────────
-    // Sub-agents always get their own session — never reuse the parent's,
-    // which is associated with a different agentDefinitionId.
-    const session = await this.sessionManager.getOrCreate({
-      userId,
-      agentDefinitionId,
-      sessionId: isSubAgent ? undefined : inputSessionId,
-    });
+    // ── Step 5: Resolve MessageStore ───────────────────────────────
+    // When a caller-supplied store is provided (e.g. cron task runner),
+    // skip session creation entirely. Otherwise fall back to the normal
+    // session-based path, wrapping it in a SessionMessageStore.
+    let store: MessageStore;
+    let session: Session | null = null;
+    if (options.messageStore) {
+      store = options.messageStore;
+    } else {
+      // Sub-agents always get their own session — never reuse the parent's,
+      // which is associated with a different agentDefinitionId.
+      session = await this.sessionManager.getOrCreate({
+        userId,
+        agentDefinitionId,
+        sessionId: isSubAgent ? undefined : inputSessionId,
+      });
+      store = new SessionMessageStore(this.sessionManager, session.id);
+    }
 
     // ── Step 6: Create or reuse AgentRun ───────────────────────────
     const agentRun = inputAgentRunId
       ? await this.agentRunRepo.update(inputAgentRunId, {
           status: 'running',
-          sessionId: session.id,
+          ...(session ? { sessionId: session.id } : {}),
         })
       : await this.agentRunRepo.create({
           agentDefinitionId,
-          sessionId: session.id,
+          ...(session ? { sessionId: session.id } : {}),
           input,
           status: 'running',
         });
 
-    logger.info({ agentRunId: agentRun.id, sessionId: session.id }, 'AgentRun created');
+    logger.info({ agentRunId: agentRun.id, sessionId: session?.id ?? null }, 'AgentRun created');
 
     // ── Steps 7–19: Execution block (container + loop) ─────────────
     let containerId: string | null = null;
+    // Pool is only meaningful when a session exists to key the warm container.
+    const usePool = !isSubAgent && session !== null;
 
     try {
       // Step 7: Load message history (sub-agents start with a clean slate)
-      const history = isSubAgent ? [] : await this.sessionManager.loadMessages(session.id);
+      const history = isSubAgent ? [] : await store.loadMessages();
 
       // Resolve the user's workspace to a host-visible path for the Docker -v flag
       const userAgent = await this.userAgentRepo.findByUserId(userId);
@@ -217,14 +238,13 @@ export class AgentRunnerService {
         userName: options.userName,
         workspacePath: isSubAgent ? undefined : workspacePaths?.localPath,
         isSubAgent,
+        isScheduledTask: options.isScheduledTask,
         workers,
       });
 
-      // Step 9: Save user message to session (skip for sub-agents — they don't own the session)
+      // Step 9: Save user message to store (skip for sub-agents — they don't own the session)
       if (!isSubAgent) {
-        await this.sessionManager.saveMessages(session.id, [
-          { role: 'user', content: input, senderId: userId },
-        ]);
+        await store.saveMessages([{ role: 'user', content: input, senderId: userId }]);
       }
 
       // Step 10: Resolve provider credentials (DB first, env var fallback)
@@ -297,13 +317,13 @@ export class AgentRunnerService {
         customHostPath: skillsCustomUserHostDir,
       };
 
-      if (isSubAgent) {
+      if (!usePool) {
         containerId = await this.containerRunner.start(sharedAgentDef, [], {
           workspaceHostPath: workspacePaths?.hostPath,
           skillMounts,
         });
       } else {
-        containerId = await this.containerPool.acquire(sharedAgentDef, session.id, {
+        containerId = await this.containerPool.acquire(sharedAgentDef, session!.id, {
           workspaceHostPath: workspacePaths?.hostPath,
           skillMounts,
         });
@@ -314,7 +334,7 @@ export class AgentRunnerService {
       registerBuiltinTools(registry, containerId, this.containerRunner);
       registerWebTools(registry, this.searchProviderRegistry);
       registerMemoryTools(registry, this.prisma, this.memoryItemRepo, userId);
-      if (!isSubAgent) {
+      if (!isSubAgent && session) {
         registry.register(
           createSpawnTool(
             this.agentDefRepo,
@@ -328,6 +348,7 @@ export class AgentRunnerService {
       }
 
       // Register cron tools (gated by policy.cronEnabled)
+      const settings = await this.systemSettingsService.get();
       registerCronTools(
         registry,
         this.cronGuardService,
@@ -342,7 +363,10 @@ export class AgentRunnerService {
           maxTokensPerCronRun: policy.maxTokensPerCronRun,
         },
         options.isScheduledTask ?? false,
-        session.channelId ?? null,
+        session?.channelId ?? null,
+        this.taskRunRepo,
+        this.taskRunMessageRepo,
+        settings.defaultTimezone,
       );
 
       // Step 14: Create ReasoningLoop
@@ -366,7 +390,7 @@ export class AgentRunnerService {
       if (!isSubAgent) {
         const loopMessages = loopResult.messages.slice(initialMessages.length);
         if (loopMessages.length > 0) {
-          const savedIds = await this.sessionManager.saveMessages(session.id, loopMessages);
+          const savedIds = await store.saveMessages(loopMessages);
           // Find the ID of the last assistant message for WebSocket delivery
           for (let i = loopMessages.length - 1; i >= 0; i--) {
             if (loopMessages[i]!.role === 'assistant') {
@@ -377,9 +401,9 @@ export class AgentRunnerService {
         }
       }
 
-      // Step 17: Consolidate session memory (primary agents only)
+      // Step 17: Consolidate session memory (primary agents with a real session only)
       let contextWarning = '';
-      if (!isSubAgent) {
+      if (!isSubAgent && session) {
         await this.memoryConsolidation.consolidateIfNeeded(session.id, {
           containerId,
           containerRunner: this.containerRunner,
@@ -433,7 +457,7 @@ export class AgentRunnerService {
       // Step 20: Return RunResult
       return {
         agentRunId: agentRun.id,
-        sessionId: session.id,
+        sessionId: session?.id ?? null,
         output: finalOutput,
         status: runStatus,
         responseMessageId,
@@ -458,17 +482,17 @@ export class AgentRunnerService {
         completedAt: new Date(),
       });
 
-      // Evict from pool on error (primary agents only)
-      if (!isSubAgent && containerId !== null) {
+      // Evict from pool on error (primary agents with a real session only)
+      if (!isSubAgent && session && containerId !== null) {
         await this.containerPool.evict(session.id);
       }
 
       throw err;
     } finally {
-      if (isSubAgent && containerId !== null) {
+      if (!usePool && containerId !== null) {
         await this.containerRunner.stop(containerId);
-      } else if (!isSubAgent) {
-        this.containerPool.release(session.id);
+      } else if (usePool) {
+        this.containerPool.release(session!.id);
       }
     }
   }

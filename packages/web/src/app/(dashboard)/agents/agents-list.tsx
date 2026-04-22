@@ -355,9 +355,9 @@ export function AgentsList() {
                   </TableCell>
                   <TableCell>
                     {agent.isOfficial ? (
-                      <Badge variant="outline">Official</Badge>
+                      <Badge variant="outline">Public</Badge>
                     ) : (
-                      <Badge variant="secondary">Custom</Badge>
+                      <Badge variant="secondary">Private</Badge>
                     )}
                   </TableCell>
                   <TableCell>

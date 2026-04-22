@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 /**
  * Production bootstrap — seeds a minimal, idempotent initial state so a fresh
  * deployment is usable: org settings, policies, one admin user, provider

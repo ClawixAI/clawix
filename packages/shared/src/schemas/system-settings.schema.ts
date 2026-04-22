@@ -1,10 +1,16 @@
 import { z } from 'zod';
 
+import { isValidIanaTimezone } from '../utils/timezone.js';
+
 export const systemSettingsSchema = z.object({
   cronDefaultTokenBudget: z.number().int().positive().default(10000),
   cronExecutionTimeoutMs: z.number().int().positive().default(300000),
   cronTokenGracePercent: z.number().int().min(0).max(100).default(10),
-  defaultTimezone: z.string().min(1).default('UTC'),
+  defaultTimezone: z
+    .string()
+    .min(1)
+    .refine(isValidIanaTimezone, { message: 'Invalid IANA timezone' })
+    .default('UTC'),
 });
 
 export type SystemSettingsInput = z.infer<typeof systemSettingsSchema>;

@@ -227,7 +227,9 @@ export default function UsersPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [createdUserId, setCreatedUserId] = useState<string | null>(null);
   const [createdUserName, setCreatedUserName] = useState('');
+  const [createdUserRole, setCreatedUserRole] = useState('');
   const [editUser, setEditUser] = useState<ApiUser | null>(null);
+  const [editUserRole, setEditUserRole] = useState('');
   const [deleteUser, setDeleteUser] = useState<ApiUser | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -278,34 +280,42 @@ export default function UsersPage() {
     setSaving(true);
     setError('');
     try {
+      const role = form.get('role') as string;
       const created = await authFetch<ApiUser>('/admin/users', {
         method: 'POST',
         body: JSON.stringify({
           email: form.get('email'),
           name: form.get('name'),
           password: form.get('password'),
-          role: form.get('role'),
+          role,
           policyId: form.get('policyId'),
         }),
       });
       setCreatedUserId(created.id);
       setCreatedUserName(created.name);
+      setCreatedUserRole(role);
       setSelectedAgentId('');
-      setCreateStep('assign');
-      // Fetch agent definitions for assignment step
-      void authFetch<{ data: { id: string; name: string; role: string; isActive: boolean }[] }>(
-        '/api/v1/agents?limit=100&role=primary',
-      )
-        .then((res) => {
-          setAgentDefs(
-            Array.isArray(res.data)
-              ? res.data.filter((a) => a.isActive).map((a) => ({ id: a.id, name: a.name }))
-              : [],
-          );
-        })
-        .catch(() => {
-          /* silent */
-        });
+
+      // Skip agent assignment for viewers (they can't run agents)
+      if (role === 'viewer') {
+        setCreateStep('done');
+      } else {
+        setCreateStep('assign');
+        // Fetch agent definitions for assignment step
+        void authFetch<{ data: { id: string; name: string; role: string; isActive: boolean }[] }>(
+          '/api/v1/agents?limit=100&role=primary',
+        )
+          .then((res) => {
+            setAgentDefs(
+              Array.isArray(res.data)
+                ? res.data.filter((a) => a.isActive).map((a) => ({ id: a.id, name: a.name }))
+                : [],
+            );
+          })
+          .catch(() => {
+            /* silent */
+          });
+      }
       await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user');
@@ -339,6 +349,7 @@ export default function UsersPage() {
 
   function openEditUser(user: ApiUser) {
     setEditUser(user);
+    setEditUserRole(user.role);
     const existing = userAgentMap.get(user.id);
     setEditUserAgentId(existing?.agentDefinitionId ?? '');
   }
@@ -740,7 +751,7 @@ export default function UsersPage() {
                     />
                     <button
                       type="button"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground"
                       onClick={() => {
                         setShowPassword((v) => !v);
                       }}
@@ -859,7 +870,10 @@ export default function UsersPage() {
               <div className="text-center">
                 <h3 className="text-lg font-semibold">All Set!</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  <strong>{createdUserName}</strong> has been created and assigned a primary agent.
+                  <strong>{createdUserName}</strong> has been created
+                  {createdUserRole === 'viewer'
+                    ? ' with read-only access.'
+                    : ' and assigned a primary agent.'}
                 </p>
               </div>
               <Button onClick={closeCreateDialog}>Done</Button>
@@ -910,7 +924,13 @@ export default function UsersPage() {
                   name="role"
                   id="edit-role"
                   className="rounded-md border bg-background px-3 py-2 text-sm"
-                  defaultValue={editUser.role}
+                  value={editUserRole}
+                  onChange={(e) => {
+                    setEditUserRole(e.target.value);
+                    if (e.target.value === 'viewer') {
+                      setEditUserAgentId('');
+                    }
+                  }}
                 >
                   <option value="admin">Admin</option>
                   <option value="developer">Developer</option>
@@ -950,11 +970,12 @@ export default function UsersPage() {
                 <Label htmlFor="edit-agent">Primary Agent</Label>
                 <select
                   id="edit-agent"
-                  className="rounded-md border bg-background px-3 py-2 text-sm"
+                  className="rounded-md border bg-background px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                   value={editUserAgentId}
                   onChange={(e) => {
                     setEditUserAgentId(e.target.value);
                   }}
+                  disabled={editUserRole === 'viewer'}
                 >
                   <option value="">No agent assigned</option>
                   {agentDefs.map((a) => (
@@ -964,7 +985,9 @@ export default function UsersPage() {
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground">
-                  The primary agent allows this user to start conversations.
+                  {editUserRole === 'viewer'
+                    ? 'Viewers cannot run agents.'
+                    : 'The primary agent allows this user to start conversations.'}
                 </p>
               </div>
               <DialogFooter>

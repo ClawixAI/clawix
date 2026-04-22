@@ -6,7 +6,7 @@
     Run AI agent swarms in isolated containers. Full governance. Zero vendor lock-in.
   </p>
   <p align="center">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue`?style=flat-square" alt="License"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
     <a href="https://github.com/ClawixAI/clawix/stargazers"><img src="https://img.shields.io/github/stars/ClawixAI/clawix?style=flat-square" alt="Stars"></a>
     <a href="https://github.com/ClawixAI/clawix/issues"><img src="https://img.shields.io/github/issues/ClawixAI/clawix?style=flat-square" alt="Issues"></a>
     <a href="https://github.com/ClawixAI/clawix/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs Welcome"></a>
@@ -185,10 +185,10 @@ That's it. Open `http://localhost:3000` or message your Telegram bot.
 
 Two helper scripts wrap the full production flow:
 
-| Command                   | What it does                                                               |
-| ------------------------- | -------------------------------------------------------------------------- |
+| Command                   | What it does                                                                |
+| ------------------------- | --------------------------------------------------------------------------- |
 | `pnpm run install:clawix` | Interactive first-time setup: generates `.env`, builds images, starts stack |
-| `pnpm run update:clawix`  | Non-interactive rebuild + restart (use after `git pull` or config changes) |
+| `pnpm run update:clawix`  | Non-interactive rebuild + restart (use after `git pull` or config changes)  |
 
 ### First run
 

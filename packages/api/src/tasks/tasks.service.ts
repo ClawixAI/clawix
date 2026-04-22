@@ -7,6 +7,7 @@ import { PolicyRepository } from '../db/policy.repository.js';
 import { UserRepository } from '../db/user.repository.js';
 import { CronGuardService } from '../engine/cron-guard.service.js';
 import { computeNextRun } from '../engine/cron-next-run.js';
+import { SystemSettingsService } from '../system-settings/system-settings.service.js';
 
 const logger = createLogger('tasks:service');
 
@@ -17,6 +18,7 @@ export class TasksService {
     private readonly cronGuard: CronGuardService,
     private readonly policyRepo: PolicyRepository,
     private readonly userRepo: UserRepository,
+    private readonly systemSettingsService: SystemSettingsService,
   ) {}
 
   async findAll(userId: string, pagination: { page: number; limit: number }) {
@@ -30,6 +32,9 @@ export class TasksService {
   }
 
   async create(userId: string, input: CreateTaskInput) {
+    const settings = await this.systemSettingsService.get();
+    const defaultTz = settings.defaultTimezone;
+
     const user = await this.userRepo.findById(userId);
     const policy = await this.policyRepo.findById(user.policyId);
 
@@ -43,6 +48,7 @@ export class TasksService {
         minCronIntervalSecs: policy.minCronIntervalSecs,
         maxTokensPerCronRun: policy.maxTokensPerCronRun,
       },
+      defaultTz,
     );
 
     if (!guardResult.allowed) {
@@ -56,7 +62,7 @@ export class TasksService {
     });
 
     // Compute and set initial nextRunAt
-    const nextRunAt = computeNextRun(input.schedule);
+    const nextRunAt = computeNextRun(input.schedule, defaultTz);
     if (nextRunAt) {
       await this.taskRepo.updateNextRunAt(task.id, nextRunAt);
     }
@@ -71,7 +77,39 @@ export class TasksService {
       throw new Error('Not authorized to update this task');
     }
 
+    // When the schedule changes, re-validate it under the org TZ and
+    // recompute nextRunAt — avoids bypassing the at-offset rule and other
+    // shape checks that canCreate enforces on create.
+    let defaultTz: string | undefined;
+    if (input.schedule) {
+      const settings = await this.systemSettingsService.get();
+      defaultTz = settings.defaultTimezone;
+
+      const user = await this.userRepo.findById(userId);
+      const policy = await this.policyRepo.findById(user.policyId);
+
+      const guardResult = await this.cronGuard.canUpdate(
+        input.schedule,
+        {
+          cronEnabled: policy.cronEnabled,
+          maxScheduledTasks: policy.maxScheduledTasks,
+          minCronIntervalSecs: policy.minCronIntervalSecs,
+          maxTokensPerCronRun: policy.maxTokensPerCronRun,
+        },
+        defaultTz,
+      );
+
+      if (!guardResult.allowed) {
+        throw new Error(guardResult.reason ?? 'Task update denied');
+      }
+    }
+
     const result = await this.taskRepo.update(id, input);
+
+    if (input.schedule && defaultTz) {
+      const nextRunAt = computeNextRun(input.schedule, defaultTz);
+      await this.taskRepo.updateNextRunAt(id, nextRunAt);
+    }
 
     // Reset failures when user edits the job
     if (task.consecutiveFailures > 0) {

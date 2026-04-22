@@ -80,6 +80,8 @@ services:
              corepack prepare pnpm@latest --activate &&
              pnpm install --frozen-lockfile &&
              pnpm --filter @clawix/shared build &&
+             pnpm --filter @clawix/api exec prisma generate &&
+             chown -R $(stat -c '%u:%g' /app/packages/api/prisma/schema.prisma) /app/packages/api/src/generated &&
              pnpm --filter @clawix/api exec prisma migrate deploy --schema=prisma/schema.prisma &&
              pnpm --filter @clawix/api exec node -e \"
                const { Client } = require('pg');

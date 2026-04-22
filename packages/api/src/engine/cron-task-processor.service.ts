@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { createLogger } from '@clawix/shared';
+import { createLogger, type SystemSettingsInput } from '@clawix/shared';
 
 import { TaskRepository } from '../db/task.repository.js';
 import { TaskRunRepository } from '../db/task-run.repository.js';
+import { TaskRunMessageRepository } from '../db/task-run-message.repository.js';
 import { AgentRunnerService } from './agent-runner.service.js';
+import { TaskRunMessageStore } from './message-store/task-run-message-store.js';
 import { computeNextRun } from './cron-next-run.js';
 import { SystemSettingsService } from '../system-settings/system-settings.service.js';
 import { PolicyRepository } from '../db/policy.repository.js';
@@ -33,6 +35,7 @@ export class CronTaskProcessorService {
     private readonly agentRunner: AgentRunnerService,
     private readonly taskRepo: TaskRepository,
     private readonly taskRunRepo: TaskRunRepository,
+    private readonly taskRunMessageRepo: TaskRunMessageRepository,
     private readonly systemSettingsService: SystemSettingsService,
     private readonly policyRepo: PolicyRepository,
     private readonly userRepo: UserRepository,
@@ -49,9 +52,13 @@ export class CronTaskProcessorService {
       status: 'running',
     });
 
+    let settings: SystemSettingsInput | undefined;
+
     try {
+      settings = await this.systemSettingsService.get();
+      const defaultTz = settings.defaultTimezone;
+
       // Compute effective timeout
-      const settings = await this.systemSettingsService.get();
       const timeoutMs = task.timeoutMs ?? settings.cronExecutionTimeoutMs;
 
       // Resolve token budget from plan + system settings
@@ -70,6 +77,8 @@ export class CronTaskProcessorService {
         }, effectiveTimeout);
       });
 
+      const messageStore = new TaskRunMessageStore(this.taskRunMessageRepo, taskRun.id);
+
       let result;
       try {
         result = await Promise.race([
@@ -83,6 +92,7 @@ export class CronTaskProcessorService {
             userName: 'CronScheduler',
             tokenBudget,
             tokenGracePercent,
+            messageStore,
           }),
           timeoutPromise,
         ]);
@@ -115,7 +125,7 @@ export class CronTaskProcessorService {
       await this.taskRepo.updateLastRun(task.id, 'completed', completedAt);
 
       // Compute and set next run (or disable one-time tasks)
-      const nextRunAt = computeNextRun(task.schedule as never);
+      const nextRunAt = computeNextRun(task.schedule as never, defaultTz);
       if (nextRunAt) {
         await this.taskRepo.updateNextRunAt(task.id, nextRunAt);
       } else {
@@ -162,7 +172,14 @@ export class CronTaskProcessorService {
         );
       } else {
         // Compute next run only if not auto-disabled
-        const nextRunAt = computeNextRun(task.schedule as never);
+        const defaultTzForNextRun = settings?.defaultTimezone ?? 'UTC';
+        if (!settings) {
+          logger.warn(
+            { taskId: task.id },
+            'cron:settings unavailable, falling back to UTC for nextRunAt',
+          );
+        }
+        const nextRunAt = computeNextRun(task.schedule as never, defaultTzForNextRun);
         await this.taskRepo.updateNextRunAt(task.id, nextRunAt);
       }
 

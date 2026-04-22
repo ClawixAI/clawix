@@ -411,7 +411,7 @@ function EditAgentDialog({
 }
 
 // ------------------------------------------------------------------ //
-//  Official Agents Table                                              //
+//  Public Agents Table                                                //
 // ------------------------------------------------------------------ //
 
 function OfficialAgentsTable({
@@ -430,7 +430,7 @@ function OfficialAgentsTable({
   if (agents.length === 0) {
     return (
       <div className="rounded-md border bg-background/30 backdrop-blur-sm p-4 text-center text-sm text-muted-foreground">
-        No official agents configured.
+        No public agents configured.
       </div>
     );
   }
@@ -466,7 +466,7 @@ function OfficialAgentsTable({
                 </Badge>
               </TableCell>
               <TableCell>
-                <Badge variant="outline">Official</Badge>
+                <Badge variant="outline">Public</Badge>
               </TableCell>
               <TableCell>
                 {agent.role === 'primary' ? (
@@ -573,7 +573,7 @@ function SubAgentsTable({
                 <Badge variant="secondary">{agent.role}</Badge>
               </TableCell>
               <TableCell>
-                <Badge variant="secondary">Custom</Badge>
+                <Badge variant="secondary">Private</Badge>
               </TableCell>
               <TableCell>
                 {agent.role === 'primary' ? (
@@ -1329,10 +1329,10 @@ export default function UserAgentsPage() {
         </div>
       ) : (
         <div className="space-y-8">
-          {/* Official Agents Section */}
+          {/* Public Agents Section */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Official Agents</h2>
+              <h2 className="text-lg font-semibold">Public Agents</h2>
               {isAdmin && (
                 <Button
                   size="sm"
@@ -1428,15 +1428,15 @@ export default function UserAgentsPage() {
         </div>
       )}
 
-      {/* Create Official Agent Dialog */}
+      {/* Create Public Agent Dialog */}
       <CreateAgentDialog
         key={createOfficialOpen ? 'official-open' : 'official-closed'}
         open={createOfficialOpen}
         onOpenChange={setCreateOfficialOpen}
         saving={saving}
         onSubmit={handleCreateOfficial}
-        title="Create Official Agent"
-        description="Create a new official agent available to all users."
+        title="Create Public Agent"
+        description="Create a new public agent available to all users."
       />
 
       {/* Create Sub-Agent Dialog */}

@@ -14,8 +14,11 @@ function parseIntervalToMs(interval: string): number | null {
 /**
  * Compute the next run time for a cron schedule.
  * Returns null if the schedule is exhausted (one-shot in the past, invalid expression).
+ *
+ * @param schedule - The cron schedule definition.
+ * @param defaultTz - Fallback IANA timezone used when `schedule.tz` is absent (cron type only).
  */
-export function computeNextRun(schedule: CronSchedule): Date | null {
+export function computeNextRun(schedule: CronSchedule, defaultTz: string): Date | null {
   const now = Date.now();
 
   if (schedule.type === 'at') {
@@ -31,8 +34,8 @@ export function computeNextRun(schedule: CronSchedule): Date | null {
 
   if (schedule.type === 'cron') {
     try {
-      const options = schedule.tz ? { tz: schedule.tz } : {};
-      const interval = CronExpressionParser.parse(schedule.expression, options);
+      const tz = schedule.tz ?? defaultTz;
+      const interval = CronExpressionParser.parse(schedule.expression, { tz });
       return interval.next().toDate();
     } catch {
       return null;

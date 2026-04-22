@@ -176,7 +176,7 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
           <button
             type="button"
             onClick={handleBrowseClick}
-            className="font-medium text-amber-500 underline-offset-4 hover:underline focus:outline-none"
+            className="cursor-pointer font-medium text-amber-500 underline-offset-4 hover:underline focus:outline-none"
           >
             browse
           </button>

@@ -16,6 +16,7 @@ interface UpdateSessionData {
   readonly isActive?: boolean;
   readonly lastConsolidatedAt?: Date;
   readonly channelId?: string | null;
+  readonly topic?: string | null;
 }
 
 @Injectable()
@@ -75,17 +76,44 @@ export class SessionRepository {
     if (!includeArchived) where.isActive = true;
     if (channelId) where.channelId = channelId;
 
-    const [data, total] = await Promise.all([
+    const [sessions, total] = await Promise.all([
       this.prisma.session.findMany({
         where,
         skip,
         take,
         orderBy: { createdAt: 'desc' },
+        include: {
+          sessionMessages: {
+            where: { role: 'user' },
+            orderBy: { ordering: 'asc' },
+            take: 1,
+            select: { content: true },
+          },
+        },
       }),
       this.prisma.session.count({ where }),
     ]);
 
+    // Use stored topic, fall back to first user message if not set
+    const data: Session[] = sessions.map((session) => {
+      const firstUserMsg = session.sessionMessages[0];
+      const derivedTopic = firstUserMsg?.content?.slice(0, 100) ?? null;
+      const { sessionMessages: _, ...rest } = session;
+      return { ...rest, topic: rest.topic ?? derivedTopic };
+    });
+
     return buildPaginatedResponse(data, total, pagination);
+  }
+
+  async updateTopic(id: string, topic: string | null): Promise<Session> {
+    try {
+      return await this.prisma.session.update({
+        where: { id },
+        data: { topic },
+      });
+    } catch (error: unknown) {
+      handlePrismaError(error, 'Session');
+    }
   }
 
   async findActiveByUserId(userId: string): Promise<Session[]> {

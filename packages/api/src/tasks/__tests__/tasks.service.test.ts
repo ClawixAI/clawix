@@ -102,6 +102,7 @@ function makeTaskRepo(
 function makeCronGuard(allowed = true, reason?: string) {
   return {
     canCreate: vi.fn().mockResolvedValue({ allowed, reason }),
+    canUpdate: vi.fn().mockResolvedValue({ allowed, reason }),
   };
 }
 
@@ -117,6 +118,19 @@ function makeUserRepo(user = baseUser) {
   };
 }
 
+const defaultSettings = {
+  cronDefaultTokenBudget: 10000,
+  cronExecutionTimeoutMs: 300000,
+  cronTokenGracePercent: 10,
+  defaultTimezone: 'UTC',
+};
+
+function makeSystemSettingsService(timezone = 'UTC') {
+  return {
+    get: vi.fn().mockResolvedValue({ ...defaultSettings, defaultTimezone: timezone }),
+  };
+}
+
 function makeService(
   options: {
     taskRepoOverrides?: Parameters<typeof makeTaskRepo>[0];
@@ -124,21 +138,24 @@ function makeService(
     guardReason?: string;
     policy?: typeof basePolicy;
     user?: typeof baseUser;
+    timezone?: string;
   } = {},
 ) {
   const taskRepo = makeTaskRepo(options.taskRepoOverrides);
   const cronGuard = makeCronGuard(options.guardAllowed ?? true, options.guardReason);
   const policyRepo = makePolicyRepo(options.policy);
   const userRepo = makeUserRepo(options.user);
+  const systemSettingsService = makeSystemSettingsService(options.timezone ?? 'UTC');
 
   const service = new TasksService(
     taskRepo as never,
     cronGuard as never,
     policyRepo as never,
     userRepo as never,
+    systemSettingsService as never,
   );
 
-  return { service, taskRepo, cronGuard, policyRepo, userRepo };
+  return { service, taskRepo, cronGuard, policyRepo, userRepo, systemSettingsService };
 }
 
 // ------------------------------------------------------------------ //
@@ -192,11 +209,12 @@ describe('TasksService.create', () => {
         minCronIntervalSecs: basePolicy.minCronIntervalSecs,
         maxTokensPerCronRun: basePolicy.maxTokensPerCronRun,
       }),
+      'UTC',
     );
     expect(taskRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ createdByUserId: userId }),
     );
-    expect(computeNextRun).toHaveBeenCalledWith(createInput.schedule);
+    expect(computeNextRun).toHaveBeenCalledWith(createInput.schedule, 'UTC');
     expect(taskRepo.updateNextRunAt).toHaveBeenCalledWith(taskId, new Date('2026-04-01T00:00:00Z'));
     expect(result.id).toBe(taskId);
   });
@@ -271,6 +289,47 @@ describe('TasksService.update', () => {
 });
 
 // ------------------------------------------------------------------ //
+//  update — schedule re-validation                                   //
+// ------------------------------------------------------------------ //
+
+describe('TasksService.update — schedule re-validation', () => {
+  it('rejects bare at schedule without offset via canUpdate', async () => {
+    const { service } = makeService({
+      guardAllowed: false,
+      guardReason: 'Schedule time must include a timezone offset',
+    });
+    const updateInput: UpdateTaskInput = {
+      schedule: { type: 'at', time: '2099-01-01T09:00:00' },
+    };
+
+    await expect(service.update(taskId, userId, updateInput)).rejects.toThrow(
+      'Schedule time must include a timezone offset',
+    );
+  });
+
+  it('calls updateNextRunAt with computeNextRun result when schedule changes', async () => {
+    const { service, taskRepo } = makeService();
+    const schedule = { type: 'every' as const, interval: '10m' };
+    const updateInput: UpdateTaskInput = { schedule };
+
+    await service.update(taskId, userId, updateInput);
+
+    expect(computeNextRun).toHaveBeenCalledWith(schedule, 'UTC');
+    expect(taskRepo.updateNextRunAt).toHaveBeenCalledWith(taskId, new Date('2026-04-01T00:00:00Z'));
+  });
+
+  it('does not fetch settings, call guard, or call updateNextRunAt when schedule is absent', async () => {
+    const { service, taskRepo, systemSettingsService } = makeService();
+    const updateInput: UpdateTaskInput = { name: 'Rename only' };
+
+    await service.update(taskId, userId, updateInput);
+
+    expect(systemSettingsService.get).not.toHaveBeenCalled();
+    expect(taskRepo.updateNextRunAt).not.toHaveBeenCalled();
+  });
+});
+
+// ------------------------------------------------------------------ //
 //  remove                                                             //
 // ------------------------------------------------------------------ //
 
@@ -289,6 +348,36 @@ describe('TasksService.remove', () => {
 
     await expect(service.remove(taskId, 'other-user-id')).rejects.toThrow(
       'Not authorized to remove this task',
+    );
+  });
+});
+
+// ------------------------------------------------------------------ //
+//  defaultTimezone threading                                          //
+// ------------------------------------------------------------------ //
+
+describe('TasksService — defaultTimezone threading', () => {
+  it('fetches defaultTimezone and passes it to cronGuard.canCreate and computeNextRun', async () => {
+    const { service, cronGuard, systemSettingsService } = makeService({
+      timezone: 'America/New_York',
+    });
+
+    await service.create(userId, {
+      agentDefinitionId: 'agent_1',
+      name: 'job',
+      schedule: { type: 'cron', expression: '0 9 * * *' },
+      prompt: 'hi',
+      enabled: true,
+    });
+
+    expect(systemSettingsService.get).toHaveBeenCalled();
+
+    const canCreateCall = cronGuard.canCreate.mock.calls[0] as unknown[];
+    expect(canCreateCall[canCreateCall.length - 1]).toBe('America/New_York');
+
+    expect(computeNextRun).toHaveBeenCalledWith(
+      { type: 'cron', expression: '0 9 * * *' },
+      'America/New_York',
     );
   });
 });
