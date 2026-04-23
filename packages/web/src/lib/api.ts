@@ -14,13 +14,13 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit & { accessToken?: string } = {},
 ): Promise<T> {
-  const { accessToken, headers, ...rest } = options;
-
+  const { accessToken, headers, body, ...rest } = options;
   const res = await fetch(`${API_BASE}${path}`, {
     ...rest,
+    body,
     cache: 'no-store',
     headers: {
-      'Content-Type': 'application/json',
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...(headers as Record<string, string>),
     },
@@ -33,6 +33,10 @@ export async function apiFetch<T>(
     throw new ApiError(res.status, body.message ?? res.statusText);
   }
 
-  if (res.status === 204) return undefined as T;
+  const contentLength = res.headers.get('content-length');
+  const contentType = res.headers.get('content-type') ?? '';
+  if (res.status === 204 || contentLength === '0' || !contentType.includes('application/json')) {
+    return undefined as T;
+  }
   return res.json() as Promise<T>;
 }
