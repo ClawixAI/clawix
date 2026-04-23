@@ -9,6 +9,11 @@ import type {
 } from '@clawix/shared';
 
 import { formatMarkdownV2 } from './telegram.formatter.js';
+import {
+  SAFE_SPLIT_LENGTH,
+  TELEGRAM_MAX_MESSAGE_LENGTH,
+  splitMessage,
+} from '../utils/message-chunker.js';
 
 const logger = createLogger('channels:telegram');
 
@@ -106,14 +111,30 @@ export function createTelegramAdapter(config: ChannelAdapterConfig): ChannelAdap
 
     async sendMessage(message: OutboundMessage): Promise<void> {
       const chatId = message.recipientId;
-      const formatted = formatMarkdownV2(message.text);
+      const chunks = splitMessage(message.text, SAFE_SPLIT_LENGTH);
 
-      try {
-        await bot.api.sendMessage(chatId, formatted, { parse_mode: 'MarkdownV2' });
-      } catch {
-        // Fallback: send as plain text if MarkdownV2 fails
-        logger.warn({ chatId }, 'MarkdownV2 send failed, retrying as plain text');
-        await bot.api.sendMessage(chatId, message.text);
+      if (chunks.length === 0) {
+        return;
+      }
+
+      for (const chunk of chunks) {
+        const formatted = formatMarkdownV2(chunk);
+
+        if (formatted.length > TELEGRAM_MAX_MESSAGE_LENGTH) {
+          logger.warn(
+            { chatId, rawLen: chunk.length, formattedLen: formatted.length },
+            'MarkdownV2 expansion exceeded Telegram limit, sending chunk as plain text',
+          );
+          await bot.api.sendMessage(chatId, chunk);
+          continue;
+        }
+
+        try {
+          await bot.api.sendMessage(chatId, formatted, { parse_mode: 'MarkdownV2' });
+        } catch {
+          logger.warn({ chatId }, 'MarkdownV2 send failed, retrying as plain text');
+          await bot.api.sendMessage(chatId, chunk);
+        }
       }
     },
 
