@@ -96,6 +96,17 @@ async function main(): Promise<void> {
   });
   console.log(`[bootstrap]   System: ${system.name}`);
 
+  // --- Providers resolved early so policies can reference them ---
+  const providerSeeds = buildProviderSeeds();
+  const availableProviders = providerSeeds
+    .filter((s) => !!process.env[s.envKey])
+    .map((s) => s.provider);
+  const standardKnownProviders = ['openai', 'anthropic'];
+  const extendedProviders = [
+    ...standardKnownProviders,
+    ...availableProviders.filter((p) => !standardKnownProviders.includes(p)),
+  ];
+
   // --- Policies ---
   await prisma.policy.upsert({
     where: { name: 'Standard' },
@@ -108,7 +119,7 @@ async function main(): Promise<void> {
       maxSkills: 5,
       maxMemoryItems: 100,
       maxGroupsOwned: 2,
-      allowedProviders: ['openai'],
+      allowedProviders: [defaultProvider],
       cronEnabled: true,
       features: {},
     },
@@ -124,7 +135,7 @@ async function main(): Promise<void> {
       maxSkills: 50,
       maxMemoryItems: 5000,
       maxGroupsOwned: 10,
-      allowedProviders: ['openai', 'anthropic'],
+      allowedProviders: extendedProviders,
       cronEnabled: true,
       features: { swarmOrchestration: true },
     },
@@ -140,7 +151,7 @@ async function main(): Promise<void> {
       maxSkills: 500,
       maxMemoryItems: 50000,
       maxGroupsOwned: 50,
-      allowedProviders: ['openai', 'anthropic', 'azure', 'deepseek', 'gemini', 'zai-coding'],
+      allowedProviders: providerSeeds.map((s) => s.provider),
       cronEnabled: true,
       features: { swarmOrchestration: true, heartbeat: true, customProviders: true },
     },
@@ -150,7 +161,6 @@ async function main(): Promise<void> {
   // --- Providers (encrypted api keys; at least one required) ---
   // Validate before creating the admin so a misconfigured deployment fails
   // before writing user rows.
-  const providerSeeds = buildProviderSeeds();
   const insertedProviders = new Set<string>();
 
   for (const seed of providerSeeds) {

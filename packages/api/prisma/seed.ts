@@ -63,6 +63,46 @@ async function main(): Promise<void> {
   });
   console.log(`  System: ${system.name}`);
 
+  // --- Pre-resolve provider seeds (needed to build dynamic allowedProviders) ---
+  interface ProviderSeed {
+    readonly provider: string;
+    readonly displayName: string;
+    readonly envKey: string;
+    readonly baseUrl?: string;
+  }
+  const providerSeeds: ProviderSeed[] = [
+    { provider: 'anthropic', displayName: 'Anthropic', envKey: 'ANTHROPIC_API_KEY' },
+    { provider: 'openai', displayName: 'OpenAI', envKey: 'OPENAI_API_KEY' },
+    {
+      provider: 'zai-coding',
+      displayName: 'Z.AI Coding Plan',
+      envKey: 'ZAI_CODING_API_KEY',
+      baseUrl: 'https://api.z.ai/api/coding/paas/v4',
+    },
+  ];
+  const customName = process.env['CUSTOM_PROVIDER_NAME'];
+  const customBase = process.env['CUSTOM_PROVIDER_BASE_URL'];
+  if (customName && customBase) {
+    providerSeeds.push({
+      provider: customName,
+      displayName: process.env['CUSTOM_PROVIDER_DISPLAY_NAME'] ?? customName,
+      envKey: 'CUSTOM_PROVIDER_API_KEY',
+      baseUrl: customBase,
+    });
+  }
+
+  // Providers that have API keys configured and will actually be seeded
+  const availableProviders = providerSeeds
+    .filter((s) => !!process.env[s.envKey])
+    .map((s) => s.provider);
+
+  // Standard providers used as baseline for Extended policy
+  const standardKnownProviders = ['openai', 'anthropic'];
+  const extendedProviders = [
+    ...standardKnownProviders,
+    ...availableProviders.filter((p) => !standardKnownProviders.includes(p)),
+  ];
+
   // --- Policies ---
   const standardPolicy = await prisma.policy.upsert({
     where: { name: 'Standard' },
@@ -75,7 +115,7 @@ async function main(): Promise<void> {
       maxSkills: 5,
       maxMemoryItems: 100,
       maxGroupsOwned: 2,
-      allowedProviders: ['openai'],
+      allowedProviders: [defaultProvider],
       cronEnabled: true,
       features: {},
     },
@@ -93,7 +133,7 @@ async function main(): Promise<void> {
       maxSkills: 50,
       maxMemoryItems: 5000,
       maxGroupsOwned: 10,
-      allowedProviders: ['openai', 'anthropic'],
+      allowedProviders: extendedProviders,
       cronEnabled: true,
       features: { swarmOrchestration: true },
     },
@@ -111,7 +151,7 @@ async function main(): Promise<void> {
       maxSkills: 500,
       maxMemoryItems: 50000,
       maxGroupsOwned: 50,
-      allowedProviders: ['openai', 'anthropic', 'azure', 'deepseek', 'gemini', 'zai-coding'],
+      allowedProviders: providerSeeds.map((s) => s.provider),
       cronEnabled: true,
       features: { swarmOrchestration: true, heartbeat: true, customProviders: true },
     },
@@ -282,33 +322,7 @@ async function main(): Promise<void> {
   console.log(`  Skills: custom skill directories created under ${customSkillsBase}`);
 
   // --- Provider Configs (org-level, conditional on env vars) ---
-  interface ProviderSeed {
-    readonly provider: string;
-    readonly displayName: string;
-    readonly envKey: string;
-    readonly baseUrl?: string;
-  }
-  const providerSeeds: ProviderSeed[] = [
-    { provider: 'anthropic', displayName: 'Anthropic', envKey: 'ANTHROPIC_API_KEY' },
-    { provider: 'openai', displayName: 'OpenAI', envKey: 'OPENAI_API_KEY' },
-    {
-      provider: 'zai-coding',
-      displayName: 'Z.AI Coding Plan',
-      envKey: 'ZAI_CODING_API_KEY',
-      baseUrl: 'https://api.z.ai/api/coding/paas/v4',
-    },
-  ];
-  const customName = process.env['CUSTOM_PROVIDER_NAME'];
-  const customBase = process.env['CUSTOM_PROVIDER_BASE_URL'];
-  if (customName && customBase) {
-    providerSeeds.push({
-      provider: customName,
-      displayName: process.env['CUSTOM_PROVIDER_DISPLAY_NAME'] ?? customName,
-      envKey: 'CUSTOM_PROVIDER_API_KEY',
-      baseUrl: customBase,
-    });
-  }
-
+  // providerSeeds, customName, customBase defined above alongside policy creation
   const insertedProviders = new Set<string>();
   for (const seed of providerSeeds) {
     const apiKey = process.env[seed.envKey];
