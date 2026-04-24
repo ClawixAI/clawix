@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { hash } from 'bcryptjs';
 
 import type { PaginatedResponse, PaginationInput } from '@clawix/shared';
+import { ConflictError } from '@clawix/shared';
 import { type Channel, type Policy, Prisma, type User } from '../generated/prisma/client.js';
 import type {
   ChannelType as PrismaChannelType,
@@ -121,6 +122,14 @@ export class AdminService {
     readonly name: string;
     readonly config?: Record<string, unknown>;
   }): Promise<Channel> {
+    // Check if a channel of this type already exists
+    const existingChannels = await this.channelRepo.findByType(input.type as PrismaChannelType);
+    if (existingChannels.length > 0) {
+      throw new ConflictError(
+        `A ${input.type} channel already exists. Only one channel per type is allowed.`,
+      );
+    }
+
     const encryptedConfig = encryptChannelConfig(input.type, input.config ?? {});
     const channel = await this.channelRepo.create({
       type: input.type as PrismaChannelType,

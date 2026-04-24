@@ -109,7 +109,8 @@ export function splitMessage(content: string, maxLen: number): string[] {
       // the re-injected reopenHeader would recreate an identical `remaining` on the
       // next iteration. Force end past the header so we always consume body bytes.
       const headerNewline = remaining.indexOf('\n', unclosedIdx + 3);
-      const headerEnd = headerNewline === -1 ? unclosedIdx + 3 + language.length : headerNewline + 1;
+      const headerEnd =
+        headerNewline === -1 ? unclosedIdx + 3 + language.length : headerNewline + 1;
       const reopenLen = language ? language.length + 4 : 4; // ```lang\n  or  ```\n
       let splitEnd = end;
       if (splitEnd <= headerEnd || splitEnd <= reopenLen) {

@@ -62,6 +62,11 @@ interface PaginatedPolicies {
   meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
+interface ApiProvider {
+  provider: string;
+  displayName: string;
+}
+
 // ------------------------------------------------------------------ //
 //  Helpers                                                            //
 // ------------------------------------------------------------------ //
@@ -77,6 +82,7 @@ function formatBudget(cents: number | null): string {
 
 export function PoliciesTab() {
   const [policies, setPolicies] = useState<ApiPolicy[]>([]);
+  const [providerNames, setProviderNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -86,12 +92,20 @@ export function PoliciesTab() {
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
-  const fetchPolicies = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch<PaginatedPolicies>('/admin/policies?limit=100');
-      setPolicies(Array.isArray(res.data) ? res.data : []);
+      const [policiesRes, providersRes] = await Promise.all([
+        authFetch<PaginatedPolicies>('/admin/policies?limit=100'),
+        authFetch<ApiProvider[]>('/admin/providers'),
+      ]);
+      setPolicies(Array.isArray(policiesRes.data) ? policiesRes.data : []);
+      const nameMap: Record<string, string> = {};
+      for (const p of providersRes ?? []) {
+        nameMap[p.provider] = p.displayName;
+      }
+      setProviderNames(nameMap);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load policies');
     } finally {
@@ -100,8 +114,8 @@ export function PoliciesTab() {
   }, []);
 
   useEffect(() => {
-    void fetchPolicies();
-  }, [fetchPolicies]);
+    void fetchData();
+  }, [fetchData]);
 
   async function handleCreate(data: Record<string, unknown>) {
     setSaving(true);
@@ -112,7 +126,7 @@ export function PoliciesTab() {
         body: JSON.stringify(data),
       });
       setCreateOpen(false);
-      await fetchPolicies();
+      await fetchData();
       setSuccessMessage(`${(data as { name?: string }).name ?? 'Policy'} has been created.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create policy');
@@ -129,7 +143,7 @@ export function PoliciesTab() {
         method: 'PATCH',
         body: JSON.stringify({ isActive: !policy.isActive }),
       });
-      await fetchPolicies();
+      await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update policy');
     } finally {
@@ -146,7 +160,7 @@ export function PoliciesTab() {
         body: JSON.stringify(data),
       });
       setEditPolicy(null);
-      await fetchPolicies();
+      await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update policy');
     } finally {
@@ -160,7 +174,7 @@ export function PoliciesTab() {
     try {
       await authFetch(`/admin/policies/${id}`, { method: 'DELETE' });
       setDeletePolicy(null);
-      await fetchPolicies();
+      await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete policy');
     } finally {
@@ -229,15 +243,20 @@ export function PoliciesTab() {
                   <TableCell className="text-sm">{p.maxAgents}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {p.allowedProviders.length > 0 ? (
-                        p.allowedProviders.map((prov) => (
-                          <Badge key={prov} variant="outline" className="text-xs">
-                            {prov}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-xs text-muted-foreground">None</span>
-                      )}
+                      {(() => {
+                        const configured = p.allowedProviders.filter(
+                          (prov) => prov in providerNames,
+                        );
+                        return configured.length > 0 ? (
+                          configured.map((prov) => (
+                            <Badge key={prov} variant="outline" className="text-xs">
+                              {providerNames[prov]}
+                            </Badge>
+                          ))
+                        ) : (
+                          <span className="text-xs text-muted-foreground">None</span>
+                        );
+                      })()}
                     </div>
                   </TableCell>
                   <TableCell>

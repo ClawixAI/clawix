@@ -124,8 +124,12 @@ describe('splitMessage', () => {
 
   it('every chunk has balanced code fences', () => {
     const content =
-      '```ts\n' + 'const a = 1;\n'.repeat(50) + '```\n\nprose\n\n' +
-      '```python\n' + 'x = 1\n'.repeat(50) + '```';
+      '```ts\n' +
+      'const a = 1;\n'.repeat(50) +
+      '```\n\nprose\n\n' +
+      '```python\n' +
+      'x = 1\n'.repeat(50) +
+      '```';
 
     const chunks = splitMessage(content, 200);
 
@@ -135,18 +139,22 @@ describe('splitMessage', () => {
     }
   });
 
-  it('makes progress when fence opens at start with no other newlines in window', { timeout: 3000 }, () => {
-    const content = '```ts\n' + 'a'.repeat(500);
-    const chunks = splitMessage(content, 200); // must not hang
+  it(
+    'makes progress when fence opens at start with no other newlines in window',
+    { timeout: 3000 },
+    () => {
+      const content = '```ts\n' + 'a'.repeat(500);
+      const chunks = splitMessage(content, 200); // must not hang
 
-    expect(chunks.length).toBeGreaterThan(1);
-    for (const c of chunks) {
-      expect(c.length).toBeLessThanOrEqual(200);
-    }
-    // All body content is preserved (ignoring injected fences and reopen headers).
-    const reconstructed = chunks.join('').replace(/```ts\n|\n```/g, '');
-    expect(reconstructed).toContain('a'.repeat(500));
-  });
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const c of chunks) {
+        expect(c.length).toBeLessThanOrEqual(200);
+      }
+      // All body content is preserved (ignoring injected fences and reopen headers).
+      const reconstructed = chunks.join('').replace(/```ts\n|\n```/g, '');
+      expect(reconstructed).toContain('a'.repeat(500));
+    },
+  );
 
   it('returns empty language when fence header has no trailing newline', () => {
     // Unclosed fence with no newline after the open marker; should not produce

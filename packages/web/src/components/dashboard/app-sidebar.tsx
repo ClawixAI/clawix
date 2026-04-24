@@ -197,7 +197,7 @@ export function AppSidebar() {
                     <SidebarMenuSub>
                       {[
                         { title: 'Users', href: '/settings/users', icon: Users },
-                        { title: 'Plans', href: '/settings/plans', icon: CreditCard },
+                        { title: 'Policies', href: '/settings/policies', icon: CreditCard },
                         { title: 'Channels', href: '/settings/channels', icon: Radio },
                         { title: 'Providers', href: '/settings/providers', icon: Bot },
                       ].map((item) => (

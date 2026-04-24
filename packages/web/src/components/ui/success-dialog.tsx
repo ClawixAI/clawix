@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import anime from 'animejs';
 import { EASING } from '@/lib/anime';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 function AnimatedCheckmark() {
   const pathRef = useRef<SVGPathElement>(null);
@@ -95,7 +95,7 @@ export function SuccessDialog({
             <AnimatedCheckmark />
           </div>
           <div className="text-center">
-            <h3 className="text-lg font-semibold">{title}</h3>
+            <DialogTitle className="text-lg font-semibold">{title}</DialogTitle>
             {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
           </div>
           <div className="flex gap-2">

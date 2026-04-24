@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,13 +13,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { authFetch } from '@/lib/auth';
 import type { ApiPolicy } from './policies-tab';
+
+// ------------------------------------------------------------------ //
+//  Types                                                              //
+// ------------------------------------------------------------------ //
+
+interface ProviderOption {
+  provider: string;
+  displayName: string;
+}
 
 // ------------------------------------------------------------------ //
 //  Helpers                                                            //
 // ------------------------------------------------------------------ //
-
-const KNOWN_PROVIDERS = ['openai', 'anthropic', 'zai-coding'] as const;
 
 function parseIntOrNull(value: string): number | null {
   if (value === '' || value === 'null') return null;
@@ -26,7 +35,10 @@ function parseIntOrNull(value: string): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-function buildPolicyData(form: FormData): Record<string, unknown> {
+function buildPolicyData(
+  form: FormData,
+  availableProviders: ProviderOption[],
+): Record<string, unknown> {
   const data: Record<string, unknown> = {
     name: form.get('name'),
     description: (form.get('description') as string) || null,
@@ -38,8 +50,8 @@ function buildPolicyData(form: FormData): Record<string, unknown> {
   };
 
   const providers: string[] = [];
-  for (const p of KNOWN_PROVIDERS) {
-    if (form.get(`provider_${p}`) === 'on') providers.push(p);
+  for (const p of availableProviders) {
+    if (form.get(`provider_${p.provider}`) === 'on') providers.push(p.provider);
   }
   data['allowedProviders'] = providers;
 
@@ -50,6 +62,33 @@ function buildPolicyData(form: FormData): Record<string, unknown> {
   data['maxTokensPerCronRun'] = parseIntOrNull(form.get('maxTokensPerCronRun') as string);
 
   return data;
+}
+
+function useProviders() {
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchProviders = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res =
+        await authFetch<{ provider: string; displayName: string; isEnabled: boolean }[]>(
+          '/admin/providers',
+        );
+      const enabled = (res ?? []).filter((p) => p.isEnabled);
+      setProviders(enabled.map((p) => ({ provider: p.provider, displayName: p.displayName })));
+    } catch {
+      setProviders([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchProviders();
+  }, [fetchProviders]);
+
+  return { providers, loading };
 }
 
 // ------------------------------------------------------------------ //
@@ -67,6 +106,8 @@ export function CreatePolicyDialog({
   saving: boolean;
   onSubmit: (data: Record<string, unknown>) => void;
 }) {
+  const { providers, loading: providersLoading } = useProviders();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
@@ -79,11 +120,11 @@ export function CreatePolicyDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(buildPolicyData(new FormData(e.currentTarget)));
+            onSubmit(buildPolicyData(new FormData(e.currentTarget), providers));
           }}
           className="flex flex-col gap-4"
         >
-          <PolicyFormFields />
+          <PolicyFormFields providers={providers} providersLoading={providersLoading} />
           <DialogFooter>
             <Button
               type="button"
@@ -94,7 +135,7 @@ export function CreatePolicyDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || providersLoading}>
               {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
               Create
             </Button>
@@ -120,6 +161,8 @@ export function EditPolicyDialog({
   saving: boolean;
   onSubmit: (id: string, data: Record<string, unknown>) => void;
 }) {
+  const { providers, loading: providersLoading } = useProviders();
+
   if (!policy) return null;
 
   return (
@@ -132,11 +175,15 @@ export function EditPolicyDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(policy.id, buildPolicyData(new FormData(e.currentTarget)));
+            onSubmit(policy.id, buildPolicyData(new FormData(e.currentTarget), providers));
           }}
           className="flex flex-col gap-4"
         >
-          <PolicyFormFields policy={policy} />
+          <PolicyFormFields
+            policy={policy}
+            providers={providers}
+            providersLoading={providersLoading}
+          />
           <DialogFooter>
             <Button
               type="button"
@@ -147,7 +194,7 @@ export function EditPolicyDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || providersLoading}>
               {saving && <Loader2 className="mr-2 size-4 animate-spin" />}
               Save
             </Button>
@@ -162,7 +209,15 @@ export function EditPolicyDialog({
 //  Shared Form Fields                                                 //
 // ------------------------------------------------------------------ //
 
-function PolicyFormFields({ policy }: { policy?: ApiPolicy }) {
+function PolicyFormFields({
+  policy,
+  providers,
+  providersLoading,
+}: {
+  policy?: ApiPolicy;
+  providers: ProviderOption[];
+  providersLoading: boolean;
+}) {
   return (
     <>
       <div className="flex flex-col gap-2">
@@ -250,19 +305,30 @@ function PolicyFormFields({ policy }: { policy?: ApiPolicy }) {
 
       <div className="flex flex-col gap-2">
         <Label>Allowed Providers</Label>
-        <div className="flex flex-wrap gap-4">
-          {KNOWN_PROVIDERS.map((prov) => (
-            <label key={prov} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name={`provider_${prov}`}
-                className="size-4 rounded border"
-                defaultChecked={policy?.allowedProviders.includes(prov) ?? false}
-              />
-              {prov}
-            </label>
-          ))}
-        </div>
+        {providersLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Loading providers...
+          </div>
+        ) : providers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No providers configured. Add providers in Settings &rarr; Providers first.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-4">
+            {providers.map((prov) => (
+              <label key={prov.provider} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  name={`provider_${prov.provider}`}
+                  className="size-4 rounded border"
+                  defaultChecked={policy?.allowedProviders.includes(prov.provider) ?? false}
+                />
+                {prov.displayName}
+              </label>
+            ))}
+          </div>
+        )}
         <p className="text-xs text-muted-foreground">
           Select which AI providers users on this policy can access.
         </p>
