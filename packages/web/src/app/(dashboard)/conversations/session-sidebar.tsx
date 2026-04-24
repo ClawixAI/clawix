@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Archive, Loader2, MessageSquarePlus, Pencil, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Archive, Loader2, MessageSquarePlus, Pencil, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { authFetch } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -31,7 +31,7 @@ interface SessionSidebarProps {
   selectedId: string | null;
   loading: boolean;
   onSelect: (id: string) => void;
-  onNewChat: () => void;
+  onNewChat: (archiveCurrent?: boolean) => void;
   onSessionUpdated?: () => void;
 }
 
@@ -70,9 +70,33 @@ export function SessionSidebar({
   const [renameSession, setRenameSession] = useState<ChatSession | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [saving, setSaving] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [confirmNewChat, setConfirmNewChat] = useState(false);
+
+  const handleNewChatClick = () => {
+    // If there's an active session selected, ask for confirmation
+    const currentSession = sessions.find((s) => s.id === selectedId);
+    if (currentSession?.isActive) {
+      setConfirmNewChat(true);
+    } else {
+      onNewChat(false);
+    }
+  };
+
+  // Filter sessions by search query (case-insensitive match on topic or date)
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return sessions;
+    const query = searchQuery.toLowerCase();
+    return sessions.filter((session) => {
+      const topic = session.topic?.toLowerCase() ?? '';
+      const date = formatShortDate(session.createdAt).toLowerCase();
+      return topic.includes(query) || date.includes(query);
+    });
+  }, [sessions, searchQuery]);
 
   // Sort sessions by createdAt descending (newest first)
-  const sorted = [...sessions].sort(
+  const sorted = [...filtered].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 
@@ -112,16 +136,37 @@ export function SessionSidebar({
   };
 
   return (
-    <div className="flex w-[260px] shrink-0 flex-col border-r">
+    <div className="flex min-w-[260px] shrink-0 flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2">
-        <Button variant="ghost" size="icon" className="size-8">
-          <Search className="size-4" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          onClick={() => {
+            setSearchOpen(!searchOpen);
+            if (searchOpen) setSearchQuery('');
+          }}
+        >
+          {searchOpen ? <X className="size-4" /> : <Search className="size-4" />}
         </Button>
-        <Button variant="ghost" size="icon" className="size-8" onClick={onNewChat}>
+        <Button variant="ghost" size="icon" className="size-8" onClick={handleNewChatClick}>
           <MessageSquarePlus className="size-4" />
         </Button>
       </div>
+
+      {/* Search input */}
+      {searchOpen && (
+        <div className="px-3 pb-2">
+          <Input
+            placeholder="Search conversations..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-8 text-sm"
+            autoFocus
+          />
+        </div>
+      )}
 
       {/* Session list */}
       <div className="flex-1 overflow-auto">
@@ -131,7 +176,7 @@ export function SessionSidebar({
           </div>
         ) : sorted.length === 0 ? (
           <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-            No conversations yet
+            {searchQuery ? 'No matching conversations' : 'No conversations yet'}
           </p>
         ) : (
           orderedGroups.map((group) => (
@@ -198,6 +243,32 @@ export function SessionSidebar({
             <Button onClick={() => void handleRenameSubmit()} disabled={saving}>
               {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Chat Confirmation Dialog */}
+      <Dialog open={confirmNewChat} onOpenChange={setConfirmNewChat}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Start New Conversation</DialogTitle>
+            <DialogDescription>
+              Starting a new conversation will archive your current one. You can still view it later
+              in the sidebar.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setConfirmNewChat(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmNewChat(false);
+                onNewChat(true);
+              }}
+            >
+              Archive & Start New
             </Button>
           </DialogFooter>
         </DialogContent>

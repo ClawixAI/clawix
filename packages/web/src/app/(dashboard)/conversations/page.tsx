@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PanelLeftClose, PanelLeftOpen, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { authFetch } from '@/lib/auth';
@@ -9,8 +9,28 @@ import { ChatThread } from './chat-thread';
 import { ChatInput, EmptyState } from './chat-input';
 import { SessionSidebar } from './session-sidebar';
 
+const SIDEBAR_STORAGE_KEY = 'conversations-sidebar-open';
+
 export default function ConversationsPage() {
+  // Initialize to false for SSR, then sync from localStorage after hydration
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Sync sidebar state from localStorage after mount (avoids hydration mismatch)
+  useEffect(() => {
+    const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    if (stored === 'true') {
+      setSidebarOpen(true);
+    }
+  }, []);
+
+  // Persist sidebar state to localStorage
+  const handleSidebarToggle = useCallback(() => {
+    setSidebarOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
+      return next;
+    });
+  }, []);
   const {
     sessions,
     currentSessionId,
@@ -39,6 +59,17 @@ export default function ConversationsPage() {
     }
   }, [loadingSessions, sessions, currentSessionId, selectSession]);
 
+  // Refresh sessions when page becomes visible (handles Safari bfcache and tab switching)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshSessions();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [refreshSessions]);
+
   const hasConversation = currentSessionId !== null || messages.length > 0;
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const isArchived = currentSession?.isActive === false;
@@ -60,18 +91,22 @@ export default function ConversationsPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)]">
-      {/* Session sidebar (hidden by default) */}
-      {sidebarOpen && (
+    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
+      {/* Session sidebar with slide animation */}
+      <div
+        className={`shrink-0 overflow-hidden transition-all duration-300 ease-out ${
+          sidebarOpen ? 'w-[260px] border-r opacity-100' : 'pointer-events-none w-0 opacity-0'
+        }`}
+      >
         <SessionSidebar
           sessions={sessions}
           selectedId={currentSessionId}
           loading={loadingSessions}
           onSelect={(id) => void selectSession(id)}
-          onNewChat={startNewChat}
+          onNewChat={(archiveCurrent) => void startNewChat(archiveCurrent)}
           onSessionUpdated={() => void refreshSessions()}
         />
-      )}
+      </div>
 
       {/* Main chat area */}
       <div className="flex flex-1 flex-col">
@@ -81,7 +116,7 @@ export default function ConversationsPage() {
             variant="ghost"
             size="icon"
             className="size-8"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
+            onClick={handleSidebarToggle}
             title={sidebarOpen ? 'Hide sessions' : 'Show sessions'}
           >
             {sidebarOpen ? (
