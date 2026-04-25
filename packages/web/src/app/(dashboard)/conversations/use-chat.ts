@@ -108,6 +108,7 @@ export function useChat() {
   const reconnectAttemptsRef = useRef(0);
   const currentSessionIdRef = useRef<string | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const isMountedRef = useRef(false);
 
   const fetchSessionsRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
@@ -150,6 +151,11 @@ export function useChat() {
       return;
     }
 
+    // Bail if component unmounted during async token fetch to prevent orphan connections.
+    if (!isMountedRef.current) {
+      return;
+    }
+
     // Derive WebSocket URL from environment or current location.
     // TODO: Token in query string is visible in logs — migrate to first-message auth when backend supports it.
     // Close any existing connection before creating a new one.
@@ -164,6 +170,12 @@ export function useChat() {
       process.env['NEXT_PUBLIC_WS_URL'] ?? `${protocol}//${window.location.hostname}:3001`;
     const wsUrl = `${wsBase}/ws/chat?token=${token}`;
     const ws = new WebSocket(wsUrl);
+
+    // Close immediately if component unmounted during WebSocket constructor
+    if (!isMountedRef.current) {
+      ws.close();
+      return;
+    }
 
     ws.onopen = () => {
       const wasReconnect = reconnectAttemptsRef.current > 0;
@@ -426,10 +438,10 @@ export function useChat() {
   }, []);
 
   /* ---- start new chat ---- */
-  const startNewChat = useCallback(async () => {
-    // Archive current session if one is active
+  const startNewChat = useCallback(async (archiveCurrent = true) => {
+    // Optionally archive current session
     const sid = currentSessionIdRef.current;
-    if (sid) {
+    if (sid && archiveCurrent) {
       try {
         await authFetch(`/api/v1/chat/sessions/${sid}/deactivate`, { method: 'POST' });
       } catch {
@@ -462,9 +474,11 @@ export function useChat() {
 
   /* ---- lifecycle: connect WebSocket once ---- */
   useEffect(() => {
+    isMountedRef.current = true;
     void connectWebSocket();
 
     return () => {
+      isMountedRef.current = false;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
