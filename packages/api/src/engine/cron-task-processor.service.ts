@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createLogger, type SystemSettingsInput } from '@clawix/shared';
+import { createLogger, NotFoundError, type SystemSettingsInput } from '@clawix/shared';
 
 import { TaskRepository } from '../db/task.repository.js';
 import { TaskRunRepository } from '../db/task-run.repository.js';
@@ -12,10 +12,14 @@ import { PolicyRepository } from '../db/policy.repository.js';
 import { UserRepository } from '../db/user.repository.js';
 import { RedisPubSubService } from '../cache/redis-pubsub.service.js';
 import { PUBSUB_CHANNELS } from '../cache/cache.constants.js';
+import { translateCronError } from './cron-error-messages.js';
 
 const logger = createLogger('engine:cron-task-processor');
 
-const MAX_CONSECUTIVE_FAILURES = parseInt(process.env['MAX_CONSECUTIVE_FAILURES'] ?? '3', 10);
+export const MAX_CONSECUTIVE_FAILURES = parseInt(
+  process.env['MAX_CONSECUTIVE_FAILURES'] ?? '3',
+  10,
+);
 
 export interface ProcessableTask {
   readonly id: string;
@@ -43,6 +47,32 @@ export class CronTaskProcessorService {
   ) {}
 
   async execute(task: ProcessableTask): Promise<void> {
+    try {
+      await this.executeInternal(task);
+    } catch (err) {
+      // The Task or its TaskRun row was deleted while this run was in flight
+      // (Task.delete cascades to TaskRun). Every post-run write then maps the
+      // resulting Prisma P2025 to NotFoundError. Treat that as benign and
+      // exit cleanly — there's nothing to update anymore.
+      if (err instanceof NotFoundError) {
+        logger.warn(
+          { taskId: task.id, err: err.message },
+          'cron:task or run deleted during execution; skipped post-run updates',
+        );
+        return;
+      }
+      // The scheduler dispatches with fire-and-forget, so re-throwing here
+      // would surface as an unhandled rejection and crash the API process.
+      // Log and swallow — restart-on-crash is a strictly worse failure mode
+      // than logging an isolated cron write error.
+      logger.error(
+        { taskId: task.id, err },
+        'cron:execute failed unexpectedly; not propagating to caller',
+      );
+    }
+  }
+
+  private async executeInternal(task: ProcessableTask): Promise<void> {
     const startedAt = new Date();
     logger.info({ taskId: task.id, name: task.name }, 'cron:executing');
 
@@ -53,6 +83,10 @@ export class CronTaskProcessorService {
     });
 
     let settings: SystemSettingsInput | undefined;
+    // Hoisted so the failure branch can pass the actual applied timeout to
+    // translateCronError. Initialized to a safe default before settings load.
+    const maxTimeoutMs = parseInt(process.env['CRON_MAX_TIMEOUT_MS'] ?? '900000', 10);
+    let effectiveTimeoutMs = maxTimeoutMs;
 
     try {
       settings = await this.systemSettingsService.get();
@@ -60,21 +94,23 @@ export class CronTaskProcessorService {
 
       // Compute effective timeout
       const timeoutMs = task.timeoutMs ?? settings.cronExecutionTimeoutMs;
+      effectiveTimeoutMs = Math.min(timeoutMs, maxTimeoutMs);
 
-      // Resolve token budget from plan + system settings
+      // Resolve token budget. Cascade: policy override → system default → null.
+      // null at any layer means "no enforcement" (the runner skips creating a
+      // BudgetTracker). Policy null falls through to system default.
       const user = await this.userRepo.findById(task.createdByUserId);
       const policy = await this.policyRepo.findById(user.policyId);
-      const tokenBudget = policy.maxTokensPerCronRun ?? settings.cronDefaultTokenBudget;
+      const tokenBudget: number | null =
+        policy.maxTokensPerCronRun ?? settings.cronDefaultTokenBudget;
       const tokenGracePercent = settings.cronTokenGracePercent;
-      const maxTimeoutMs = parseInt(process.env['CRON_MAX_TIMEOUT_MS'] ?? '900000', 10);
-      const effectiveTimeout = Math.min(timeoutMs, maxTimeoutMs);
 
       // Race agent run against timeout (clear timer on resolution to prevent leak)
       let timeoutHandle: ReturnType<typeof setTimeout>;
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutHandle = setTimeout(() => {
           reject(new Error('execution_timeout'));
-        }, effectiveTimeout);
+        }, effectiveTimeoutMs);
       });
 
       const messageStore = new TaskRunMessageStore(this.taskRunMessageRepo, taskRun.id);
@@ -139,6 +175,7 @@ export class CronTaskProcessorService {
       // Deliver result to channel if configured
       if (task.channelId && result.output) {
         await this.pubsub.publish(PUBSUB_CHANNELS.cronResultReady, {
+          status: 'success',
           channelId: task.channelId,
           userId: task.createdByUserId,
           taskId: task.id,
@@ -151,7 +188,7 @@ export class CronTaskProcessorService {
       const durationMs = completedAt.getTime() - startedAt.getTime();
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      // Update TaskRun as failed
+      // Update TaskRun as failed (raw error preserved verbatim)
       await this.taskRunRepo.update(taskRun.id, {
         status: 'failed',
         error: errorMessage,
@@ -163,8 +200,8 @@ export class CronTaskProcessorService {
       await this.taskRepo.incrementFailures(task.id);
       await this.taskRepo.updateLastRun(task.id, 'failed', completedAt);
 
-      // Auto-disable after max consecutive failures (+1 because increment just ran)
-      if (task.consecutiveFailures + 1 >= MAX_CONSECUTIVE_FAILURES) {
+      const autoDisabled = task.consecutiveFailures + 1 >= MAX_CONSECUTIVE_FAILURES;
+      if (autoDisabled) {
         await this.taskRepo.autoDisable(task.id, 'auto:max_failures');
         logger.warn(
           { taskId: task.id, failures: task.consecutiveFailures + 1 },
@@ -184,6 +221,24 @@ export class CronTaskProcessorService {
       }
 
       logger.error({ taskId: task.id, error: errorMessage, durationMs }, 'cron:failed');
+
+      // Notify the bound channel of the failure (silent for headless tasks)
+      if (task.channelId) {
+        const friendly = translateCronError(errorMessage, { timeoutMs: effectiveTimeoutMs });
+        let message = `⚠️ Task "${task.name}" failed: ${friendly}`;
+        if (autoDisabled) {
+          message += `\n🛑 Task disabled after ${MAX_CONSECUTIVE_FAILURES} consecutive failures. Re-enable it from the dashboard.`;
+        }
+        await this.pubsub.publish(PUBSUB_CHANNELS.cronResultReady, {
+          status: 'failed',
+          channelId: task.channelId,
+          userId: task.createdByUserId,
+          taskId: task.id,
+          taskName: task.name,
+          message,
+          autoDisabled,
+        });
+      }
     }
   }
 }

@@ -17,6 +17,10 @@ interface CreateAgentRunInput {
   readonly input: string;
   readonly status?: AgentStatus;
   readonly parentAgentRunId?: string;
+  /** Token budget cap inherited from the spawning parent's BudgetTracker. */
+  readonly tokenBudget?: number;
+  /** Grace percent in effect at spawn time. */
+  readonly tokenGracePercent?: number;
 }
 
 interface UpdateAgentRunInput {
@@ -129,6 +133,10 @@ export class AgentRunRepository {
           input: data.input,
           ...(data.status ? { status: data.status } : {}),
           ...(data.parentAgentRunId ? { parentAgentRunId: data.parentAgentRunId } : {}),
+          ...(data.tokenBudget !== undefined ? { tokenBudget: data.tokenBudget } : {}),
+          ...(data.tokenGracePercent !== undefined
+            ? { tokenGracePercent: data.tokenGracePercent }
+            : {}),
         },
       });
     } catch (error: unknown) {

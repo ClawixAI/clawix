@@ -68,4 +68,28 @@ describe('formatMarkdownV2', () => {
     expect(formatMarkdownV2('a+b')).toBe('a\\+b');
     expect(formatMarkdownV2('a=b')).toBe('a\\=b');
   });
+
+  it('escapes special characters inside bold spans', () => {
+    // Telegram MarkdownV2: special chars must be escaped EVERYWHERE except inside
+    // code constructs — that includes inside *bold* and _italic_ entities.
+    // Without escaping, e.g. `*hk-news-scraper*` causes "can't parse entities".
+    expect(formatMarkdownV2('**hk-news-scraper**')).toBe('*hk\\-news\\-scraper*');
+    expect(formatMarkdownV2('**v1.0**')).toBe('*v1\\.0*');
+    expect(formatMarkdownV2('**done!**')).toBe('*done\\!*');
+    expect(formatMarkdownV2('**(parens)**')).toBe('*\\(parens\\)*');
+  });
+
+  it('escapes special characters inside italic spans', () => {
+    expect(formatMarkdownV2('_hk-news_')).toBe('_hk\\-news_');
+    expect(formatMarkdownV2('_v1.0_')).toBe('_v1\\.0_');
+  });
+
+  it('formats the cron-job confirmation message correctly', () => {
+    // Real-world regression: the original bug report. The bold span
+    // **hk-news-scraper** must escape its dashes, otherwise Telegram rejects it.
+    const input = 'A one-time cron job **hk-news-scraper** has been scheduled for **14:17 UTC**.';
+    expect(formatMarkdownV2(input)).toBe(
+      'A one\\-time cron job *hk\\-news\\-scraper* has been scheduled for *14:17 UTC*\\.',
+    );
+  });
 });

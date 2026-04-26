@@ -122,7 +122,16 @@ export class TaskRepository {
 
   async findDue(now: Date, limit: number): Promise<readonly Task[]> {
     return this.prisma.task.findMany({
-      where: { enabled: true, nextRunAt: { lte: now } },
+      // A task is "due" only if it has no in-flight TaskRun.
+      // Why: nextRunAt is updated only after the run completes/fails (in
+      // cron-task-processor), so a long run leaves the task continuously due
+      // to the scheduler, causing the same task to be re-dispatched every
+      // poll interval (~30 s) and stacking up duplicate TaskRun rows.
+      where: {
+        enabled: true,
+        nextRunAt: { lte: now },
+        taskRuns: { none: { status: 'running' } },
+      },
       orderBy: { nextRunAt: 'asc' },
       take: limit,
     });

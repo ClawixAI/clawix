@@ -56,15 +56,19 @@ function processPlainSegment(text: string): string {
   // Escape remaining special chars in the plain text.
   const escaped = escapePlainText(withItalicRemoved);
 
-  // Restore italic spans (italic content itself is NOT escaped — underscores are
-  // meaningful to Telegram, and the content between _ markers is rendered as-is).
+  // Restore italic spans — Telegram MarkdownV2 requires special chars to be
+  // escaped EVERYWHERE except inside code constructs, so the content between _
+  // markers must also be escaped (e.g. `_v1.0_` → `_v1\.0_`). The bracketing
+  // underscores are inserted unescaped so they remain valid italic markers.
   const withItalicRestored = escaped.replace(/\x00ITALIC(\d+)\x00/g, (_m, idx: string) => {
-    return `_${italicParts[Number(idx)]}_`;
+    return `_${escapePlainText(italicParts[Number(idx)] ?? '')}_`;
   });
 
-  // Restore bold spans wrapped in Telegram single-asterisk bold.
+  // Restore bold spans — same rule applies inside *bold* (e.g. dashes in
+  // `**hk-news-scraper**` must become `*hk\-news\-scraper*` or Telegram rejects
+  // the message with "can't parse entities").
   const withBoldRestored = withItalicRestored.replace(/\x00BOLD(\d+)\x00/g, (_m, idx: string) => {
-    return `*${boldParts[Number(idx)]}*`;
+    return `*${escapePlainText(boldParts[Number(idx)] ?? '')}*`;
   });
 
   return withBoldRestored;

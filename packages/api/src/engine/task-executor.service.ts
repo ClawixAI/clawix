@@ -15,6 +15,7 @@ import { createLogger } from '@clawix/shared';
 
 import type { AgentRunnerService } from './agent-runner.service.js';
 import type { RunResult } from './agent-runner.types.js';
+import { BudgetTracker } from './budget-tracker.js';
 import { AgentRunRepository } from '../db/agent-run.repository.js';
 import { SessionRepository } from '../db/session.repository.js';
 import { RedisService } from '../cache/redis.service.js';
@@ -38,6 +39,12 @@ interface SubmitOptions {
   readonly input: string;
   readonly userId: string;
   readonly sessionId: string;
+  /**
+   * Shared budget tracker inherited from the spawning parent. In-memory only:
+   * recovery from a persisted pending AgentRun cannot reattach the tracker, so
+   * recovered tasks run unbounded (acceptable — they're orphans).
+   */
+  readonly budgetTracker?: BudgetTracker;
 }
 
 interface QueueItem {
@@ -180,11 +187,22 @@ export class TaskExecutorService implements OnModuleInit {
 
             const session = await this.sessionRepo.findById(run.sessionId);
 
+            // Reconstruct a fresh tracker from the persisted cap. The
+            // parent's cumulative `used` is lost on crash, so each recovered
+            // orphan effectively gets a full new allowance — bounded, but
+            // total spend across siblings of a crashed run can exceed the
+            // original cap. Acceptable for the rare recovery path.
+            const recoveredTracker =
+              run.tokenBudget != null
+                ? new BudgetTracker(run.tokenBudget, run.tokenGracePercent ?? 10)
+                : undefined;
+
             this.submit(run.id, {
               agentDefinitionId: run.agentDefinitionId,
               input: run.input,
               userId: session.userId,
               sessionId: run.sessionId,
+              ...(recoveredTracker ? { budgetTracker: recoveredTracker } : {}),
             });
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);

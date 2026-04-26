@@ -3,6 +3,7 @@ import type { ChatMessage, LLMProvider, LLMResponse, LLMUsage } from '@clawix/sh
 import { createLLMResponse } from '@clawix/shared';
 
 import { ReasoningLoop } from '../reasoning-loop.js';
+import { BudgetTracker } from '../budget-tracker.js';
 import { ToolRegistry } from '../tool-registry.js';
 import type { Tool, ToolResult } from '../tool.js';
 
@@ -222,7 +223,7 @@ describe('ReasoningLoop', () => {
   });
 
   describe('token budget', () => {
-    it('completes normally when no tokenBudget set', async () => {
+    it('completes normally when no tracker is set', async () => {
       const response = createLLMResponse({
         content: 'Hello!',
         finishReason: 'stop',
@@ -248,10 +249,14 @@ describe('ReasoningLoop', () => {
       const registry = new ToolRegistry();
       const loop = new ReasoningLoop(provider, registry);
 
-      const result = await loop.run([{ role: 'user', content: 'Hi' }], { tokenBudget: 100 });
+      const tracker = new BudgetTracker(100, 10);
+      const result = await loop.run([{ role: 'user', content: 'Hi' }], {
+        budgetTracker: tracker,
+      });
 
       expect(result.hitTokenBudget).toBe(false);
       expect(result.content).toBe('Hello!');
+      expect(tracker.used).toBe(80);
     });
 
     it('injects grace message when at budget and allows one more turn', async () => {
@@ -262,7 +267,8 @@ describe('ReasoningLoop', () => {
         toolCalls: [{ id: 'tc1', name: 'search', arguments: { query: 'test' } }],
         usage: makeUsage(50, 50), // 100 total = hits tokenBudget of 100
       });
-      // Second response: final answer
+      // Second response: final answer (the grace turn — must be a 'stop'
+      // because the loop forces tools=[] for it)
       const secondResponse = createLLMResponse({
         content: 'Summarized findings.',
         finishReason: 'stop',
@@ -275,7 +281,9 @@ describe('ReasoningLoop', () => {
       registry.register(searchTool);
 
       const loop = new ReasoningLoop(provider, registry);
-      const result = await loop.run([{ role: 'user', content: 'test' }], { tokenBudget: 100 });
+      const result = await loop.run([{ role: 'user', content: 'test' }], {
+        budgetTracker: new BudgetTracker(100, 10),
+      });
 
       expect(result.hitTokenBudget).toBe(false);
       expect(result.content).toBe('Summarized findings.');
@@ -283,6 +291,43 @@ describe('ReasoningLoop', () => {
       const systemMessages = result.messages.filter((m) => m.role === 'system');
       expect(systemMessages).toHaveLength(1);
       expect(systemMessages[0]!.content).toContain('token limit');
+    });
+
+    it('grace turn forces tools=[] and a maxTokens cap on the next call', async () => {
+      const firstResponse = createLLMResponse({
+        content: null,
+        finishReason: 'tool_use',
+        toolCalls: [{ id: 'tc1', name: 'search', arguments: { query: 'test' } }],
+        usage: makeUsage(50, 50), // hits budget of 100
+      });
+      const secondResponse = createLLMResponse({
+        content: 'Done.',
+        finishReason: 'stop',
+        usage: makeUsage(2, 2),
+      });
+      const provider = makeMockProvider([firstResponse, secondResponse]);
+
+      const searchTool = makeMockTool('search', 'result');
+      const registry = new ToolRegistry();
+      registry.register(searchTool);
+
+      const loop = new ReasoningLoop(provider, registry);
+      await loop.run([{ role: 'user', content: 'test' }], {
+        budgetTracker: new BudgetTracker(100, 10),
+      });
+
+      // Two calls: first with full tools, second is the grace turn —
+      // tools must be empty and maxTokens must be set.
+      const calls = (provider.chat as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls).toHaveLength(2);
+      const firstCallOpts = calls[0]![1] as { tools?: readonly unknown[] };
+      const secondCallOpts = calls[1]![1] as {
+        tools?: readonly unknown[];
+        settings?: { maxTokens?: number };
+      };
+      expect(firstCallOpts.tools?.length).toBeGreaterThan(0);
+      expect(secondCallOpts.tools).toEqual([]);
+      expect(secondCallOpts.settings?.maxTokens).toBeGreaterThan(0);
     });
 
     it('hard stops when over grace limit', async () => {
@@ -307,15 +352,16 @@ describe('ReasoningLoop', () => {
       registry.register(searchTool);
 
       const loop = new ReasoningLoop(provider, registry);
-      const result = await loop.run([{ role: 'user', content: 'test' }], { tokenBudget: 100 });
+      const result = await loop.run([{ role: 'user', content: 'test' }], {
+        budgetTracker: new BudgetTracker(100, 10),
+      });
 
       expect(result.hitTokenBudget).toBe(true);
       expect(result.iterations).toBe(2);
     });
 
-    it('uses default 10% grace when tokenGracePercent not specified', async () => {
-      // Budget = 100, grace = 110 by default
-      // Use 105 tokens total — at budget but under grace limit — should NOT hard-stop
+    it('uses configured grace percent', async () => {
+      // Budget = 100, grace percent = 10 → grace limit 110
       const firstResponse = createLLMResponse({
         content: null,
         finishReason: 'tool_use',
@@ -334,11 +380,65 @@ describe('ReasoningLoop', () => {
       registry.register(searchTool);
 
       const loop = new ReasoningLoop(provider, registry);
-      const result = await loop.run([{ role: 'user', content: 'test' }], { tokenBudget: 100 });
+      const result = await loop.run([{ role: 'user', content: 'test' }], {
+        budgetTracker: new BudgetTracker(100, 10),
+      });
 
       // Should complete normally (not hard-killed)
       expect(result.hitTokenBudget).toBe(false);
       expect(result.content).toBe('Done within grace.');
+    });
+
+    it('shared tracker accumulates across two reasoning loops', async () => {
+      // Simulates a "parent + sub-agent" sharing the same tracker.
+      const tracker = new BudgetTracker(100, 10);
+
+      // First loop ("parent first turn") consumes 60 tokens
+      const firstResp = createLLMResponse({
+        content: 'parent ack',
+        finishReason: 'stop',
+        usage: makeUsage(30, 30),
+      });
+      const provider1 = makeMockProvider([firstResp]);
+      const loop1 = new ReasoningLoop(provider1, new ToolRegistry());
+      await loop1.run([{ role: 'user', content: 'p' }], { budgetTracker: tracker });
+      expect(tracker.used).toBe(60);
+
+      // Second loop ("sub-agent") starts with a tracker already at 60 and
+      // overshoots the grace limit (110) on its very first call.
+      const subResp = createLLMResponse({
+        content: 'too much',
+        finishReason: 'tool_use',
+        toolCalls: [{ id: 't1', name: 'search', arguments: { query: 'q' } }],
+        usage: makeUsage(40, 30), // 60 + 70 = 130 ≥ 110
+      });
+      const provider2 = makeMockProvider([subResp]);
+      const loop2 = new ReasoningLoop(provider2, new ToolRegistry());
+      const result2 = await loop2.run([{ role: 'user', content: 's' }], {
+        budgetTracker: tracker,
+      });
+
+      expect(result2.hitTokenBudget).toBe(true);
+      expect(tracker.used).toBe(130);
+    });
+
+    it('null budget on tracker disables enforcement', async () => {
+      const tracker = new BudgetTracker(null, 10);
+      const response = createLLMResponse({
+        content: 'big response',
+        finishReason: 'stop',
+        usage: makeUsage(10_000_000, 10_000_000), // way past any sane limit
+      });
+      const provider = makeMockProvider([response]);
+      const loop = new ReasoningLoop(provider, new ToolRegistry());
+
+      const result = await loop.run([{ role: 'user', content: 'go' }], {
+        budgetTracker: tracker,
+      });
+
+      expect(result.hitTokenBudget).toBe(false);
+      expect(tracker.isOverGrace()).toBe(false);
+      expect(tracker.used).toBe(20_000_000);
     });
   });
 

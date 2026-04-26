@@ -1,5 +1,6 @@
 export interface SystemSettings {
-  readonly cronDefaultTokenBudget: number;
+  /** System-wide cap on cron token spend; null disables enforcement. */
+  readonly cronDefaultTokenBudget: number | null;
   readonly cronExecutionTimeoutMs: number;
   readonly cronTokenGracePercent: number;
   readonly defaultTimezone: string;

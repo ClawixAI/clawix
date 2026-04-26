@@ -20,12 +20,24 @@ interface ChannelResponsePayload {
 }
 
 /** Payload shape published on the cronResultReady pub/sub channel. */
-interface CronResultPayload {
-  readonly channelId: string;
-  readonly userId: string;
-  readonly taskId: string;
-  readonly output: string;
-}
+type CronResultPayload =
+  | {
+      readonly status: 'success';
+      readonly channelId: string;
+      readonly userId: string;
+      readonly taskId: string;
+      readonly taskName: string;
+      readonly output: string;
+    }
+  | {
+      readonly status: 'failed';
+      readonly channelId: string;
+      readonly userId: string;
+      readonly taskId: string;
+      readonly taskName: string;
+      readonly message: string;
+      readonly autoDisabled: boolean;
+    };
 
 @Injectable()
 export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
@@ -158,12 +170,32 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Subscribe to cronResultReady pub/sub events.
-   * Delivers cron job output to the task's configured channel.
+   * Delivers cron job output (success) or failure notifications to the task's
+   * configured channel.
    */
   private async subscribeToCronResults(): Promise<void> {
     await this.pubsub.subscribe<CronResultPayload>(PUBSUB_CHANNELS.cronResultReady, async (msg) => {
       const payload = msg.payload;
-      if (!payload?.channelId || !payload?.userId || !payload?.output) return;
+      if (!payload?.channelId || !payload?.userId) return;
+
+      // Pub/sub messages are an external input boundary — validate the
+      // discriminator before downstream code narrows on it.
+      const raw = payload as Record<string, unknown>;
+      if (payload.status !== 'success' && payload.status !== 'failed') {
+        logger.warn(
+          { taskId: raw['taskId'], status: raw['status'] },
+          'cron:unknown-payload-status',
+        );
+        return;
+      }
+      if (payload.status === 'success' && typeof payload.output !== 'string') {
+        logger.warn({ taskId: payload.taskId }, 'cron:success-payload-missing-output');
+        return;
+      }
+      if (payload.status === 'failed' && typeof payload.message !== 'string') {
+        logger.warn({ taskId: payload.taskId }, 'cron:failed-payload-missing-message');
+        return;
+      }
 
       await this.deliverCronResult(payload);
     });
@@ -174,7 +206,7 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
       const adapter = this.findByChannelId(payload.channelId);
       if (!adapter) {
         logger.warn(
-          { channelId: payload.channelId, taskId: payload.taskId },
+          { channelId: payload.channelId, taskId: payload.taskId, status: payload.status },
           'No active adapter for cron delivery',
         );
         return;
@@ -190,14 +222,23 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      await adapter.sendMessage({ recipientId, text: payload.output });
+      const text = payload.status === 'success' ? payload.output : payload.message;
+      await adapter.sendMessage({ recipientId, text });
       logger.info(
-        { taskId: payload.taskId, channelId: payload.channelId, recipientId },
+        {
+          taskId: payload.taskId,
+          channelId: payload.channelId,
+          recipientId,
+          status: payload.status,
+        },
         'Delivered cron result to channel',
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.error({ taskId: payload.taskId, error: message }, 'Failed to deliver cron result');
+      logger.error(
+        { taskId: payload.taskId, status: payload.status, error: message },
+        'Failed to deliver cron result',
+      );
     }
   }
 

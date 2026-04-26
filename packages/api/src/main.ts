@@ -9,6 +9,18 @@ import { configureGlobalHttpDispatcher } from './common/http-dispatcher.js';
 
 const logger = createLogger('api');
 
+// Global safety net for unhandled async errors. Without these, Node's default
+// (--unhandled-rejections=throw) terminates the process on a single rejection
+// from any background path (cron dispatch, channel pollers, pubsub callbacks).
+// We log and continue: Docker's restart policy is a last-resort backstop, but
+// recoverable errors should not take the whole API down.
+process.on('unhandledRejection', (reason: unknown) => {
+  logger.error({ err: reason }, 'unhandledRejection — process kept alive');
+});
+process.on('uncaughtException', (err: Error) => {
+  logger.error({ err }, 'uncaughtException — process kept alive');
+});
+
 async function bootstrap() {
   const httpConfig = configureGlobalHttpDispatcher();
   logger.info(

@@ -128,6 +128,12 @@ model AgentRun {
   output            String?
   error             String?
   tokenUsage        Json        @default("{}") // TokenUsageRecord
+  // Captured at spawn time so a recovered orphan sub-agent can rebuild a
+  // BudgetTracker with the same cap it was spawned under. The cumulative
+  // `used` count from the parent is intentionally not persisted — recovered
+  // orphans get a fresh allowance.
+  tokenBudget       Int?
+  tokenGracePercent Int?
   startedAt         DateTime    @default(now())
   completedAt       DateTime?
   parentAgentRunId  String?     @map("parent_agent_run_id")

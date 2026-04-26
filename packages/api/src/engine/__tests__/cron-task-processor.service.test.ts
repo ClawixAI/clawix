@@ -25,7 +25,12 @@ vi.mock('../cron-next-run.js', () => ({
 //  Imports after mocks                                                //
 // ------------------------------------------------------------------ //
 
-import { CronTaskProcessorService } from '../cron-task-processor.service.js';
+import { NotFoundError } from '@clawix/shared';
+
+import {
+  CronTaskProcessorService,
+  MAX_CONSECUTIVE_FAILURES,
+} from '../cron-task-processor.service.js';
 import type { ProcessableTask } from '../cron-task-processor.service.js';
 import { computeNextRun } from '../cron-next-run.js';
 import { PUBSUB_CHANNELS } from '../../cache/cache.constants.js';
@@ -355,7 +360,13 @@ describe('CronTaskProcessorService.execute', () => {
       }),
     );
 
-    process.env['CRON_MAX_TIMEOUT_MS'] = originalEnv;
+    // Restore: delete the key when it wasn't originally set to avoid polluting
+    // subsequent tests with the string "undefined" (process.env stores strings).
+    if (originalEnv === undefined) {
+      delete process.env['CRON_MAX_TIMEOUT_MS'];
+    } else {
+      process.env['CRON_MAX_TIMEOUT_MS'] = originalEnv;
+    }
   }, 10000);
 
   it('uses task.timeoutMs when set, overriding system settings', async () => {
@@ -437,6 +448,7 @@ describe('CronTaskProcessorService.execute', () => {
     expect(pubsub.publish).toHaveBeenCalledWith(
       PUBSUB_CHANNELS.cronResultReady,
       expect.objectContaining({
+        status: 'success',
         channelId: 'channel-uuid-1',
         userId: 'user-1',
         taskId: 'task-1',
@@ -466,12 +478,118 @@ describe('CronTaskProcessorService.execute', () => {
     expect(pubsub.publish).not.toHaveBeenCalled();
   });
 
-  it('does not publish cronResultReady on failure', async () => {
+  it('publishes cronResultReady with status=failed on failure when channelId is set', async () => {
     const agentRunner = makeAgentRunner({
-      run: vi.fn().mockRejectedValue(new Error('agent crashed')),
+      run: vi.fn().mockRejectedValue(new Error('execution_timeout')),
     });
     const task: ProcessableTask = { ...baseTask, channelId: 'channel-uuid-1' };
     const { service, pubsub } = makeService({ agentRunner });
+
+    await service.execute(task);
+
+    expect(pubsub.publish).toHaveBeenCalledWith(
+      PUBSUB_CHANNELS.cronResultReady,
+      expect.objectContaining({
+        status: 'failed',
+        channelId: 'channel-uuid-1',
+        userId: 'user-1',
+        taskId: 'task-1',
+        taskName: 'Test Cron Task',
+        autoDisabled: false,
+      }),
+    );
+    // The friendly text mentions the timeout in minutes (default 300_000ms = 5 min)
+    const publishCall = pubsub.publish.mock.calls.find(
+      (c) => c[0] === PUBSUB_CHANNELS.cronResultReady,
+    );
+    expect(publishCall?.[1]).toMatchObject({
+      message: expect.stringContaining('Test Cron Task'),
+    });
+    expect(publishCall?.[1].message).toContain('5-minute limit');
+  });
+
+  it('does not publish cronResultReady on failure when channelId is null', async () => {
+    const agentRunner = makeAgentRunner({
+      run: vi.fn().mockRejectedValue(new Error('execution_timeout')),
+    });
+    const { service, pubsub } = makeService({ agentRunner });
+
+    await service.execute(baseTask); // baseTask.channelId is null
+
+    expect(pubsub.publish).not.toHaveBeenCalled();
+  });
+
+  it('appends auto-disable notice when failure crosses MAX_CONSECUTIVE_FAILURES', async () => {
+    const agentRunner = makeAgentRunner({
+      run: vi.fn().mockRejectedValue(new Error('execution_timeout')),
+    });
+    // (consecutiveFailures + 1) crosses the threshold.
+    const task: ProcessableTask = {
+      ...baseTask,
+      channelId: 'channel-uuid-1',
+      consecutiveFailures: MAX_CONSECUTIVE_FAILURES - 1,
+    };
+    const { service, pubsub, taskRepo } = makeService({ agentRunner });
+
+    await service.execute(task);
+
+    expect(taskRepo.autoDisable).toHaveBeenCalledWith('task-1', 'auto:max_failures');
+    const publishCall = pubsub.publish.mock.calls.find(
+      (c) => c[0] === PUBSUB_CHANNELS.cronResultReady,
+    );
+    expect(publishCall?.[1]).toMatchObject({
+      status: 'failed',
+      autoDisabled: true,
+    });
+    expect(publishCall?.[1].message).toContain(
+      `Task disabled after ${MAX_CONSECUTIVE_FAILURES} consecutive failures`,
+    );
+  });
+
+  it('does not append auto-disable notice when below threshold', async () => {
+    const agentRunner = makeAgentRunner({
+      run: vi.fn().mockRejectedValue(new Error('execution_timeout')),
+    });
+    const task: ProcessableTask = {
+      ...baseTask,
+      channelId: 'channel-uuid-1',
+      consecutiveFailures: 0, // 0+1=1 is below any reasonable MAX_CONSECUTIVE_FAILURES
+    };
+    const { service, pubsub } = makeService({ agentRunner });
+
+    await service.execute(task);
+
+    const publishCall = pubsub.publish.mock.calls.find(
+      (c) => c[0] === PUBSUB_CHANNELS.cronResultReady,
+    );
+    expect(publishCall?.[1]).toMatchObject({ status: 'failed', autoDisabled: false });
+    expect(publishCall?.[1].message).not.toContain('Task disabled');
+  });
+
+  it('stores the raw error (not the friendly text) in TaskRun.error', async () => {
+    const agentRunner = makeAgentRunner({
+      run: vi.fn().mockRejectedValue(new Error('execution_timeout')),
+    });
+    const task: ProcessableTask = { ...baseTask, channelId: 'channel-uuid-1' };
+    const { service, taskRunRepo } = makeService({ agentRunner });
+
+    await service.execute(task);
+
+    expect(taskRunRepo.update).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({
+        status: 'failed',
+        error: 'execution_timeout', // raw, not "your scheduled task hit..."
+      }),
+    );
+  });
+
+  it('does not publish cronResultReady when task is deleted mid-run (NotFoundError)', async () => {
+    const taskRunRepo = makeTaskRunRepo({
+      create: vi.fn().mockRejectedValue(new NotFoundError('TaskRun', 'task gone')),
+    });
+    const task: ProcessableTask = { ...baseTask, channelId: 'channel-uuid-1' };
+    const { service, pubsub } = makeService({ taskRunRepo });
 
     await service.execute(task);
 
@@ -593,5 +711,74 @@ describe('CronTaskProcessorService.execute', () => {
       'Asia/Tokyo',
     );
     expect(taskRepo.updateNextRunAt).toHaveBeenCalledWith('task-1', expect.any(Date));
+  });
+
+  // ---------------------------------------------------------------- //
+  //  Race: task or run deleted while execution is in flight          //
+  // ---------------------------------------------------------------- //
+
+  describe('cascade-deletion race', () => {
+    // When the user deletes a Task while a run is in flight, Postgres
+    // cascade-deletes the TaskRun row too. Every subsequent post-run write
+    // (taskRunRepo.update + every taskRepo.* call) hits Prisma P2025 and is
+    // mapped to NotFoundError. The executor must absorb these, not surface
+    // them — the scheduler is fire-and-forget, so a rejection here would
+    // crash the API process.
+    function applyCascadeDeleted(
+      taskRepo: ReturnType<typeof makeTaskRepo>,
+      taskRunRepo: ReturnType<typeof makeTaskRunRepo>,
+    ): void {
+      taskRunRepo.update.mockRejectedValue(new NotFoundError('TaskRun', 'unknown'));
+      taskRepo.resetFailures.mockRejectedValue(new NotFoundError('Task', 'unknown'));
+      taskRepo.incrementFailures.mockRejectedValue(new NotFoundError('Task', 'unknown'));
+      taskRepo.updateLastRun.mockRejectedValue(new NotFoundError('Task', 'unknown'));
+      taskRepo.updateNextRunAt.mockRejectedValue(new NotFoundError('Task', 'unknown'));
+      taskRepo.autoDisable.mockRejectedValue(new NotFoundError('Task', 'unknown'));
+    }
+
+    it('does not throw when Task is cascade-deleted during a successful run', async () => {
+      const taskRepo = makeTaskRepo();
+      const taskRunRepo = makeTaskRunRepo();
+      applyCascadeDeleted(taskRepo, taskRunRepo);
+      const { service } = makeService({ taskRepo, taskRunRepo });
+
+      await expect(service.execute(baseTask)).resolves.toBeUndefined();
+    });
+
+    it('does not throw when Task is cascade-deleted during a failed run', async () => {
+      const agentRunner = makeAgentRunner({
+        run: vi.fn().mockRejectedValue(new Error('agent crashed')),
+      });
+      const taskRepo = makeTaskRepo();
+      const taskRunRepo = makeTaskRunRepo();
+      applyCascadeDeleted(taskRepo, taskRunRepo);
+      const { service } = makeService({ agentRunner, taskRepo, taskRunRepo });
+
+      await expect(service.execute(baseTask)).resolves.toBeUndefined();
+    });
+
+    it('does not throw when Task is cascade-deleted before reaching auto-disable on max failures', async () => {
+      const agentRunner = makeAgentRunner({
+        run: vi.fn().mockRejectedValue(new Error('agent crashed')),
+      });
+      const task: ProcessableTask = { ...baseTask, consecutiveFailures: 2 };
+      const taskRepo = makeTaskRepo();
+      const taskRunRepo = makeTaskRunRepo();
+      applyCascadeDeleted(taskRepo, taskRunRepo);
+      const { service } = makeService({ agentRunner, taskRepo, taskRunRepo });
+
+      await expect(service.execute(task)).resolves.toBeUndefined();
+    });
+
+    it('does not propagate unexpected post-run write errors to the fire-and-forget caller', async () => {
+      // Non-NotFoundError errors must also be swallowed — they're logged but
+      // never re-thrown, otherwise the scheduler's fire-and-forget dispatch
+      // would crash the API process via unhandledRejection.
+      const taskRunRepo = makeTaskRunRepo();
+      taskRunRepo.update.mockRejectedValue(new Error('DB connection lost'));
+      const { service } = makeService({ taskRunRepo });
+
+      await expect(service.execute(baseTask)).resolves.toBeUndefined();
+    });
   });
 });

@@ -61,6 +61,7 @@ import { createProvider } from './providers/provider-factory.js';
 import { ResilientLLMProvider } from './resilience.js';
 import { MemoryConsolidationService } from './memory-consolidation.service.js';
 import { ReasoningLoop } from './reasoning-loop.js';
+import { BudgetTracker } from './budget-tracker.js';
 import { ToolRegistry } from './tool-registry.js';
 import { registerBuiltinTools, registerMemoryTools, registerCronTools } from './tools/index.js';
 import { createSpawnTool } from './tools/spawn.js';
@@ -140,6 +141,17 @@ export class AgentRunnerService {
       isSubAgent,
       agentRunId: inputAgentRunId,
     } = options;
+
+    // Resolve the shared budget tracker:
+    //  - sub-agent path: inherit the parent's tracker so all spawned work
+    //    accumulates against the same run-wide ceiling.
+    //  - primary path with tokenBudget: create a fresh tracker.
+    //  - tokenBudget null/omitted: no enforcement.
+    const budgetTracker: BudgetTracker | undefined =
+      options.budgetTracker ??
+      (options.tokenBudget != null
+        ? new BudgetTracker(options.tokenBudget, options.tokenGracePercent ?? 10)
+        : undefined);
 
     // ── Step 1: Load AgentDefinition, verify isActive ──────────────
     const agentDef = await this.agentDefRepo.findById(agentDefinitionId);
@@ -344,6 +356,7 @@ export class AgentRunnerService {
             session.id,
             agentRun.id,
             userId,
+            budgetTracker,
           ),
         );
       }
@@ -381,8 +394,7 @@ export class AgentRunnerService {
       const loopResult = await loop.run(initialMessages, {
         model: agentDef.model,
         onProgress,
-        tokenBudget: options.tokenBudget,
-        tokenGracePercent: options.tokenGracePercent,
+        ...(budgetTracker ? { budgetTracker } : {}),
         timeoutMs,
       });
 

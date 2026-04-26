@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createSpawnTool } from '../tools/spawn.js';
+import { BudgetTracker } from '../budget-tracker.js';
 import type { AgentDefinitionRepository } from '../../db/agent-definition.repository.js';
 import type { AgentRunRepository } from '../../db/agent-run.repository.js';
 
@@ -194,6 +195,63 @@ describe('spawn tool — task executor integration', () => {
       userId: 'user-1',
       sessionId: 'session-abc',
     });
+  });
+
+  it('persists tokenBudget + tokenGracePercent and forwards tracker when one is supplied', async () => {
+    const agentDef = { id: 'def-123', name: 'summarizer', role: 'worker', isActive: true };
+    const agentDefRepo = makeAgentDefRepo({
+      findByName: vi.fn().mockResolvedValue(agentDef),
+    });
+    const agentRunRepo = makeAgentRunRepo(defaultRun);
+    const mockSubmit = vi.fn();
+    const tracker = new BudgetTracker(5000, 25);
+
+    const tool = createSpawnTool(
+      agentDefRepo as AgentDefinitionRepository,
+      agentRunRepo as AgentRunRepository,
+      { submit: mockSubmit },
+      'session-abc',
+      'parent-run-0',
+      'user-1',
+      tracker,
+    );
+
+    await tool.execute({ agent_name: 'summarizer', prompt: 'Summarize this' });
+
+    // Persisted on the AgentRun row so a recovered orphan can rebuild a tracker.
+    expect(agentRunRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ tokenBudget: 5000, tokenGracePercent: 25 }),
+    );
+    // Forwarded in-memory to the executor for the live (non-recovery) path.
+    expect(mockSubmit).toHaveBeenCalledWith(
+      'run-456',
+      expect.objectContaining({ budgetTracker: tracker }),
+    );
+  });
+
+  it('omits tokenBudget when tracker has null budget (no enforcement)', async () => {
+    const agentDef = { id: 'def-123', name: 'summarizer', role: 'worker', isActive: true };
+    const agentDefRepo = makeAgentDefRepo({
+      findByName: vi.fn().mockResolvedValue(agentDef),
+    });
+    const agentRunRepo = makeAgentRunRepo(defaultRun);
+    const tracker = new BudgetTracker(null, 10);
+
+    const tool = createSpawnTool(
+      agentDefRepo as AgentDefinitionRepository,
+      agentRunRepo as AgentRunRepository,
+      null,
+      'session-abc',
+      'parent-run-0',
+      'user-1',
+      tracker,
+    );
+
+    await tool.execute({ agent_name: 'summarizer', prompt: 'Do work' });
+
+    const createCall = (agentRunRepo.create as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(createCall.tokenBudget).toBeUndefined();
+    expect(createCall.tokenGracePercent).toBeUndefined();
   });
 
   it('works without executor (null — stub mode)', async () => {

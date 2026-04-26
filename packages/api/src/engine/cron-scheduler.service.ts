@@ -137,10 +137,18 @@ export class CronSchedulerService implements OnModuleInit, OnModuleDestroy {
         dispatched++;
         this.runningCount++;
 
-        // Fire and forget — processor handles its own error logging
-        this.taskProcessor.execute(task as unknown as ProcessableTask).finally(() => {
-          this.runningCount--;
-        });
+        // Fire and forget — processor handles its own error logging.
+        // .catch() is a defense-in-depth backstop: the processor already
+        // absorbs known errors, but any future regression must not surface
+        // as an unhandled rejection (would crash the API process).
+        this.taskProcessor
+          .execute(task as unknown as ProcessableTask)
+          .catch((err: unknown) => {
+            logger.error({ taskId: task.id, err }, 'cron:processor.execute rejected');
+          })
+          .finally(() => {
+            this.runningCount--;
+          });
       } catch (err) {
         logger.error({ taskId: task.id, err }, 'cron:dispatch error');
         deferred++;

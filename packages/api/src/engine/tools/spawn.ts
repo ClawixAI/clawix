@@ -11,6 +11,7 @@ import { createLogger } from '@clawix/shared';
 import type { Tool, ToolResult } from '../tool.js';
 import type { AgentDefinitionRepository } from '../../db/agent-definition.repository.js';
 import type { AgentRunRepository } from '../../db/agent-run.repository.js';
+import type { BudgetTracker } from '../budget-tracker.js';
 
 const logger = createLogger('engine:tools:spawn');
 
@@ -23,6 +24,7 @@ interface TaskSubmitter {
       readonly input: string;
       readonly userId: string;
       readonly sessionId: string;
+      readonly budgetTracker?: BudgetTracker;
     },
   ): void;
 }
@@ -44,6 +46,7 @@ export function createSpawnTool(
   parentSessionId: string,
   parentAgentRunId: string,
   userId: string,
+  budgetTracker?: BudgetTracker,
 ): Tool {
   return {
     name: 'spawn',
@@ -113,6 +116,14 @@ export function createSpawnTool(
         parentAgentRunId,
         input: prompt,
         status: 'pending',
+        // Persist the budget so a recovered orphan (after API crash) can
+        // rebuild a tracker. Skip when budget is null (no enforcement).
+        ...(budgetTracker?.budget != null
+          ? {
+              tokenBudget: budgetTracker.budget,
+              tokenGracePercent: budgetTracker.gracePercent,
+            }
+          : {}),
       });
 
       logger.info({ agentName: displayName, agentRunId: agentRun.id }, 'Spawned pending AgentRun');
@@ -123,6 +134,7 @@ export function createSpawnTool(
           input: prompt,
           userId,
           sessionId: parentSessionId,
+          ...(budgetTracker ? { budgetTracker } : {}),
         });
       }
 

@@ -346,6 +346,7 @@ describe('ChannelManagerService', () => {
       // cronResultReady is the second subscription (index 1)
       const cronCb = mockPubsub.subscribe.mock.calls[1]![1] as (msg: {
         payload: {
+          status: 'success';
           channelId: string;
           userId: string;
           taskId: string;
@@ -356,6 +357,7 @@ describe('ChannelManagerService', () => {
 
       await cronCb({
         payload: {
+          status: 'success',
           channelId: 'ch-telegram',
           userId: 'user-1',
           taskId: 'task-1',
@@ -378,6 +380,7 @@ describe('ChannelManagerService', () => {
 
       const cronCb = mockPubsub.subscribe.mock.calls[1]![1] as (msg: {
         payload: {
+          status: 'success';
           channelId: string;
           userId: string;
           taskId: string;
@@ -388,6 +391,7 @@ describe('ChannelManagerService', () => {
 
       await cronCb({
         payload: {
+          status: 'success',
           channelId: 'ch-gone',
           userId: 'user-1',
           taskId: 'task-1',
@@ -396,6 +400,170 @@ describe('ChannelManagerService', () => {
         },
       });
 
+      expect(mockUserRepo.findById).not.toHaveBeenCalled();
+    });
+
+    it('delivers failure message text to the channel adapter when payload status is failed', async () => {
+      const dbChannel = {
+        id: 'ch-telegram',
+        type: 'telegram',
+        name: 'Bot',
+        config: {},
+        isActive: true,
+      };
+      mockChannelRepo.findActive.mockResolvedValue([dbChannel]);
+
+      const channel = mockChannel({ id: 'ch-telegram' });
+      mockRegistry.create.mockReturnValue(channel);
+
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-1',
+        telegramId: '12345',
+      });
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      const cronCb = mockPubsub.subscribe.mock.calls[1]![1] as (msg: {
+        payload:
+          | {
+              status: 'success';
+              channelId: string;
+              userId: string;
+              taskId: string;
+              taskName: string;
+              output: string;
+            }
+          | {
+              status: 'failed';
+              channelId: string;
+              userId: string;
+              taskId: string;
+              taskName: string;
+              message: string;
+              autoDisabled: boolean;
+            };
+      }) => Promise<void>;
+
+      await cronCb({
+        payload: {
+          status: 'failed',
+          channelId: 'ch-telegram',
+          userId: 'user-1',
+          taskId: 'task-1',
+          taskName: 'Water Reminder',
+          message: '⚠️ Task "Water Reminder" failed: timed out.',
+          autoDisabled: false,
+        },
+      });
+
+      expect(channel.sendMessage).toHaveBeenCalledWith({
+        recipientId: '12345',
+        text: '⚠️ Task "Water Reminder" failed: timed out.',
+      });
+    });
+
+    it('does not deliver when payload status is neither success nor failed', async () => {
+      const dbChannel = {
+        id: 'ch-telegram',
+        type: 'telegram',
+        name: 'Bot',
+        config: {},
+        isActive: true,
+      };
+      mockChannelRepo.findActive.mockResolvedValue([dbChannel]);
+
+      const channel = mockChannel({ id: 'ch-telegram' });
+      mockRegistry.create.mockReturnValue(channel);
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      const cronCb = mockPubsub.subscribe.mock.calls[1]![1] as (msg: {
+        payload: Record<string, unknown>;
+      }) => Promise<void>;
+
+      await cronCb({
+        payload: {
+          status: 'pending', // not a valid discriminator
+          channelId: 'ch-telegram',
+          userId: 'user-1',
+          taskId: 'task-1',
+        },
+      });
+
+      expect(channel.sendMessage).not.toHaveBeenCalled();
+      expect(mockUserRepo.findById).not.toHaveBeenCalled();
+    });
+
+    it('does not deliver when success payload is missing output', async () => {
+      const dbChannel = {
+        id: 'ch-telegram',
+        type: 'telegram',
+        name: 'Bot',
+        config: {},
+        isActive: true,
+      };
+      mockChannelRepo.findActive.mockResolvedValue([dbChannel]);
+
+      const channel = mockChannel({ id: 'ch-telegram' });
+      mockRegistry.create.mockReturnValue(channel);
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      const cronCb = mockPubsub.subscribe.mock.calls[1]![1] as (msg: {
+        payload: Record<string, unknown>;
+      }) => Promise<void>;
+
+      await cronCb({
+        payload: {
+          status: 'success',
+          channelId: 'ch-telegram',
+          userId: 'user-1',
+          taskId: 'task-1',
+          taskName: 'Job',
+          // output missing
+        },
+      });
+
+      expect(channel.sendMessage).not.toHaveBeenCalled();
+      expect(mockUserRepo.findById).not.toHaveBeenCalled();
+    });
+
+    it('does not deliver when failed payload is missing message', async () => {
+      const dbChannel = {
+        id: 'ch-telegram',
+        type: 'telegram',
+        name: 'Bot',
+        config: {},
+        isActive: true,
+      };
+      mockChannelRepo.findActive.mockResolvedValue([dbChannel]);
+
+      const channel = mockChannel({ id: 'ch-telegram' });
+      mockRegistry.create.mockReturnValue(channel);
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      const cronCb = mockPubsub.subscribe.mock.calls[1]![1] as (msg: {
+        payload: Record<string, unknown>;
+      }) => Promise<void>;
+
+      await cronCb({
+        payload: {
+          status: 'failed',
+          channelId: 'ch-telegram',
+          userId: 'user-1',
+          taskId: 'task-1',
+          taskName: 'Job',
+          autoDisabled: false,
+          // message missing
+        },
+      });
+
+      expect(channel.sendMessage).not.toHaveBeenCalled();
       expect(mockUserRepo.findById).not.toHaveBeenCalled();
     });
 
@@ -422,6 +590,7 @@ describe('ChannelManagerService', () => {
 
       const cronCb = mockPubsub.subscribe.mock.calls[1]![1] as (msg: {
         payload: {
+          status: 'success';
           channelId: string;
           userId: string;
           taskId: string;
@@ -432,6 +601,7 @@ describe('ChannelManagerService', () => {
 
       await cronCb({
         payload: {
+          status: 'success',
           channelId: 'ch-telegram',
           userId: 'user-1',
           taskId: 'task-1',

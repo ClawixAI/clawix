@@ -284,6 +284,36 @@ describe('CronSchedulerService', () => {
 
       expect((service as unknown as { runningCount: number }).runningCount).toBe(0);
     });
+
+    it('catches rejections from taskProcessor.execute (no unhandled rejection)', async () => {
+      // Use real timers — Node's unhandledRejection event fires on the next
+      // macrotask, and we need that tick to actually elapse to know whether
+      // the rejection was caught.
+      vi.useRealTimers();
+
+      const task = makeTask();
+      const taskRepo = makeTaskRepo({ findDue: vi.fn().mockResolvedValue([task]) });
+      const taskProcessor = makeTaskProcessor({
+        execute: vi.fn().mockRejectedValue(new Error('boom')),
+      });
+      const { service } = makeService({ taskRepo, taskProcessor });
+
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown): void => {
+        unhandled.push(reason);
+      };
+      process.on('unhandledRejection', onUnhandled);
+
+      try {
+        await service.tick();
+        // Wait one real macrotask so the unhandledRejection event fires (if any)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      } finally {
+        process.off('unhandledRejection', onUnhandled);
+      }
+
+      expect(unhandled).toHaveLength(0);
+    });
   });
 
   describe('start()', () => {

@@ -836,6 +836,7 @@ describe('AgentRunnerService', () => {
       'sess-1', // parentSessionId
       'run-1', // parentAgentRunId (the current run's ID)
       'user-1', // userId
+      undefined, // budgetTracker — none in this test (no tokenBudget passed)
     );
   });
 

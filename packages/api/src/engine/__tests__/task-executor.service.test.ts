@@ -452,6 +452,46 @@ describe('TaskExecutorService', () => {
       // Should not throw
       await expect(service.onModuleInit()).resolves.toBeUndefined();
     });
+
+    it('reconstructs a BudgetTracker from persisted budget on recovery', async () => {
+      const pendingRun = {
+        ...mockAgentRun,
+        id: 'run-with-budget',
+        sessionId: 'sess-1',
+        tokenBudget: 5000,
+        tokenGracePercent: 25,
+      };
+      mockAgentRunRepo.findAllByStatus.mockResolvedValue([pendingRun]);
+      mockSessionRepo.findById.mockResolvedValue({ ...mockSession, id: 'sess-1' });
+
+      await service.onModuleInit();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const call = mockAgentRunner.run.mock.calls[0]![0] as {
+        budgetTracker?: { budget: number | null; gracePercent: number };
+      };
+      expect(call.budgetTracker).toBeDefined();
+      expect(call.budgetTracker?.budget).toBe(5000);
+      expect(call.budgetTracker?.gracePercent).toBe(25);
+    });
+
+    it('does not pass a tracker when the persisted budget is null', async () => {
+      const pendingRun = {
+        ...mockAgentRun,
+        id: 'run-no-budget',
+        sessionId: 'sess-1',
+        tokenBudget: null,
+        tokenGracePercent: null,
+      };
+      mockAgentRunRepo.findAllByStatus.mockResolvedValue([pendingRun]);
+      mockSessionRepo.findById.mockResolvedValue({ ...mockSession, id: 'sess-1' });
+
+      await service.onModuleInit();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const call = mockAgentRunner.run.mock.calls[0]![0] as { budgetTracker?: unknown };
+      expect(call.budgetTracker).toBeUndefined();
+    });
   });
 
   // ---------------------------------------------------------------- //

@@ -3,11 +3,13 @@ import type { ChatMessage, ChatOptions, LLMProvider, LLMResponse, LLMUsage } fro
 
 import type { ToolRegistry } from './tool-registry.js';
 import type { LoopResult, ReasoningLoopConfig } from './reasoning-loop.types.js';
+import type { BudgetTracker } from './budget-tracker.js';
 
 const logger = createLogger('engine:reasoning-loop');
 
 const DEFAULT_MAX_ITERATIONS = 40;
-const DEFAULT_TOKEN_GRACE_PERCENT = 10;
+/** Cap for the grace-turn output. Tight enough that the wrap-up cannot blow the hard limit. */
+const GRACE_TURN_MAX_TOKENS = 1500;
 
 /* ------------------------------------------------------------------ */
 /*  Module-level helpers                                                */
@@ -63,7 +65,9 @@ export class ReasoningLoop {
     let lastResponse: LLMResponse | null = null;
     let hitTokenBudget = false;
     let hitTimeout = false;
-    let graceInjected = false;
+    /** Set when this loop just injected the grace message — next call must use restricted options. */
+    let nextCallIsGraceTurn = false;
+    const tracker: BudgetTracker | undefined = config?.budgetTracker;
 
     // Abort controller for timeout and external signal
     const abortController = new AbortController();
@@ -101,12 +105,6 @@ export class ReasoningLoop {
       }, config.timeoutMs);
     }
 
-    // Pre-compute budget limits (if configured)
-    const tokenBudget = config?.tokenBudget;
-    const graceLimit = tokenBudget
-      ? tokenBudget * (1 + (config?.tokenGracePercent ?? DEFAULT_TOKEN_GRACE_PERCENT) / 100)
-      : undefined;
-
     const chatOptions: ChatOptions = {
       ...(config?.model ? { model: config.model } : {}),
       tools: this.toolRegistry.getDefinitions(),
@@ -123,41 +121,66 @@ export class ReasoningLoop {
           break;
         }
 
+        // Pre-call check: a sibling sub-agent may have exhausted the shared
+        // tracker since our last iteration. Skip the call to avoid paying
+        // for tokens we would immediately hard-stop on.
+        if (tracker?.isOverGrace()) {
+          logger.warn(
+            { used: tracker.used, budget: tracker.budget, graceLimit: tracker.graceLimit },
+            'Token budget exceeded before iteration — hard stop',
+          );
+          hitTokenBudget = true;
+          break;
+        }
+
         iterations += 1;
 
         logger.debug({ iteration: iterations, maxIterations }, 'Starting iteration');
         logger.debug({ iteration: iterations, messages }, 'Prompt messages sent to LLM');
 
-        const response = await this.provider.chat(messages, chatOptions);
+        // When the previous iteration injected grace, force this call to be
+        // a constrained wrap-up: no tools available, output capped tightly.
+        // This guarantees the wrap-up turn cannot itself blow the hard limit.
+        const callOptions: ChatOptions = nextCallIsGraceTurn
+          ? {
+              ...chatOptions,
+              tools: [],
+              settings: { ...chatOptions.settings, maxTokens: GRACE_TURN_MAX_TOKENS },
+            }
+          : chatOptions;
+        nextCallIsGraceTurn = false;
+
+        const response = await this.provider.chat(messages, callOptions);
         lastResponse = response;
         totalUsage = addUsage(totalUsage, response.usage);
+        tracker?.record(response.usage);
 
-        // Check token budget (if configured)
-        if (tokenBudget && graceLimit) {
-          const used = totalUsage.inputTokens + totalUsage.outputTokens;
+        // Hard stop: budget + grace exhausted. Could be triggered by this call
+        // or by a sub-agent that ran while a previous iteration was awaiting.
+        if (tracker?.isOverGrace()) {
+          logger.warn(
+            { used: tracker.used, budget: tracker.budget, graceLimit: tracker.graceLimit },
+            'Token budget exceeded — hard stop',
+          );
+          messages.push({ role: 'assistant', content: response.content ?? '' });
+          hitTokenBudget = true;
+          break;
+        }
 
-          if (used >= graceLimit) {
-            logger.warn(
-              { used, budget: tokenBudget, graceLimit },
-              'Token budget exceeded — hard stop',
-            );
-            messages.push({ role: 'assistant', content: response.content ?? '' });
-            hitTokenBudget = true;
-            break;
-          }
-
-          if (used >= tokenBudget && !graceInjected) {
-            messages.push({
-              role: 'system',
-              content:
-                'You are at your token limit. Summarize your findings and finish in this turn.',
-            });
-            graceInjected = true;
-            logger.info(
-              { used, budget: tokenBudget },
-              'Token budget reached — grace turn injected',
-            );
-          }
+        // Soft stop: reached budget but still within grace. Inject the wrap-up
+        // message once per shared tracker so multiple loops don't pile on.
+        if (tracker?.shouldInjectGrace()) {
+          messages.push({
+            role: 'system',
+            content:
+              'You are at your token limit. Summarize your findings and finish in this turn.',
+          });
+          tracker.markGraceInjected();
+          nextCallIsGraceTurn = true;
+          logger.info(
+            { used: tracker.used, budget: tracker.budget },
+            'Token budget reached — grace turn injected',
+          );
         }
 
         // Error finish reason: stop immediately

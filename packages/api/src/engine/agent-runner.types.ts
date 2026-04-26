@@ -1,6 +1,7 @@
 import type { AgentStatus, TokenUsageRecord } from '@clawix/shared';
 
 import type { MessageStore } from './message-store/message-store.js';
+import type { BudgetTracker } from './budget-tracker.js';
 
 /** Options for running an agent. */
 export interface RunOptions {
@@ -29,10 +30,20 @@ export interface RunOptions {
   readonly userName?: string;
   /** When true, this is a re-invocation triggered by sub-agent result delivery. Reuses existing session. */
   readonly isReinvocation?: boolean;
-  /** Token budget for this run (inputTokens + outputTokens). Omit for no limit. */
-  readonly tokenBudget?: number;
+  /**
+   * Token budget for this run (inputTokens + outputTokens, cumulative across
+   * primary + all spawned sub-agents). Null/omit for no limit. Ignored when
+   * `budgetTracker` is provided (sub-agent path).
+   */
+  readonly tokenBudget?: number | null;
   /** Grace window as a percentage before hard kill. Default: 10. */
   readonly tokenGracePercent?: number;
+  /**
+   * Pre-existing budget tracker shared across the agent run. Sub-agents
+   * receive the parent's tracker via the spawn tool so the run-wide ceiling
+   * caps total cost across primary + sub-agents.
+   */
+  readonly budgetTracker?: BudgetTracker;
   /** Wall-clock timeout for the entire agent run in milliseconds. Default: 300000 (5 min). */
   readonly timeoutMs?: number;
   /** Caller-supplied persistence backend. When provided, agent-runner does NOT

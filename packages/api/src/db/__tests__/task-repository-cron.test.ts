@@ -34,7 +34,7 @@ describe('TaskRepository — cron methods', () => {
   });
 
   describe('findDue', () => {
-    it('should query enabled tasks with nextRunAt <= now, ordered asc, limited', async () => {
+    it('should query enabled, due, non-running tasks ordered asc, limited', async () => {
       const now = new Date('2026-03-28T10:00:00Z');
       mockPrisma.task.findMany.mockResolvedValue([mockTask]);
 
@@ -42,7 +42,11 @@ describe('TaskRepository — cron methods', () => {
 
       expect(result).toEqual([mockTask]);
       expect(mockPrisma.task.findMany).toHaveBeenCalledWith({
-        where: { enabled: true, nextRunAt: { lte: now } },
+        where: {
+          enabled: true,
+          nextRunAt: { lte: now },
+          taskRuns: { none: { status: 'running' } },
+        },
         orderBy: { nextRunAt: 'asc' },
         take: 5,
       });
@@ -54,6 +58,17 @@ describe('TaskRepository — cron methods', () => {
       const result = await repository.findDue(new Date(), 10);
 
       expect(result).toEqual([]);
+    });
+
+    it('excludes tasks that already have an in-flight TaskRun (regression: duplicate dispatch)', async () => {
+      // Smoke test that the running-runs filter is part of the query.
+      // The DB-level enforcement is covered by integration tests.
+      await repository.findDue(new Date(), 5);
+
+      const callArgs = mockPrisma.task.findMany.mock.calls[0]![0] as {
+        where: { taskRuns?: { none?: { status?: string } } };
+      };
+      expect(callArgs.where.taskRuns).toEqual({ none: { status: 'running' } });
     });
   });
 

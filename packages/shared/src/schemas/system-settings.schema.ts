@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { isValidIanaTimezone } from '../utils/timezone.js';
 
 export const systemSettingsSchema = z.object({
-  cronDefaultTokenBudget: z.number().int().positive().default(10000),
+  /**
+   * System-wide cap for cron-run token spend (input + output cumulative,
+   * shared across primary + sub-agents). `null` disables enforcement entirely
+   * — opt-in only; default is a generous safety net.
+   */
+  cronDefaultTokenBudget: z.number().int().positive().nullable().default(1_000_000),
   cronExecutionTimeoutMs: z.number().int().positive().default(300000),
   cronTokenGracePercent: z.number().int().min(0).max(100).default(10),
   defaultTimezone: z
