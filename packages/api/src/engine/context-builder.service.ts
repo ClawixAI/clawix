@@ -48,6 +48,9 @@ export class ContextBuilderService {
     const chatId = params.chatId ?? 'system';
     const userName = params.userName ?? 'System';
 
+    // chatId format for cron firings is 'cron:<taskId>' (set by CronTaskProcessorService)
+    const taskId = isScheduledTask && chatId.startsWith('cron:') ? chatId.slice(5) : undefined;
+
     const systemPrompt = await this.buildSystemPrompt(
       agentDef,
       userId,
@@ -55,6 +58,7 @@ export class ContextBuilderService {
       isSubAgent,
       isScheduledTask,
       params.workers,
+      taskId,
     );
     const userContent = await this.buildUserMessage(
       input,
@@ -77,6 +81,7 @@ export class ContextBuilderService {
     isSubAgent?: boolean,
     isScheduledTask?: boolean,
     workers?: readonly WorkerSummary[],
+    taskId?: string,
   ): Promise<string> {
     const sections: string[] = [];
 
@@ -122,7 +127,7 @@ export class ContextBuilderService {
     }
 
     // 7. Execution Context (when running as a scheduled task)
-    const executionSection = this.buildExecutionContextSection(Boolean(isScheduledTask));
+    const executionSection = this.buildExecutionContextSection(Boolean(isScheduledTask), taskId);
     if (executionSection) {
       sections.push(executionSection);
     }
@@ -285,14 +290,37 @@ export class ContextBuilderService {
     ].join('\n');
   }
 
-  private buildExecutionContextSection(isScheduledTask: boolean): string | null {
+  private buildExecutionContextSection(isScheduledTask: boolean, taskId?: string): string | null {
     if (!isScheduledTask) return null;
-    return [
+
+    const lines = [
       '# Execution Context',
       '',
-      'You are running as a scheduled task. The user is not present and cannot respond.',
+      taskId
+        ? `You are running as scheduled task \`${taskId}\`. The user is not present and cannot respond.`
+        : 'You are running as a scheduled task. The user is not present and cannot respond.',
       'Produce a self-contained result. Do not ask clarifying questions or invite follow-up.',
-    ].join('\n');
+      "The user's prompt is the deliverable. Saving or reading notes is a side-effect, never a substitute for the requested output. If you only acknowledge a memory operation, you have failed the task.",
+    ];
+
+    if (taskId) {
+      lines.push(
+        '',
+        '## Persistent Notes (optional)',
+        '',
+        `A folder at \`/workspace/memory/cron/${taskId}/\` persists across runs of this task. Use it only when continuity across runs would meaningfully improve your output — for example:`,
+        '',
+        '- avoiding repetition (e.g. not repeating a joke or example from a prior run)',
+        '- tracking progress through a multi-run task',
+        "- building on a prior run's findings",
+        '',
+        "To recall prior notes, `read_file` on a stable filename you've used before (e.g. `notes.md`, `used_jokes.md`). If the file doesn't exist, that means no prior notes for this task — proceed normally; do not treat the error as a problem. To save, `write_file` to a path under the folder above; parent directories are created automatically. Avoid `list_directory` on this folder — it errors when nothing has been saved yet, and the error suffix can derail you. Most one-shot tasks need neither read nor write — ignore the folder when continuity isn't relevant.",
+        '',
+        'Prefer this folder over `save_memory` or `MEMORY.md` for task-specific breadcrumbs — those are user-wide and can leak into unrelated conversations. Use them only when the note is genuinely about the user or applies beyond this task.',
+      );
+    }
+
+    return lines.join('\n');
   }
 
   private async buildMemorySection(userId: string, workspacePath?: string): Promise<string | null> {

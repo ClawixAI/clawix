@@ -455,7 +455,16 @@ export class AgentRunnerService {
         ? '\n\n---\nAgent run timed out. Try a simpler request or break it into smaller tasks.'
         : '';
 
-      const finalOutput = (loopResult.content ?? '') + contextWarning + timeoutSuffix || null;
+      const transcriptOutput =
+        options.outputMode === 'fullTranscript'
+          ? loopResult.messages
+              .filter((m) => m.role === 'assistant')
+              .map((m) => m.content)
+              .filter((c) => c.trim().length > 0)
+              .join('\n\n')
+          : (loopResult.content ?? '');
+
+      const finalOutput = transcriptOutput + contextWarning + timeoutSuffix || null;
       await this.agentRunRepo.update(agentRun.id, {
         status: runStatus,
         output: finalOutput ?? '',

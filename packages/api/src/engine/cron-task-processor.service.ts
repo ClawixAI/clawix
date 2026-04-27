@@ -129,6 +129,12 @@ export class CronTaskProcessorService {
             tokenBudget,
             tokenGracePercent,
             messageStore,
+            outputMode: 'fullTranscript',
+            // Forward the cron deadline into the reasoning loop so its own
+            // AbortController fires first and cancels the in-flight LLM
+            // request cleanly. The Promise.race below remains a defense-in-
+            // depth backstop in case the inner timeout misbehaves.
+            timeoutMs: effectiveTimeoutMs,
           }),
           timeoutPromise,
         ]);

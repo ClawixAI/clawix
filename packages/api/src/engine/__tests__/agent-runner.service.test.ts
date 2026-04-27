@@ -461,6 +461,61 @@ describe('AgentRunnerService', () => {
   });
 
   // ---------------------------------------------------------------- //
+  //  outputMode behavior                                              //
+  // ---------------------------------------------------------------- //
+
+  it("outputMode 'fullTranscript' concatenates all assistant text from the loop", async () => {
+    mockLoopInstance.run.mockResolvedValueOnce({
+      content: 'Joke delivered and logged.',
+      messages: [
+        { role: 'system' as const, content: 'sys' },
+        { role: 'user' as const, content: 'tell a joke' },
+        {
+          role: 'assistant' as const,
+          content: 'Why do programmers prefer dark mode? Because light attracts bugs.',
+        },
+        { role: 'tool' as const, content: 'file written', toolCallId: 't1' },
+        { role: 'assistant' as const, content: 'Joke delivered and logged.' },
+      ],
+      totalUsage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      iterations: 2,
+      hitMaxIterations: false,
+    });
+
+    const result = await service.run({
+      ...defaultOptions,
+      outputMode: 'fullTranscript',
+    });
+
+    expect(result.output).toContain('Why do programmers prefer dark mode?');
+    expect(result.output).toContain('Joke delivered and logged.');
+  });
+
+  it("outputMode 'final' (default) returns only the last assistant content", async () => {
+    mockLoopInstance.run.mockResolvedValueOnce({
+      content: 'Joke delivered and logged.',
+      messages: [
+        { role: 'system' as const, content: 'sys' },
+        { role: 'user' as const, content: 'tell a joke' },
+        {
+          role: 'assistant' as const,
+          content: 'Why do programmers prefer dark mode? Because light attracts bugs.',
+        },
+        { role: 'tool' as const, content: 'file written', toolCallId: 't1' },
+        { role: 'assistant' as const, content: 'Joke delivered and logged.' },
+      ],
+      totalUsage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      iterations: 2,
+      hitMaxIterations: false,
+    });
+
+    const result = await service.run(defaultOptions);
+
+    expect(result.output).toBe('Joke delivered and logged.');
+    expect(result.output).not.toContain('Why do programmers prefer dark mode?');
+  });
+
+  // ---------------------------------------------------------------- //
   //  Test 2: checkBudget is called                                    //
   // ---------------------------------------------------------------- //
 

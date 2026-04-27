@@ -112,6 +112,25 @@ describe('ResilientLLMProvider', () => {
 
     expect(inner.chat).toHaveBeenCalledWith(messages, options);
   });
+
+  it('does not retry when the caller has already aborted the request', async () => {
+    // A network-style error message that would normally be retried
+    // ("connection") must NOT trigger retries when the abort signal is
+    // already set — the failure is intentional cancellation.
+    const inner: LLMProvider = {
+      name: 'mock',
+      chat: vi.fn().mockRejectedValue(new Error('connection reset')),
+    };
+    const resilient = new ResilientLLMProvider(inner, FAST_RETRY_CONFIG);
+
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      resilient.chat(messages, { ...options, abortSignal: controller.signal }),
+    ).rejects.toThrow('connection reset');
+    expect(inner.chat).toHaveBeenCalledTimes(1);
+  });
 });
 
 /* ------------------------------------------------------------------ */

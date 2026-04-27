@@ -202,6 +202,7 @@ describe('CronTaskProcessorService.execute', () => {
         channel: 'internal',
         chatId: 'cron:task-1',
         userName: 'CronScheduler',
+        outputMode: 'fullTranscript',
       }),
     );
   });

@@ -120,6 +120,13 @@ export class ResilientLLMProvider implements LLMProvider {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
 
+        // If the caller's abort signal has fired, the error is intentional
+        // cancellation — propagate immediately without retrying. Otherwise
+        // a timeout/cancel would just trigger N retries before bubbling up.
+        if (options?.abortSignal?.aborted) {
+          throw err;
+        }
+
         if (!isTransientError(message, this.config.transientPatterns)) {
           // Not a transient error — propagate immediately.
           throw err;

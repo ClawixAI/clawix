@@ -73,15 +73,18 @@ export function createWebFetchTool(): Tool {
           },
         });
 
-        // Step 3: Fetch with timeout, DNS pinning, and redirect limit
+        // Step 3: Fetch with timeout, DNS pinning, and redirect limit.
+        // The same controller covers both the request/headers phase AND the
+        // body-read phase — slow-streaming endpoints (live-news pages, SSE,
+        // long-poll) can return headers fast but stall the body, so the
+        // timeout must remain armed until the body has been fully read.
         const controller = new AbortController();
         const timeout = setTimeout(() => {
           controller.abort();
         }, FETCH_TIMEOUT_MS);
 
-        let response: Awaited<ReturnType<typeof undiciFetch>>;
         try {
-          response = await undiciFetch(url, {
+          const response = await undiciFetch(url, {
             signal: controller.signal,
             headers: {
               'User-Agent': USER_AGENT,
@@ -90,42 +93,43 @@ export function createWebFetchTool(): Tool {
             redirect: 'follow',
             maxRedirections: MAX_REDIRECTS,
           } as Parameters<typeof undiciFetch>[1]);
+
+          if (!response.ok) {
+            return {
+              output: `Fetch failed: HTTP ${response.status} for ${url}`,
+              isError: true,
+            };
+          }
+
+          // Step 4: Read body with streaming size enforcement, racing
+          // each chunk read against the same abort signal.
+          const body = await readBodyWithLimit(response, MAX_RESPONSE_BYTES, controller.signal);
+
+          // Step 5: Extract content based on content type
+          const contentType = response.headers.get('content-type') ?? 'text/plain';
+          const extracted = extractContent(body, contentType, maxChars);
+
+          // Step 6: Format output
+          const titleLine = extracted.title
+            ? `Title: ${extracted.title}\nURL: ${url}\n\n`
+            : `URL: ${url}\n\n`;
+          const output = titleLine + extracted.content;
+
+          logger.info(
+            {
+              url,
+              contentType,
+              contentLength: body.length,
+              extractedLength: extracted.content.length,
+            },
+            'web_fetch completed',
+          );
+
+          return { output, isError: false };
         } finally {
           clearTimeout(timeout);
           await dispatcher.close();
         }
-
-        if (!response.ok) {
-          return {
-            output: `Fetch failed: HTTP ${response.status} for ${url}`,
-            isError: true,
-          };
-        }
-
-        // Step 4: Read body with streaming size enforcement
-        const body = await readBodyWithLimit(response, MAX_RESPONSE_BYTES);
-
-        // Step 5: Extract content based on content type
-        const contentType = response.headers.get('content-type') ?? 'text/plain';
-        const extracted = extractContent(body, contentType, maxChars);
-
-        // Step 6: Format output
-        const titleLine = extracted.title
-          ? `Title: ${extracted.title}\nURL: ${url}\n\n`
-          : `URL: ${url}\n\n`;
-        const output = titleLine + extracted.content;
-
-        logger.info(
-          {
-            url,
-            contentType,
-            contentLength: body.length,
-            extractedLength: extracted.content.length,
-          },
-          'web_fetch completed',
-        );
-
-        return { output, isError: false };
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         logger.error({ url, error: message }, 'web_fetch failed');
@@ -144,6 +148,7 @@ export function createWebFetchTool(): Tool {
 async function readBodyWithLimit(
   response: Awaited<ReturnType<typeof undiciFetch>>,
   maxBytes: number,
+  signal: AbortSignal,
 ): Promise<string> {
   // If Content-Length is known and exceeds limit, fail fast
   const contentLength = response.headers.get('content-length');
@@ -158,22 +163,48 @@ async function readBodyWithLimit(
   }
 
   const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  let readResult = await reader.read();
 
-  while (!readResult.done) {
-    const chunk = readResult.value;
-    totalBytes += chunk.byteLength;
-    if (totalBytes > maxBytes) {
-      await reader.cancel();
-      throw new Error(`Response too large: exceeded ${maxBytes} byte limit`);
+  // Race each reader.read() against the abort signal so a server that sends
+  // headers fast and then stalls the body cannot pin the loop indefinitely.
+  let abortHandler: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    if (signal.aborted) {
+      reject(new Error('Body read aborted'));
+      return;
+    }
+    abortHandler = () => reject(new Error('Body read aborted'));
+    signal.addEventListener('abort', abortHandler);
+  });
+  // Prevent unhandled rejection warnings when the read finishes first.
+  abortPromise.catch(() => {});
+
+  try {
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    let readResult = await Promise.race([reader.read(), abortPromise]);
+
+    while (!readResult.done) {
+      const chunk = readResult.value;
+      totalBytes += chunk.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        throw new Error(`Response too large: exceeded ${maxBytes} byte limit`);
+      }
+
+      chunks.push(chunk);
+      readResult = await Promise.race([reader.read(), abortPromise]);
     }
 
-    chunks.push(chunk);
-    readResult = await reader.read();
+    const decoder = new TextDecoder();
+    return (
+      chunks.map((chunk) => decoder.decode(chunk, { stream: true })).join('') + decoder.decode()
+    );
+  } finally {
+    if (abortHandler) {
+      signal.removeEventListener('abort', abortHandler);
+    }
+    // Always release the underlying connection — important when an abort
+    // unblocks the read() race while the stream is still open.
+    reader.cancel().catch(() => {});
   }
-
-  const decoder = new TextDecoder();
-  return chunks.map((chunk) => decoder.decode(chunk, { stream: true })).join('') + decoder.decode();
 }

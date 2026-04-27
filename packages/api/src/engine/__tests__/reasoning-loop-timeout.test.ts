@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { ChatMessage, LLMProvider, LLMResponse } from '@clawix/shared';
+import type { ChatMessage, ChatOptions, LLMProvider, LLMResponse } from '@clawix/shared';
 
 import { ReasoningLoop } from '../reasoning-loop.js';
 import { ToolRegistry } from '../tool-registry.js';
@@ -139,5 +139,55 @@ describe('ReasoningLoop timeout', () => {
 
     expect(result.hitTimeout).toBe(true);
     expect(result.iterations).toBeLessThanOrEqual(1);
+  });
+
+  it('forwards an abort signal to provider.chat() options', async () => {
+    let receivedOptions: ChatOptions | undefined;
+    const provider: LLMProvider = {
+      name: 'capture',
+      chat: vi.fn(async (_messages, opts?: ChatOptions) => {
+        receivedOptions = opts;
+        return {
+          content: 'ok',
+          toolCalls: [],
+          thinkingBlocks: null,
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          finishReason: 'stop',
+        } as LLMResponse;
+      }),
+    };
+    const registry = new ToolRegistry();
+    const loop = new ReasoningLoop(provider, registry);
+
+    await loop.run([{ role: 'user', content: 'hi' }], { timeoutMs: 5000 });
+
+    expect(receivedOptions?.abortSignal).toBeDefined();
+    expect(receivedOptions?.abortSignal?.aborted).toBe(false);
+  });
+
+  it('exits cleanly when provider rejects with an abort error mid-call', async () => {
+    // Realistic shape: provider observes the signal and throws AbortError
+    // when it fires. Without the loop's catch, this would propagate as a
+    // hard failure instead of returning hitTimeout: true.
+    const provider: LLMProvider = {
+      name: 'aborting',
+      chat: vi.fn((_messages, opts?: ChatOptions) => {
+        return new Promise<LLMResponse>((_resolve, reject) => {
+          opts?.abortSignal?.addEventListener('abort', () => {
+            const err = new Error('Request was aborted');
+            err.name = 'AbortError';
+            reject(err);
+          });
+        });
+      }),
+    };
+    const registry = new ToolRegistry();
+    const loop = new ReasoningLoop(provider, registry);
+
+    const result = await loop.run([{ role: 'user', content: 'hi' }], { timeoutMs: 30 });
+
+    expect(result.hitTimeout).toBe(true);
+    expect(result.iterations).toBe(1);
+    expect(result.content).toBeNull();
   });
 });

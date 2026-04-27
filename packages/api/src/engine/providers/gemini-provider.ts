@@ -25,6 +25,30 @@ const DEFAULT_MODEL = 'gemini-3-flash-preview';
 
 const log = createLogger('engine:gemini');
 
+/**
+ * Race a promise against an abort signal. Resolves with the promise's value
+ * unless the signal fires first, in which case it rejects with an AbortError.
+ */
+async function raceWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    throw new Error('Request aborted');
+  }
+  let abortHandler: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    abortHandler = () => reject(new Error('Request aborted'));
+    signal.addEventListener('abort', abortHandler, { once: true });
+  });
+  // Prevent unhandled rejection if the call resolves first.
+  abortPromise.catch(() => {});
+  try {
+    return await Promise.race([promise, abortPromise]);
+  } finally {
+    if (abortHandler) {
+      signal.removeEventListener('abort', abortHandler);
+    }
+  }
+}
+
 function normalizeGeminiError(err: unknown): Error {
   if (!(err instanceof Error)) {
     return new Error(`Gemini request failed: ${String(err)}`);
@@ -90,11 +114,18 @@ export class GeminiProvider implements LLMProvider {
 
     let resp: unknown;
     try {
-      resp = await this.client.models.generateContent({
+      // The @google/genai SDK does not expose an AbortSignal hook on
+      // generateContent. Race the call against the abort signal so the
+      // caller is unblocked immediately when an abort fires; the underlying
+      // HTTPS request will be abandoned by the runtime.
+      const callPromise = this.client.models.generateContent({
         model,
         contents: contents as never,
         config,
       });
+      resp = options?.abortSignal
+        ? await raceWithAbort(callPromise, options.abortSignal)
+        : await callPromise;
     } catch (err) {
       throw normalizeGeminiError(err);
     }

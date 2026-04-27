@@ -149,6 +149,42 @@ describe('web_fetch tool — execute', () => {
     expect(result.output.length).toBeLessThan(300);
   });
 
+  it('aborts when body stream stalls beyond fetch timeout', async () => {
+    vi.useFakeTimers();
+
+    try {
+      // Body stream that never enqueues data and never closes — simulates
+      // a server that returns headers fast (e.g. CNN /live-news/) but then
+      // hangs the body. Without timeout coverage on the body read, this
+      // would hang the agent until the cron wrapper kills it 5 minutes later.
+      const stream = new ReadableStream<Uint8Array>({
+        pull() {
+          // intentionally never resolves
+        },
+      });
+
+      mockUndiciFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'text/plain' }),
+        body: stream,
+        redirected: false,
+      });
+
+      const tool = createWebFetchTool();
+      const promise = tool.execute({ url: 'https://example.com/slow-body' });
+
+      // Advance fake clock past FETCH_TIMEOUT_MS (30s)
+      await vi.advanceTimersByTimeAsync(31_000);
+
+      const result = await promise;
+      expect(result.isError).toBe(true);
+      expect(result.output.toLowerCase()).toMatch(/abort/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('aborts when response body exceeds size limit', async () => {
     // Create a stream that emits chunks exceeding the 10MB limit
     const chunkSize = 1024 * 1024; // 1MB per chunk

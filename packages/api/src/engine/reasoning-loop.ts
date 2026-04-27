@@ -109,6 +109,11 @@ export class ReasoningLoop {
       ...(config?.model ? { model: config.model } : {}),
       tools: this.toolRegistry.getDefinitions(),
       ...(config?.settings ? { settings: config.settings } : {}),
+      // Forward the loop's abort signal so the provider's SDK call is
+      // cancelled in-flight when the timeout fires (or an external abort
+      // signal triggers). Without this, a timeout would unwind the loop
+      // but leave the LLM HTTPS request open — wasting tokens and a slot.
+      abortSignal: abortController.signal,
     };
 
     try {
@@ -150,7 +155,22 @@ export class ReasoningLoop {
           : chatOptions;
         nextCallIsGraceTurn = false;
 
-        const response = await this.provider.chat(messages, callOptions);
+        let response: LLMResponse;
+        try {
+          response = await this.provider.chat(messages, callOptions);
+        } catch (err: unknown) {
+          // If abort fired while the SDK call was in flight, the provider
+          // throws an AbortError. Treat that as a clean timeout exit rather
+          // than letting it propagate as a hard failure.
+          if (abortController.signal.aborted) {
+            logger.warn(
+              { iteration: iterations },
+              'Provider chat aborted by signal — exiting loop',
+            );
+            break;
+          }
+          throw err;
+        }
         lastResponse = response;
         totalUsage = addUsage(totalUsage, response.usage);
         tracker?.record(response.usage);

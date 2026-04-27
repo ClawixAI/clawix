@@ -131,7 +131,10 @@ export class AnthropicProvider implements LLMProvider {
         }),
     };
 
-    const response = await this.client.messages.create(requestParams);
+    const response = await this.client.messages.create(
+      requestParams,
+      options?.abortSignal ? { signal: options.abortSignal } : undefined,
+    );
 
     let textContent = '';
     const toolCalls: ToolCallRequest[] = [];

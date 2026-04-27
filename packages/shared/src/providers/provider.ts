@@ -26,6 +26,12 @@ export interface ChatOptions {
   readonly tools?: readonly ToolDefinition[];
   readonly settings?: GenerationSettings;
   readonly toolChoice?: 'auto' | 'none' | { readonly name: string };
+  /**
+   * Abort signal forwarded to the underlying SDK call. When the signal fires,
+   * the in-flight HTTP request to the provider is cancelled — closing the
+   * socket so the provider stops generating (and billing) tokens.
+   */
+  readonly abortSignal?: AbortSignal;
 }
 
 /** Common interface for all LLM providers. */

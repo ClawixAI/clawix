@@ -51,6 +51,13 @@ export interface RunOptions {
   /** Caller-supplied persistence backend. When provided, agent-runner does NOT
    *  create or resume a Session — all transcript persistence flows through the store. */
   readonly messageStore?: MessageStore;
+  /**
+   * How to assemble the final output string.
+   * - 'final' (default): only the last assistant response. Matches sub-agent / streaming-channel behavior.
+   * - 'fullTranscript': concatenate all assistant text across the run. Use for cron firings so deliverables
+   *   emitted before tool calls are not lost behind the agent's confirmation message.
+   */
+  readonly outputMode?: 'final' | 'fullTranscript';
 }
 
 /** Result returned after an agent run completes (or fails). */

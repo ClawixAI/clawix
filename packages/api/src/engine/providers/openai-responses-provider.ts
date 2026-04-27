@@ -57,16 +57,19 @@ export class OpenAIResponsesProvider implements LLMProvider {
     try {
       // Use the responses.create() method from the OpenAI SDK.
       // The TypeScript types may not be updated yet, so we cast through `any`.
-      const response = await (this.client as any).responses.create({
-        model,
-        input,
-        ...(instructions ? { instructions } : {}),
-        ...(tools ? { tools } : {}),
-        ...(options?.settings?.temperature !== undefined && {
-          temperature: options.settings.temperature,
-        }),
-        max_output_tokens: maxTokens,
-      });
+      const response = await (this.client as any).responses.create(
+        {
+          model,
+          input,
+          ...(instructions ? { instructions } : {}),
+          ...(tools ? { tools } : {}),
+          ...(options?.settings?.temperature !== undefined && {
+            temperature: options.settings.temperature,
+          }),
+          max_output_tokens: maxTokens,
+        },
+        options?.abortSignal ? { signal: options.abortSignal } : undefined,
+      );
 
       const output = (response.output ?? []) as readonly Record<string, unknown>[];
       const usage = response.usage as

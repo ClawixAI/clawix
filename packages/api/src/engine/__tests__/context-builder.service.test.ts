@@ -616,6 +616,8 @@ describe('ContextBuilderService', () => {
       const systemMsg = result.find((m) => m.role === 'system');
       expect(systemMsg?.content).toContain('# Execution Context');
       expect(systemMsg?.content).toContain('running as a scheduled task');
+      expect(systemMsg?.content).toContain("The user's prompt is the deliverable");
+      expect(systemMsg?.content).toContain('you have failed the task');
     });
 
     it('omits Execution Context section when isScheduledTask=false or undefined', async () => {
@@ -623,6 +625,41 @@ describe('ContextBuilderService', () => {
 
       const systemMsg = result.find((m) => m.role === 'system');
       expect(systemMsg?.content).not.toContain('# Execution Context');
+    });
+
+    it('includes Persistent Notes block when chatId is "cron:<taskId>"', async () => {
+      const params = {
+        ...baseParams,
+        isScheduledTask: true,
+        chatId: 'cron:abc123',
+      };
+      const result = await service.buildMessages(params);
+
+      const systemMsg = result.find((m) => m.role === 'system');
+      const content = systemMsg?.content as string;
+      expect(content).toContain('scheduled task `abc123`');
+      expect(content).toContain('## Persistent Notes (optional)');
+      expect(content).toContain('/workspace/memory/cron/abc123/');
+      expect(content).toContain('read_file');
+      expect(content).toContain('write_file');
+      expect(content).toContain('Avoid `list_directory` on this folder');
+      expect(content).toContain('parent directories are created automatically');
+      expect(content).toContain('Prefer this folder over `save_memory` or `MEMORY.md`');
+    });
+
+    it('omits Persistent Notes block when chatId does not have "cron:" prefix', async () => {
+      const params = {
+        ...baseParams,
+        isScheduledTask: true,
+        chatId: '123456',
+      };
+      const result = await service.buildMessages(params);
+
+      const systemMsg = result.find((m) => m.role === 'system');
+      const content = systemMsg?.content as string;
+      expect(content).toContain('# Execution Context');
+      expect(content).not.toContain('## Persistent Notes');
+      expect(content).not.toContain('/workspace/memory/cron/');
     });
   });
 

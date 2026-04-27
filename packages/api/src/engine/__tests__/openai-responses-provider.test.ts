@@ -100,6 +100,7 @@ describe('OpenAIResponsesProvider', () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ instructions: 'You are a pirate.' }),
+      undefined,
     );
   });
 
@@ -119,6 +120,7 @@ describe('OpenAIResponsesProvider', () => {
 
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ model: 'gpt-5.1-codex-mini' }),
+      undefined,
     );
   });
 
@@ -134,7 +136,10 @@ describe('OpenAIResponsesProvider', () => {
       settings: { temperature: 0.7 },
     });
 
-    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ temperature: 0.7 }));
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ temperature: 0.7 }),
+      undefined,
+    );
   });
 
   it('handles empty output gracefully', async () => {
