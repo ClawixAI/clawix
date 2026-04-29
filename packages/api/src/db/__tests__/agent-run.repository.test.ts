@@ -98,6 +98,22 @@ describe('AgentRunRepository', () => {
         expect.objectContaining({ where: { agentDefinitionId: 'agent-1' } }),
       );
     });
+
+    it('should additionally scope by session.userId when userId is provided', async () => {
+      mockPrisma.agentRun.findMany.mockResolvedValue([mockAgentRun]);
+      mockPrisma.agentRun.count.mockResolvedValue(1);
+
+      await repository.findByAgentDefinitionId('agent-1', { page: 1, limit: 10 }, 'user-1');
+
+      expect(mockPrisma.agentRun.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { agentDefinitionId: 'agent-1', session: { userId: 'user-1' } },
+        }),
+      );
+      expect(mockPrisma.agentRun.count).toHaveBeenCalledWith({
+        where: { agentDefinitionId: 'agent-1', session: { userId: 'user-1' } },
+      });
+    });
   });
 
   describe('create', () => {

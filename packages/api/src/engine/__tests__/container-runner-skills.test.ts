@@ -34,7 +34,6 @@ describe('buildDockerRunArgs - skill mounts', () => {
       validatedMounts: [],
       skillMounts: {
         builtinHostPath: '/host/skills/builtin',
-        customHostPath: '/host/skills/custom/user1',
       },
     });
     expect(args).toContain('-v');
@@ -42,18 +41,15 @@ describe('buildDockerRunArgs - skill mounts', () => {
     expect(builtinMountIndex).toBeGreaterThan(-1);
   });
 
-  it('adds custom skills mount as read-write', () => {
+  it('does not emit a /skills/custom mount', () => {
     const args = buildDockerRunArgs({
       agentDef: mockAgentDef,
       containerName: 'test-container',
       validatedMounts: [],
-      skillMounts: {
-        builtinHostPath: '/host/skills/builtin',
-        customHostPath: '/host/skills/custom/user1',
-      },
+      skillMounts: { builtinHostPath: '/host/skills/builtin' },
     });
-    const customMountIndex = args.indexOf('/host/skills/custom/user1:/skills/custom');
-    expect(customMountIndex).toBeGreaterThan(-1);
+    expect(args.join(' ')).not.toContain('/skills/custom');
+    expect(args.join(' ')).toContain('/host/skills/builtin:/skills/builtin:ro');
   });
 
   it('omits skill mounts when not provided', () => {

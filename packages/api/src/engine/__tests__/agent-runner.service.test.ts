@@ -730,7 +730,6 @@ describe('AgentRunnerService', () => {
         workspaceHostPath: '/host/data/users/user-1/workspace',
         skillMounts: expect.objectContaining({
           builtinHostPath: expect.any(String),
-          customHostPath: expect.any(String),
         }),
       },
     );
@@ -762,7 +761,6 @@ describe('AgentRunnerService', () => {
         workspaceHostPath: '/host/data/users/user-1/workspace',
         skillMounts: expect.objectContaining({
           builtinHostPath: expect.any(String),
-          customHostPath: expect.any(String),
         }),
       },
     );

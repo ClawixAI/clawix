@@ -74,7 +74,7 @@ describe('SkillLoaderService', () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-test-'));
     builtinDir = path.join(tmpDir, 'builtin');
-    customDir = path.join(tmpDir, 'custom');
+    customDir = path.join(tmpDir, 'workspace', 'skills');
     await fs.mkdir(builtinDir, { recursive: true });
     await fs.mkdir(customDir, { recursive: true });
   });
@@ -95,33 +95,32 @@ describe('SkillLoaderService', () => {
       'summarize',
       '---\nname: summarize\ndescription: Summarize text\n---',
     );
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const skills = await service.listSkills('user1');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const skills = await service.listSkills(customDir);
     expect(skills).toHaveLength(1);
     expect(skills[0]!.name).toBe('summarize');
     expect(skills[0]!.source).toBe('builtin');
   });
 
-  it('discovers custom user skills', async () => {
-    const userDir = path.join(customDir, 'user1');
-    await createSkill(userDir, 'my-tool', '---\nname: my-tool\ndescription: My custom tool\n---');
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const skills = await service.listSkills('user1');
+  it('discovers custom user skills at /workspace/skills/<name>', async () => {
+    await createSkill(customDir, 'my-tool', '---\nname: my-tool\ndescription: My custom tool\n---');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const skills = await service.listSkills(customDir);
     expect(skills).toHaveLength(1);
     expect(skills[0]!.name).toBe('my-tool');
     expect(skills[0]!.source).toBe('custom');
+    expect(skills[0]!.path).toBe('/workspace/skills/my-tool/SKILL.md');
   });
 
   it('custom overrides builtin by directory name', async () => {
     await createSkill(builtinDir, 'summarize', '---\nname: summarize\ndescription: Built-in\n---');
-    const userDir = path.join(customDir, 'user1');
     await createSkill(
-      userDir,
+      customDir,
       'summarize',
       '---\nname: summarize\ndescription: Custom override\n---',
     );
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const skills = await service.listSkills('user1');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const skills = await service.listSkills(customDir);
     expect(skills).toHaveLength(1);
     expect(skills[0]!.source).toBe('custom');
     expect(skills[0]!.description).toBe('Custom override');
@@ -129,72 +128,72 @@ describe('SkillLoaderService', () => {
 
   it('skips directories without SKILL.md', async () => {
     await fs.mkdir(path.join(builtinDir, 'empty-dir'), { recursive: true });
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const skills = await service.listSkills('user1');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const skills = await service.listSkills(customDir);
     expect(skills).toHaveLength(0);
   });
 
   it('skips skills with invalid frontmatter', async () => {
     await createSkill(builtinDir, 'bad-skill', '---\nname: Invalid Name!\ndescription: Bad\n---');
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const skills = await service.listSkills('user1');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const skills = await service.listSkills(customDir);
     expect(skills).toHaveLength(0);
   });
 
   it('enforces max skills per user limit', async () => {
-    const userDir = path.join(customDir, 'user1');
     for (let i = 0; i < 5; i++) {
       await createSkill(
-        userDir,
+        customDir,
         `skill-${i}`,
         `---\nname: skill-${i}\ndescription: Skill ${i}\n---`,
       );
     }
-    const service = new SkillLoaderService(builtinDir, customDir, 3);
-    const skills = await service.listSkills('user1');
+    const service = new SkillLoaderService(builtinDir, 3);
+    const skills = await service.listSkills(customDir);
     const customSkills = skills.filter((s) => s.source === 'custom');
     expect(customSkills.length).toBe(3);
   });
 
-  it('user isolation - user2 cannot see user1 skills', async () => {
-    const user1Dir = path.join(customDir, 'user1');
-    await createSkill(
-      user1Dir,
-      'private-tool',
-      '---\nname: private-tool\ndescription: Private\n---',
-    );
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const skills = await service.listSkills('user2');
-    expect(skills.filter((s) => s.name === 'private-tool')).toHaveLength(0);
+  it('returns only builtin when customDir does not exist', async () => {
+    await createSkill(builtinDir, 'b', '---\nname: b\ndescription: B\n---');
+    const missingCustom = path.join(tmpDir, 'no-such-dir');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const skills = await service.listSkills(missingCustom);
+    expect(skills).toHaveLength(1);
+    expect(skills[0]!.source).toBe('builtin');
   });
 
-  it('builds XML summary with correct format', async () => {
+  it('builds XML summary with /workspace/skills path for custom', async () => {
+    await createSkill(customDir, 'my-tool', '---\nname: my-tool\ndescription: My tool\n---');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const summary = await service.buildSkillsSummary(customDir);
+    expect(summary).toContain('<location>/workspace/skills/my-tool/SKILL.md</location>');
+    expect(summary).toContain('<source>custom</source>');
+  });
+
+  it('builds XML summary with /skills/builtin path for builtin', async () => {
     await createSkill(
       builtinDir,
       'summarize',
       '---\nname: summarize\ndescription: Summarize text\n---',
     );
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const summary = await service.buildSkillsSummary('user1');
-    expect(summary).toContain('<skills>');
-    expect(summary).toContain('<name>summarize</name>');
-    expect(summary).toContain('<description>Summarize text</description>');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const summary = await service.buildSkillsSummary(customDir);
     expect(summary).toContain('<location>/skills/builtin/summarize/SKILL.md</location>');
     expect(summary).toContain('<source>builtin</source>');
-    expect(summary).toContain('</skills>');
   });
 
   it('returns empty string when no skills found', async () => {
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const summary = await service.buildSkillsSummary('user1');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const summary = await service.buildSkillsSummary(customDir);
     expect(summary).toBe('');
   });
 
   it('skips symlinked skill directories', async () => {
     await createSkill(builtinDir, 'real-skill', '---\nname: real-skill\ndescription: Real\n---');
     await fs.symlink(path.join(builtinDir, 'real-skill'), path.join(builtinDir, 'symlink-skill'));
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const skills = await service.listSkills('user1');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const skills = await service.listSkills(customDir);
     expect(skills).toHaveLength(1);
     expect(skills[0]!.name).toBe('real-skill');
   });
@@ -205,8 +204,8 @@ describe('SkillLoaderService', () => {
       'xml-test',
       '---\nname: xml-test\ndescription: Parse <data> & format\n---',
     );
-    const service = new SkillLoaderService(builtinDir, customDir, 50);
-    const summary = await service.buildSkillsSummary('user1');
+    const service = new SkillLoaderService(builtinDir, 50);
+    const summary = await service.buildSkillsSummary(customDir);
     expect(summary).toContain('&lt;data&gt;');
     expect(summary).toContain('&amp;');
     expect(summary).not.toContain('<data>');

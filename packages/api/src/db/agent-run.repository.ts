@@ -101,9 +101,13 @@ export class AgentRunRepository {
   async findByAgentDefinitionId(
     agentDefinitionId: string,
     pagination: PaginationInput,
+    userId?: string,
   ): Promise<PaginatedResponse<AgentRun>> {
     const paginationArgs = buildPaginationArgs(pagination);
-    const where = { agentDefinitionId };
+    const where: Prisma.AgentRunWhereInput = {
+      agentDefinitionId,
+      ...(userId ? { session: { userId } } : {}),
+    };
 
     const [data, total] = await Promise.all([
       this.prisma.agentRun.findMany({

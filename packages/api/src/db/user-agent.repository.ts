@@ -79,6 +79,13 @@ export class UserAgentRepository {
     });
   }
 
+  async existsForUser(userId: string, agentDefinitionId: string): Promise<boolean> {
+    const count = await this.prisma.userAgent.count({
+      where: { userId, agentDefinitionId },
+    });
+    return count > 0;
+  }
+
   async create(data: CreateUserAgentInput): Promise<UserAgent> {
     try {
       return await this.prisma.userAgent.create({

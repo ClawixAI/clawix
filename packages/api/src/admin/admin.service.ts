@@ -16,7 +16,6 @@ import { encryptChannelConfig, maskChannelConfig } from '../channels/channel-con
 import { GroupRepository } from '../db/group.repository.js';
 import { PolicyRepository } from '../db/policy.repository.js';
 import { UserRepository } from '../db/user.repository.js';
-import { SkillLoaderService } from '../engine/skill-loader.service.js';
 import { BCRYPT_SALT_ROUNDS_DEFAULT } from '../auth/auth.constants.js';
 
 type SafeUser = Omit<User, 'passwordHash'>;
@@ -46,7 +45,6 @@ export class AdminService {
     private readonly channelManager: ChannelManagerService,
     private readonly groupRepo: GroupRepository,
     private readonly policyRepo: PolicyRepository,
-    private readonly skillLoader: SkillLoaderService,
     private readonly config: ConfigService,
   ) {
     this.saltRounds = Number(
@@ -77,9 +75,6 @@ export class AdminService {
       role: input.role,
       policyId: input.policyId,
     });
-
-    // Create the user's custom skill directory
-    await this.skillLoader.ensureUserSkillDir(user.id);
 
     return this.stripPassword(user);
   }

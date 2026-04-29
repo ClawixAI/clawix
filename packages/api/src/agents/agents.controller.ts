@@ -111,13 +111,16 @@ export class AgentsController {
   listRuns(
     @Param('id') id: string,
     @Query(new ZodValidationPipe(paginationSchema)) query: PaginationInput,
+    @Req() req: AuthRequest,
   ) {
-    return this.agentsService.listAgentRuns(id, query);
+    const { user } = req;
+    return this.agentsService.listAgentRuns(id, query, user.sub, user.role);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.agentsService.getAgent(id);
+  findOne(@Param('id') id: string, @Req() req: AuthRequest) {
+    const { user } = req;
+    return this.agentsService.getAgent(id, user.sub, user.role);
   }
 
   @Post()

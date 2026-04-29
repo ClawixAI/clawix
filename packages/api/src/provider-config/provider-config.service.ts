@@ -220,6 +220,7 @@ export class ProviderConfigService {
       { provider: 'anthropic', displayName: 'Anthropic', envKey: 'ANTHROPIC_API_KEY' },
       { provider: 'openai', displayName: 'OpenAI', envKey: 'OPENAI_API_KEY' },
       { provider: 'zai-coding', displayName: 'Z.AI Coding Plan', envKey: 'ZAI_CODING_API_KEY' },
+      { provider: 'kimi-code', displayName: 'Kimi Coding Plan', envKey: 'KIMI_CODE_API_KEY' },
     ];
 
     let isFirst = true;

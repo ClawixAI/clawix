@@ -20,7 +20,7 @@ describe('ContextBuilderService - skill summary integration', () => {
       buildSkillsSummary: vi
         .fn()
         .mockResolvedValue(
-          '<skills><skill><name>test</name><description>Test</description><location>/skills/builtin/test/SKILL.md</location><source>builtin</source></skill></skills>',
+          '<skills><skill><name>test</name><description>Test</description><location>/workspace/skills/test/SKILL.md</location><source>custom</source></skill></skills>',
         ),
     };
 
@@ -38,6 +38,7 @@ describe('ContextBuilderService - skill summary integration', () => {
       history: [],
       input: 'Hello',
       userId: 'user1',
+      workspacePath: '/tmp/workspace-user1',
     };
 
     const messages = await service.buildMessages(params);
@@ -46,9 +47,12 @@ describe('ContextBuilderService - skill summary integration', () => {
     expect(systemContent).toContain('<skills>');
     expect(systemContent).toContain('Skills are NOT agents');
     expect(systemContent).toContain('call read_file on its SKILL.md location');
+    expect(systemContent).toContain('/workspace/skills/');
     const skillIndex = systemContent.indexOf('<skills>');
     const promptIndex = systemContent.indexOf('Be helpful.');
     expect(skillIndex).toBeGreaterThan(promptIndex);
+    // Loader is called with <workspace>/skills as customDir
+    expect(mockSkillLoader.buildSkillsSummary).toHaveBeenCalledWith('/tmp/workspace-user1/skills');
   });
 
   it('omits skill section when no skills available', async () => {

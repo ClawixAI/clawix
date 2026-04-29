@@ -86,9 +86,9 @@ describe('validateContainerPath', () => {
     );
   });
 
-  it('allows /skills/custom paths', () => {
-    expect(validateContainerPath('/skills/custom/my-skill/SKILL.md')).toBe(
-      '/skills/custom/my-skill/SKILL.md',
+  it('allows /workspace/skills paths (the new custom-skill location)', () => {
+    expect(validateContainerPath('/workspace/skills/my-skill/SKILL.md')).toBe(
+      '/workspace/skills/my-skill/SKILL.md',
     );
   });
 

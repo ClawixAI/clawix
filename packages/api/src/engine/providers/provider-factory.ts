@@ -11,6 +11,7 @@ import { OpenAIResponsesProvider } from './openai-responses-provider.js';
 import { isCodexModel } from './openai-responses-utils.js';
 
 const ZAI_CODING_DEFAULT_BASE_URL = 'https://api.z.ai/api/coding/paas/v4';
+const KIMI_CODE_DEFAULT_BASE_URL = 'https://api.kimi.com/coding';
 
 /**
  * Instantiate an {@link LLMProvider} by provider name.
@@ -44,6 +45,9 @@ export function createProvider(
 
     case 'gemini':
       return new GeminiProvider(apiKey, baseURL);
+
+    case 'kimi-code':
+      return new AnthropicProvider(apiKey, baseURL ?? KIMI_CODE_DEFAULT_BASE_URL);
 
     default:
       if (!baseURL) {

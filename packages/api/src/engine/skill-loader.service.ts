@@ -90,25 +90,14 @@ const logger = createLogger('engine:skill-loader');
 export class SkillLoaderService {
   constructor(
     private readonly builtinDir: string,
-    private readonly customDir: string,
     private readonly maxSkillsPerUser: number = DEFAULT_MAX_SKILLS_PER_USER,
   ) {}
 
-  /**
-   * Ensures the user's custom skill directory exists.
-   * Call this when creating a new user.
-   */
-  async ensureUserSkillDir(userId: string): Promise<void> {
-    const userSkillDir = path.join(this.customDir, userId);
-    await fs.mkdir(userSkillDir, { recursive: true });
-    logger.info({ userId, userSkillDir }, 'Ensured user skill directory exists');
-  }
-
-  async listSkills(userId: string): Promise<readonly SkillInfo[]> {
+  async listSkills(customDir: string): Promise<readonly SkillInfo[]> {
     const customSkills = await this.scanDirectory(
-      path.join(this.customDir, userId),
+      customDir,
       'custom',
-      '/skills/custom',
+      '/workspace/skills',
       this.maxSkillsPerUser,
     );
     const customDirNames = new Set(customSkills.map((s) => s.dirName));
@@ -120,8 +109,8 @@ export class SkillLoaderService {
     ];
   }
 
-  async buildSkillsSummary(userId: string): Promise<string> {
-    const skills = await this.listSkills(userId);
+  async buildSkillsSummary(customDir: string): Promise<string> {
+    const skills = await this.listSkills(customDir);
     if (skills.length === 0) return '';
     const lines = ['<skills>'];
     for (const skill of skills) {

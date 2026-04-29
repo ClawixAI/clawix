@@ -30,7 +30,8 @@
     "db:migrate": "pnpm --filter @clawix/api exec prisma migrate dev && pnpm --filter @clawix/api exec prisma generate",
     "db:seed": "pnpm --filter @clawix/api exec prisma db seed",
     "db:reset": "pnpm --filter @clawix/api exec prisma migrate reset --force",
-    "db:studio": "pnpm --filter @clawix/api exec prisma studio"
+    "db:studio": "pnpm --filter @clawix/api exec prisma studio",
+    "migrate:custom-skills": "tsx scripts/migrate-custom-skills.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

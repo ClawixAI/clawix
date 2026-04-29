@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { useSearchParams } from 'next/navigation';
 import { FolderOpen, Loader2 } from 'lucide-react';
 import { authFetch, getAccessToken } from '@/lib/auth';
 import { ApiError } from '@/lib/api';
@@ -32,8 +33,10 @@ const FileEditor = dynamic(() => import('./file-editor').then((m) => ({ default:
   ssr: false,
 });
 
-export default function WorkspacePage() {
-  const [currentPath, setCurrentPath] = useState('/');
+function WorkspacePageContent() {
+  const searchParams = useSearchParams();
+  const initialPath = searchParams.get('path') ?? '/';
+  const [currentPath, setCurrentPath] = useState(initialPath);
   const [listing, setListing] = useState<DirectoryListing | null>(null);
   const [selectedFile, setSelectedFile] = useState<FileContent | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -342,8 +345,8 @@ export default function WorkspacePage() {
   );
 
   useEffect(() => {
-    fetchDirectory('/');
-  }, [fetchDirectory]);
+    fetchDirectory(initialPath);
+  }, [fetchDirectory, initialPath]);
 
   return (
     <div className="flex h-full flex-col gap-4 p-6">
@@ -513,5 +516,19 @@ export default function WorkspacePage() {
         onEdit={handleEdit}
       />
     </div>
+  );
+}
+
+export default function WorkspacePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-full items-center justify-center">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <WorkspacePageContent />
+    </Suspense>
   );
 }
