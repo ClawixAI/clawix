@@ -7,7 +7,6 @@ import { encrypt, decrypt, maskApiKey } from '../common/crypto.js';
 const SENSITIVE_KEYS: Readonly<Record<string, readonly string[]>> = {
   telegram: ['bot_token', 'webhook_secret'],
   slack: ['bot_token', 'signing_secret'],
-  whatsapp: ['api_token'],
 };
 
 function getSensitiveKeys(channelType: string): readonly string[] {

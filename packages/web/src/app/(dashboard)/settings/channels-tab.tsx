@@ -1,7 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, MoreHorizontal, Plus, Radio, MessageSquare, Globe } from 'lucide-react';
+import {
+  Loader2,
+  MoreHorizontal,
+  Plus,
+  Radio,
+  MessageSquare,
+  MessageCircle,
+  Globe,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -57,6 +65,7 @@ interface PaginatedChannels {
 
 const channelIcons: Record<string, typeof Radio> = {
   telegram: MessageSquare,
+  whatsapp: MessageCircle,
   web: Globe,
 };
 

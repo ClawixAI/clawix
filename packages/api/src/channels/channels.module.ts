@@ -13,6 +13,7 @@ import { UserRepository } from '../db/user.repository.js';
 import { RedisPubSubService } from '../cache/redis-pubsub.service.js';
 import { ChannelsController } from './channels.controller.js';
 import { createTelegramAdapter } from './telegram/telegram.adapter.js';
+import { createWhatsAppAdapter } from './whatsapp/whatsapp.adapter.js';
 import { createWebAdapter } from './web/web.adapter.js';
 import { WebChatGateway } from './web/web.gateway.js';
 
@@ -36,6 +37,7 @@ import { WebChatGateway } from './web/web.gateway.js';
       ) => {
         // Register channel adapter factories
         registry.register('telegram', (config) => createTelegramAdapter(config));
+        registry.register('whatsapp', (config) => createWhatsAppAdapter(config));
         registry.register('web', (config) => {
           const adapter = createWebAdapter(config);
           gateway.setAdapter(adapter);

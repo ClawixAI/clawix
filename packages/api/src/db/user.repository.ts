@@ -14,6 +14,7 @@ interface CreateUserData {
   readonly role?: UserRole;
   readonly policyId: string;
   readonly telegramId?: string;
+  readonly whatsappJid?: string;
 }
 
 interface UpdateUserData {
@@ -22,6 +23,7 @@ interface UpdateUserData {
   readonly isActive?: boolean;
   readonly policyId?: string;
   readonly telegramId?: string | null;
+  readonly whatsappJid?: string | null;
 }
 
 @Injectable()
@@ -57,6 +59,10 @@ export class UserRepository {
     return this.prisma.user.findUnique({ where: { telegramId } });
   }
 
+  async findByWhatsappJid(whatsappJid: string): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { whatsappJid } });
+  }
+
   async findByPolicyId(
     policyId: string,
     pagination: PaginationInput,
@@ -82,6 +88,7 @@ export class UserRepository {
           policyId: data.policyId,
           ...(data.role !== undefined ? { role: data.role } : {}),
           ...(data.telegramId !== undefined ? { telegramId: data.telegramId } : {}),
+          ...(data.whatsappJid !== undefined ? { whatsappJid: data.whatsappJid } : {}),
         },
       });
     } catch (error: unknown) {
@@ -99,6 +106,7 @@ export class UserRepository {
           ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
           ...(data.policyId !== undefined ? { policyId: data.policyId } : {}),
           ...(data.telegramId !== undefined ? { telegramId: data.telegramId } : {}),
+          ...(data.whatsappJid !== undefined ? { whatsappJid: data.whatsappJid } : {}),
         },
       });
     } catch (error: unknown) {

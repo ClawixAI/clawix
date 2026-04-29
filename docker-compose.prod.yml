@@ -77,6 +77,9 @@ services:
       SKILLS_BUILTIN_HOST_DIR: ${CLAWIX_HOST_SKILLS_BUILTIN_DIR:-${PWD}/skills/builtin}
       SKILLS_CUSTOM_DIR: /app/skills/custom
       SKILLS_CUSTOM_HOST_DIR: ${CLAWIX_HOST_SKILLS_CUSTOM_DIR:-${PWD}/skills/custom}
+      # WhatsApp Baileys auth state — written under the persistent /data mount
+      # so the QR pairing survives container restarts.
+      WHATSAPP_AUTH_DIR: /data/whatsapp-auth
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
@@ -95,7 +98,7 @@ services:
       dockerfile: infra/docker/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
-        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
     image: clawix-web:latest
     container_name: clawix-web
     restart: unless-stopped

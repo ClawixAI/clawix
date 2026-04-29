@@ -58,20 +58,17 @@ export function CreateChannelDialog({
               }}
             >
               <option value="telegram">Telegram</option>
+              <option value="whatsapp">WhatsApp</option>
               <option value="web">Web</option>
             </select>
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-name">Name</Label>
-            <Input
-              id="create-name"
-              name="name"
-              placeholder={type === 'telegram' ? 'Telegram Bot' : 'Web Dashboard'}
-              required
-            />
+            <Input id="create-name" name="name" placeholder={namePlaceholder(type)} required />
           </div>
 
           {type === 'telegram' && <TelegramConfigFields />}
+          {type === 'whatsapp' && <WhatsAppConfigFields />}
           {type === 'web' && <WebConfigFields />}
 
           <DialogFooter>
@@ -132,6 +129,7 @@ export function EditChannelDialog({
           </div>
 
           {channel.type === 'telegram' && <TelegramConfigFields config={channel.config} />}
+          {channel.type === 'whatsapp' && <WhatsAppConfigFields />}
           {channel.type === 'web' && <WebConfigFields config={channel.config} />}
 
           <DialogFooter>
@@ -158,6 +156,19 @@ export function EditChannelDialog({
 // ------------------------------------------------------------------ //
 //  Channel-Type Config Field Components                               //
 // ------------------------------------------------------------------ //
+
+function namePlaceholder(type: string): string {
+  switch (type) {
+    case 'telegram':
+      return 'Telegram Bot';
+    case 'whatsapp':
+      return 'WhatsApp Bot';
+    case 'web':
+      return 'Web Dashboard';
+    default:
+      return 'Channel name';
+  }
+}
 
 function TelegramConfigFields({ config = {} }: { config?: Record<string, unknown> }) {
   const hasToken = typeof config['bot_token'] === 'string' && config['bot_token'].length > 0;
@@ -235,6 +246,28 @@ function TelegramConfigFields({ config = {} }: { config?: Record<string, unknown
         </>
       )}
     </>
+  );
+}
+
+function WhatsAppConfigFields() {
+  return (
+    <div className="rounded-md border border-muted bg-muted/30 px-3 py-3 text-xs leading-relaxed text-muted-foreground space-y-2">
+      <p>
+        WhatsApp uses the Baileys library — pairing happens via QR code, no API token is required.
+      </p>
+      <p>
+        After enabling this channel, watch the API server logs for an ASCII QR code and scan it from
+        the bot phone&apos;s WhatsApp →{' '}
+        <span className="font-medium text-foreground">Linked Devices → Link a Device</span>.
+      </p>
+      <p>
+        Auth state persists at <code className="font-mono text-[11px]">$WHATSAPP_AUTH_DIR</code>{' '}
+        (default <code className="font-mono text-[11px]">data/whatsapp-auth/&lt;channelId&gt;</code>
+        ) — restarts won&apos;t re-prompt for QR. Authorize a user by setting their{' '}
+        <code className="font-mono text-[11px]">whatsappJid</code> (e.g.{' '}
+        <code className="font-mono text-[11px]">15551234567@s.whatsapp.net</code>).
+      </p>
+    </div>
   );
 }
 

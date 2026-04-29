@@ -213,8 +213,11 @@ export function useChat() {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    // Use `||` (not `??`) so an empty-string env var also falls back to the default —
+    // e.g. `${NEXT_PUBLIC_WS_URL:-}` in compose bakes "" into the build, which would
+    // otherwise produce an invalid relative WebSocket URL.
     const wsBase =
-      process.env['NEXT_PUBLIC_WS_URL'] ?? `${protocol}//${window.location.hostname}:3001`;
+      process.env['NEXT_PUBLIC_WS_URL'] || `${protocol}//${window.location.hostname}:3001`;
     const wsUrl = `${wsBase}/ws/chat?token=${token}`;
     const ws = new WebSocket(wsUrl);
 

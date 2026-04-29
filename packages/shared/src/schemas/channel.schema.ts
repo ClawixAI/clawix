@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const channelTypeSchema = z.enum(['telegram', 'web']);
+const channelTypeSchema = z.enum(['telegram', 'whatsapp', 'web']);
 
 export const createChannelSchema = z.object({
   type: channelTypeSchema,

@@ -16,6 +16,7 @@ interface Profile {
   policyId: string;
   isActive: boolean;
   telegramId: string | null;
+  whatsappJid: string | null;
   createdAt: string;
 }
 
@@ -30,6 +31,8 @@ export default function ProfilePage() {
   const [name, setName] = useState('');
   const [telegramId, setTelegramId] = useState('');
   const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [whatsappJid, setWhatsappJid] = useState('');
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
 
   // Password form
   const [currentPassword, setCurrentPassword] = useState('');
@@ -49,9 +52,13 @@ export default function ProfilePage() {
       setProfile(data);
       setName(data.name);
       setTelegramId(data.telegramId ?? '');
+      setWhatsappJid(data.whatsappJid ?? '');
+      const channelList = Array.isArray(channels.data) ? channels.data : [];
       setTelegramEnabled(
-        Array.isArray(channels.data) &&
-          channels.data.some((ch) => ch.type.toLowerCase() === 'telegram' && ch.isActive),
+        channelList.some((ch) => ch.type.toLowerCase() === 'telegram' && ch.isActive),
+      );
+      setWhatsappEnabled(
+        channelList.some((ch) => ch.type.toLowerCase() === 'whatsapp' && ch.isActive),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile');
@@ -75,6 +82,7 @@ export default function ProfilePage() {
         body: JSON.stringify({
           name,
           telegramId: telegramId || null,
+          whatsappJid: whatsappJid || null,
         }),
       });
       setProfile(data);
@@ -213,6 +221,29 @@ export default function ProfilePage() {
               <p className="text-xs text-muted-foreground">
                 Used to link your account with the Telegram bot. Message @userinfobot on Telegram to
                 find your numeric ID.
+              </p>
+            </div>
+          )}
+          {whatsappEnabled && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="profile-whatsapp">WhatsApp JID</Label>
+              <Input
+                id="profile-whatsapp"
+                value={whatsappJid}
+                onChange={(e) => {
+                  setWhatsappJid(e.target.value);
+                }}
+                placeholder="15551234567@s.whatsapp.net or 12345...@lid"
+                pattern="\d+@(s\.whatsapp\.net|lid)"
+              />
+              <p className="text-xs text-muted-foreground">
+                Used to link your account with the WhatsApp bot. Two valid forms:{' '}
+                <code className="font-mono">&lt;countrycode&gt;&lt;number&gt;@s.whatsapp.net</code>{' '}
+                (legacy phone-based, e.g.{' '}
+                <code className="font-mono">15551234567@s.whatsapp.net</code>) or{' '}
+                <code className="font-mono">&lt;id&gt;@lid</code> for newer privacy-preserving
+                accounts. The simplest way to find yours is to send any text from the test phone to
+                the bot — the API logs will show the exact value to paste here.
               </p>
             </div>
           )}

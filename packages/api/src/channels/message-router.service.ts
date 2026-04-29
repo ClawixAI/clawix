@@ -175,6 +175,8 @@ export class MessageRouterService {
         return this.userRepo.findById(senderId).catch(() => null);
       case 'telegram':
         return this.userRepo.findByTelegramId(senderId);
+      case 'whatsapp':
+        return this.userRepo.findByWhatsappJid(senderId);
       default:
         logger.warn({ channelType }, 'No user lookup for channel type');
         return null;

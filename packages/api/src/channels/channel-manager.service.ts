@@ -317,13 +317,15 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
 
   private resolveRecipientId(
     channelType: string,
-    user: { id: string; telegramId?: string | null },
+    user: { id: string; telegramId?: string | null; whatsappJid?: string | null },
   ): string | null {
     switch (channelType) {
       case 'web':
         return user.id;
       case 'telegram':
         return user.telegramId ?? null;
+      case 'whatsapp':
+        return user.whatsappJid ?? null;
       default:
         logger.warn({ channelType }, 'No recipient resolver for channel type');
         return null;

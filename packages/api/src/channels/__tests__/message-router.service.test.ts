@@ -31,6 +31,7 @@ describe('MessageRouterService', () => {
   const mockUserRepo = {
     findByTelegramId: vi.fn(),
     findById: vi.fn(),
+    findByWhatsappJid: vi.fn(),
   };
   const mockUserAgentRepo = {
     findByUserId: vi.fn(),
@@ -492,6 +493,48 @@ describe('MessageRouterService', () => {
 
       expect(mockCommandService.execute).not.toHaveBeenCalled();
       expect(mockAgentRunner.run).toHaveBeenCalled();
+    });
+  });
+
+  describe('MessageRouterService.lookupUser (whatsapp)', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      mockPrisma.agentRun.count.mockResolvedValue(0);
+      mockCommandService.isSlashPrefixed.mockReturnValue(false);
+    });
+
+    it('looks up the user by whatsappJid for whatsapp channel messages', async () => {
+      const user = {
+        id: 'user-1',
+        whatsappJid: '15551234567@s.whatsapp.net',
+        isActive: true,
+      };
+      mockUserRepo.findByWhatsappJid.mockResolvedValue(user);
+      mockUserAgentRepo.findByUserId.mockResolvedValue(null); // route returns "no agent" early
+
+      const channel: ChannelAdapter = {
+        id: 'channel-wa',
+        type: 'whatsapp',
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        sendMessage: vi.fn().mockResolvedValue(undefined),
+        onMessage: vi.fn(),
+      };
+      const router = createRouter();
+
+      const inbound: InboundMessage = {
+        channelType: 'whatsapp',
+        channelMessageId: 'wa-1',
+        senderId: '15551234567@s.whatsapp.net',
+        senderName: 'Alice',
+        text: 'hi',
+        timestamp: new Date(),
+      };
+
+      await router.handleInbound(inbound, channel);
+
+      expect(mockUserRepo.findByWhatsappJid).toHaveBeenCalledWith('15551234567@s.whatsapp.net');
+      expect(mockUserRepo.findByTelegramId).not.toHaveBeenCalled();
     });
   });
 });

@@ -11,6 +11,7 @@ type SafeUser = Omit<User, 'passwordHash'>;
 interface UpdateProfileInput {
   readonly name?: string;
   readonly telegramId?: string | null;
+  readonly whatsappJid?: string | null;
 }
 
 @Injectable()

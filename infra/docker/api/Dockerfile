@@ -6,8 +6,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:22-slim AS builder
 
-# Install openssl for Prisma client generation
-RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+# Install openssl for Prisma client generation, git for fetching
+# tarball-style GitHub deps (Baileys' libsignal-node) during pnpm deploy,
+# and ca-certificates so git's HTTPS handshake against github.com can verify.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        openssl git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && corepack prepare pnpm@latest --activate

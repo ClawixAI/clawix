@@ -726,6 +726,49 @@ describe('ChannelManagerService', () => {
         },
       });
     });
+
+    it('uses user.whatsappJid as recipientId for whatsapp channel delivery', async () => {
+      const dbChannel = {
+        id: 'ch-wa',
+        type: 'whatsapp',
+        name: 'WhatsApp Bot',
+        config: {},
+        isActive: true,
+      };
+      mockChannelRepo.findActive.mockResolvedValue([dbChannel]);
+
+      const channel = mockChannel({ id: 'ch-wa', type: 'whatsapp' });
+      mockRegistry.create.mockReturnValue(channel);
+
+      mockSessionRepo.findById.mockResolvedValue({
+        id: 'sess-wa',
+        userId: 'user-wa-1',
+        channelId: 'ch-wa',
+      });
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-wa-1',
+        telegramId: null,
+        whatsappJid: '15551234567@s.whatsapp.net',
+      });
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      const subscribeCb = mockPubsub.subscribe.mock.calls[0]![1] as (msg: {
+        payload: { sessionId: string; output: string };
+      }) => Promise<void>;
+
+      await subscribeCb({ payload: { sessionId: 'sess-wa', output: 'Hello from wa' } });
+
+      expect(channel.sendMessage).toHaveBeenCalledWith({
+        recipientId: '15551234567@s.whatsapp.net',
+        text: 'Hello from wa',
+        metadata: {
+          messageId: expect.stringContaining('reinvoke-sess-wa-'),
+          sessionId: 'sess-wa',
+        },
+      });
+    });
   });
 
   it('stops all active channels', async () => {

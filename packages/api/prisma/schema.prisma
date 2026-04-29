@@ -60,6 +60,7 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   telegramId   String?  @unique
+  whatsappJid  String?  @unique
 
   policy        Policy         @relation(fields: [policyId], references: [id])
   sessions      Session[]
