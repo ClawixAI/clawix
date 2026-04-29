@@ -132,8 +132,8 @@ def main():
     parser.add_argument("skill_name", help="Skill name (normalized to hyphen-case)")
     parser.add_argument(
         "--path",
-        default="/skills/custom",
-        help="Output directory for the skill (default: /skills/custom)",
+        default="/workspace/skills",
+        help="Output directory for the skill (default: /workspace/skills)",
     )
     parser.add_argument(
         "--resources",

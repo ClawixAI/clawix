@@ -157,13 +157,13 @@ python3 /skills/builtin/skill-creator/scripts/init_skill.py my-skill-name
 python3 /skills/builtin/skill-creator/scripts/init_skill.py my-skill-name --resources scripts,references
 ```
 
-The script creates the skill under `/skills/custom/` by default.
+The script creates the skill under `/workspace/skills/` by default.
 
 **Option B** — Use file tools directly:
 
-Create `/skills/custom/<skill-name>/SKILL.md` with write_file, and optionally create `scripts/`, `references/`, `assets/` subdirectories.
+Create `/workspace/skills/<skill-name>/SKILL.md` with write_file, and optionally create `scripts/`, `references/`, `assets/` subdirectories.
 
-**Important:** Custom skills must be created under `/skills/custom/` (writable). `/skills/builtin/` is read-only.
+**Important:** Custom skills must be created under `/workspace/skills/` (writable). `/skills/builtin/` is read-only.
 
 ### Step 4: Edit the Skill
 
@@ -183,7 +183,7 @@ Write instructions for using the skill and its bundled resources.
 Run the validator to check the skill structure:
 
 ```bash
-python3 /skills/builtin/skill-creator/scripts/quick_validate.py /skills/custom/<skill-name>
+python3 /skills/builtin/skill-creator/scripts/quick_validate.py /workspace/skills/<skill-name>
 ```
 
 ### Step 6: Package the Skill (Optional)
@@ -191,7 +191,7 @@ python3 /skills/builtin/skill-creator/scripts/quick_validate.py /skills/custom/<
 Package a skill into a distributable `.skill` file:
 
 ```bash
-python3 /skills/builtin/skill-creator/scripts/package_skill.py /skills/custom/<skill-name>
+python3 /skills/builtin/skill-creator/scripts/package_skill.py /workspace/skills/<skill-name>
 ```
 
 ### Step 7: Iterate

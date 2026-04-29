@@ -109,6 +109,18 @@ const GEMINI_SPEC: ProviderSpec = {
   ],
 };
 
+const KIMI_CODE_SPEC: ProviderSpec = {
+  name: 'kimi-code',
+  displayName: 'Kimi Coding Plan',
+  modelPrefixes: [],
+  envKey: 'KIMI_CODE_API_KEY',
+  defaultBaseUrl: 'https://api.kimi.com/coding',
+  defaultModel: '',
+  supportsTools: true,
+  supportsThinking: false,
+  pricing: null,
+};
+
 const CUSTOM_SPEC: ProviderSpec = {
   name: 'custom',
   displayName: 'Custom',
@@ -124,6 +136,7 @@ const PROVIDERS: readonly ProviderSpec[] = [
   ANTHROPIC_SPEC,
   OPENAI_SPEC,
   ZAI_CODING_SPEC,
+  KIMI_CODE_SPEC,
   GEMINI_SPEC,
   CUSTOM_SPEC,
 ];

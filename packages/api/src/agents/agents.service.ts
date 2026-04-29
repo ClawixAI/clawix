@@ -33,8 +33,19 @@ export class AgentsService {
     return this.agentDefRepo.findAll(pagination, options);
   }
 
-  async getAgent(id: string): Promise<AgentDefinition> {
-    return this.agentDefRepo.findById(id);
+  async getAgent(id: string, userId?: string, userRole?: string): Promise<AgentDefinition> {
+    const agent = await this.agentDefRepo.findById(id);
+    if (userRole === 'admin' || !userId) {
+      return agent;
+    }
+    if (agent.isOfficial || agent.createdById === userId) {
+      return agent;
+    }
+    const assigned = await this.userAgentRepo.existsForUser(userId, id);
+    if (!assigned) {
+      throw new ForbiddenException('You do not have access to this agent');
+    }
+    return agent;
   }
 
   async createAgent(
@@ -73,8 +84,11 @@ export class AgentsService {
   async listAgentRuns(
     agentDefinitionId: string,
     pagination: PaginationInput,
+    userId?: string,
+    userRole?: string,
   ): Promise<PaginatedResponse<AgentRun>> {
-    return this.agentRunRepo.findByAgentDefinitionId(agentDefinitionId, pagination);
+    const scopeUserId = userRole === 'admin' ? undefined : userId;
+    return this.agentRunRepo.findByAgentDefinitionId(agentDefinitionId, pagination, scopeUserId);
   }
 
   async listUserAgents(userId: string, userRole: string) {

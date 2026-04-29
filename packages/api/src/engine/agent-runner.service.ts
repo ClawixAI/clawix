@@ -307,29 +307,61 @@ export class AgentRunnerService {
         });
       }
 
-      // Compute skill mount paths (same local/host duality as workspace-resolver.ts)
+      // REMOVE AFTER 2026-Q3 MIGRATION COMPLETE — auto-migrates legacy custom-skill location
+      // into <workspace>/skills/. See docs/specs/2026-04-29-custom-skills-in-workspace-design.md.
+      if (workspacePaths !== undefined) {
+        const legacyDir = path.resolve(
+          process.env['WORKSPACE_BASE_PATH'] ?? './data',
+          'skills/custom',
+          userId,
+        );
+        const legacyEntries = await fs.promises.readdir(legacyDir).catch(() => null);
+        if (legacyEntries && legacyEntries.length > 0) {
+          const targetSkillsDir = path.join(workspacePaths.localPath, 'skills');
+          await fs.promises.mkdir(targetSkillsDir, { recursive: true });
+          for (const name of legacyEntries) {
+            const source = path.join(legacyDir, name);
+            const target = path.join(targetSkillsDir, name);
+            const exists = await fs.promises
+              .stat(target)
+              .then(() => true)
+              .catch(() => false);
+            if (exists) {
+              logger.warn(
+                { userId, name },
+                'Skill collision during lazy migration — leaving source in place',
+              );
+              continue;
+            }
+            try {
+              await fs.promises.rename(source, target);
+              logger.info({ userId, name }, 'Lazy-migrated legacy custom skill into workspace');
+            } catch (err) {
+              // ENOENT: another concurrent agent run for the same user already moved this skill.
+              // Treat as success and continue.
+              if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+                continue;
+              }
+              throw err;
+            }
+          }
+          await fs.promises.rmdir(legacyDir).catch(() => undefined);
+        }
+      }
+
+      // Compute builtin skill mount paths (same local/host duality as workspace-resolver.ts).
+      // Custom skills now live inside the workspace at <workspace>/skills/, so they ride along
+      // on the workspace mount and don't need a separate -v flag.
       const skillsBuiltinLocalDir =
         process.env['SKILLS_BUILTIN_DIR'] ?? path.resolve(process.cwd(), '../../skills/builtin');
       const skillsBuiltinHostDir = process.env['SKILLS_BUILTIN_HOST_DIR'] ?? skillsBuiltinLocalDir;
 
-      const skillsCustomLocalBase =
-        process.env['SKILLS_CUSTOM_DIR'] ??
-        path.resolve(process.env['WORKSPACE_BASE_PATH'] ?? './data', 'skills/custom');
-      const skillsCustomHostBase =
-        process.env['SKILLS_CUSTOM_HOST_DIR'] ??
-        path.resolve(process.env['WORKSPACE_HOST_BASE_PATH'] ?? skillsCustomLocalBase);
+      // Ensure <workspace>/skills exists so the loader scan finds it
+      if (workspacePaths !== undefined) {
+        await fs.promises.mkdir(path.join(workspacePaths.localPath, 'skills'), { recursive: true });
+      }
 
-      const skillsCustomUserLocalDir = path.join(skillsCustomLocalBase, userId);
-      const skillsCustomUserHostDir = path.join(skillsCustomHostBase, userId);
-
-      // Ensure user's custom skills directory exists and is writable by container user (1000:1000)
-      await fs.promises.mkdir(skillsCustomUserLocalDir, { recursive: true });
-      await this.makeWorkspaceWritable(skillsCustomUserLocalDir);
-
-      const skillMounts = {
-        builtinHostPath: skillsBuiltinHostDir,
-        customHostPath: skillsCustomUserHostDir,
-      };
+      const skillMounts = { builtinHostPath: skillsBuiltinHostDir };
 
       if (!usePool) {
         containerId = await this.containerRunner.start(sharedAgentDef, [], {

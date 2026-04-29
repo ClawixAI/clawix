@@ -12,6 +12,7 @@ import { CronGuardService } from './cron-guard.service.js';
 import { CronSchedulerService } from './cron-scheduler.service.js';
 import { CronTaskProcessorService } from './cron-task-processor.service.js';
 import { SkillLoaderService } from './skill-loader.service.js';
+import { DEFAULT_MAX_SKILLS_PER_USER } from './skill-loader.types.js';
 import { ContainerRunner } from './container-runner.js';
 import { ContainerPoolService } from './container-pool.service.js';
 import { SessionManagerService } from './session-manager.service.js';
@@ -53,11 +54,13 @@ import { DuckDuckGoProvider } from './tools/web/providers/duckduckgo.js';
       useFactory: () => {
         const builtinDir =
           process.env['SKILLS_BUILTIN_DIR'] ?? path.resolve(process.cwd(), '../../skills/builtin');
-        const customDir =
-          process.env['SKILLS_CUSTOM_DIR'] ??
-          path.resolve(process.env['WORKSPACE_BASE_PATH'] ?? './data', 'skills/custom');
-        const maxPerUser = parseInt(process.env['MAX_SKILLS_PER_USER'] ?? '50', 10);
-        return new SkillLoaderService(builtinDir, customDir, maxPerUser);
+        const rawMax = parseInt(
+          process.env['MAX_SKILLS_PER_USER'] ?? String(DEFAULT_MAX_SKILLS_PER_USER),
+          10,
+        );
+        const maxPerUser =
+          Number.isFinite(rawMax) && rawMax > 0 ? rawMax : DEFAULT_MAX_SKILLS_PER_USER;
+        return new SkillLoaderService(builtinDir, maxPerUser);
       },
     },
     {

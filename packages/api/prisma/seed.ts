@@ -4,7 +4,6 @@
  * Run: pnpm exec prisma db seed
  */
 import dotenv from 'dotenv';
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
@@ -311,15 +310,8 @@ async function main(): Promise<void> {
   });
   console.log('  UserAgents: admin + developer bound to Primary Assistant');
 
-  // --- Custom Skills Directories ---
-  const workspaceBase = process.env['WORKSPACE_BASE_PATH'] ?? './data';
-  const customSkillsBase =
-    process.env['SKILLS_CUSTOM_HOST_DIR'] ?? path.resolve(workspaceBase, 'skills/custom');
-  for (const user of [admin, developer, viewer]) {
-    const userSkillsDir = path.join(customSkillsBase, user.id);
-    await fs.mkdir(userSkillsDir, { recursive: true });
-  }
-  console.log(`  Skills: custom skill directories created under ${customSkillsBase}`);
+  // Custom skill directories are created lazily inside each user's workspace
+  // (<workspace>/skills/) on first agent run — see agent-runner.service.ts.
 
   // --- Provider Configs (org-level, conditional on env vars) ---
   // providerSeeds, customName, customBase defined above alongside policy creation

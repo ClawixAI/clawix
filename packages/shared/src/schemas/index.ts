@@ -94,3 +94,16 @@ export {
   type DeleteInput,
   type UpdateContentInput,
 } from './workspace.schema.js';
+
+export {
+  skillNameSchema,
+  skillDescriptionSchema,
+  skillContentSchema,
+  createSkillSchema,
+  renameSkillSchema,
+  updateSkillContentSchema,
+  type CreateSkillInput,
+  type RenameSkillInput,
+  type UpdateSkillContentInput,
+  type SkillReadResult,
+} from './skill.schema.js';

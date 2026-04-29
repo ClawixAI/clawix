@@ -113,4 +113,14 @@ describe('createProvider', () => {
     expect(provider).toBeInstanceOf(OpenAIResponsesProvider);
     expect(provider.name).toBe('openai-responses');
   });
+
+  it('creates an AnthropicProvider for "kimi-code" with default base URL', () => {
+    const provider = createProvider('kimi-code', API_KEY);
+    expect(provider).toBeInstanceOf(AnthropicProvider);
+  });
+
+  it('creates an AnthropicProvider for "kimi-code" with custom baseURL', () => {
+    const provider = createProvider('kimi-code', API_KEY, 'https://custom.kimi.com/v1');
+    expect(provider).toBeInstanceOf(AnthropicProvider);
+  });
 });

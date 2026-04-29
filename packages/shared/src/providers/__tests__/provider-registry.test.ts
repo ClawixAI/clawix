@@ -223,6 +223,23 @@ describe('Gemini provider spec', () => {
   });
 });
 
+describe('Kimi Code provider spec', () => {
+  it('is registered by name', () => {
+    const spec = findProviderByName('kimi-code');
+    expect(spec).not.toBeNull();
+    expect(spec?.displayName).toBe('Kimi Coding Plan');
+    expect(spec?.envKey).toBe('KIMI_CODE_API_KEY');
+    expect(spec?.defaultBaseUrl).toBe('https://api.kimi.com/coding');
+    expect(spec?.supportsTools).toBe(true);
+    expect(spec?.supportsThinking).toBe(false);
+    expect(spec?.pricing).toBeNull();
+  });
+
+  it('appears in listProviders()', () => {
+    expect(listProviders().some((p) => p.name === 'kimi-code')).toBe(true);
+  });
+});
+
 describe('estimateCost', () => {
   it('should calculate cost for claude-opus-4', () => {
     // $15 per M input, $75 per M output
