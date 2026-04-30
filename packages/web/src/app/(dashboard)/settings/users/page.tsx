@@ -160,7 +160,7 @@ const permissionMatrix: PermissionGroup[] = [
     permissions: [
       { name: 'Manage users', admin: true, developer: false, viewer: false },
       { name: 'Assign roles', admin: true, developer: false, viewer: false },
-      { name: 'Manage plans', admin: true, developer: false, viewer: false },
+      { name: 'Manage policies', admin: true, developer: false, viewer: false },
       { name: 'Configure providers', admin: true, developer: false, viewer: false },
       { name: 'Org settings', admin: true, developer: false, viewer: false },
       { name: 'Manage groups', admin: true, developer: true, viewer: false },
@@ -565,7 +565,7 @@ export default function UsersPage() {
                         toggleSort('plan');
                       }}
                     >
-                      Plan {getSortIcon('plan')}
+                      Policy {getSortIcon('plan')}
                     </TableHead>
                     <TableHead
                       className="cursor-pointer select-none"
@@ -729,14 +729,15 @@ export default function UsersPage() {
                   void handleCreate(new FormData(e.currentTarget));
                 }}
                 className="flex flex-col gap-4"
+                autoComplete="off"
               >
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="create-name">Name</Label>
-                  <Input id="create-name" name="name" required />
+                  <Input id="create-name" name="name" required autoComplete="off" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="create-email">Email</Label>
-                  <Input id="create-email" name="email" type="email" required />
+                  <Input id="create-email" name="email" type="email" required autoComplete="off" />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="create-password">Password</Label>
@@ -747,6 +748,7 @@ export default function UsersPage() {
                       type={showPassword ? 'text' : 'password'}
                       minLength={8}
                       required
+                      autoComplete="new-password"
                       className="pr-10"
                     />
                     <button
@@ -779,7 +781,7 @@ export default function UsersPage() {
                   </select>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="create-plan">Plan</Label>
+                  <Label htmlFor="create-plan">Policy</Label>
                   <select
                     name="policyId"
                     id="create-plan"
@@ -938,7 +940,7 @@ export default function UsersPage() {
                 </select>
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="edit-plan">Plan</Label>
+                <Label htmlFor="edit-plan">Policy</Label>
                 <select
                   name="policyId"
                   id="edit-plan"
