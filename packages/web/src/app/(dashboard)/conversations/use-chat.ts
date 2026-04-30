@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { authFetch, getAccessToken } from '@/lib/auth';
+import { uuidv4 } from '@/lib/utils';
 
 /**
  * Merge incoming sessions into the existing list, sorted by createdAt desc.
@@ -472,7 +473,7 @@ export function useChat() {
     }
 
     const optimistic: ChatMessage = {
-      id: `tmp-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`,
+      id: `tmp-${Date.now()}-${uuidv4().slice(0, 8)}`,
       role: 'user',
       content,
       createdAt: new Date().toISOString(),
