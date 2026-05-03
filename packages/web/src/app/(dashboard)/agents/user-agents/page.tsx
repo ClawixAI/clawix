@@ -62,6 +62,7 @@ interface AgentDefinition {
   maxTokensPerRun: number;
   containerConfig: Record<string, unknown>;
   isActive: boolean;
+  streamingEnabled: boolean;
   isOfficial: boolean;
   createdById: string | null;
   createdAt: string;
@@ -192,6 +193,7 @@ function CreateAgentDialog({
   description?: string;
 }) {
   const providers = useProviders();
+  const [streamingEnabled, setStreamingEnabled] = useState(false);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -203,7 +205,9 @@ function CreateAgentDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(new FormData(e.currentTarget));
+            const fd = new FormData(e.currentTarget);
+            fd.set('streamingEnabled', String(streamingEnabled));
+            onSubmit(fd);
           }}
           className="flex flex-col gap-4"
         >
@@ -263,6 +267,23 @@ function CreateAgentDialog({
             />
           </div>
 
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="create-streamingEnabled" className="text-base">
+                Streaming
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Send each reasoning step as a separate message. When off, the user receives one
+                combined reply at the end of the run.
+              </p>
+            </div>
+            <Switch
+              id="create-streamingEnabled"
+              checked={streamingEnabled}
+              onCheckedChange={setStreamingEnabled}
+            />
+          </div>
+
           <DialogFooter>
             <Button
               type="button"
@@ -300,6 +321,7 @@ function EditAgentDialog({
   onSubmit: (id: string, form: FormData) => void;
 }) {
   const providers = useProviders();
+  const [streamingEnabled, setStreamingEnabled] = useState(agent?.streamingEnabled ?? false);
 
   if (!agent) return null;
 
@@ -313,7 +335,9 @@ function EditAgentDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(agent.id, new FormData(e.currentTarget));
+            const fd = new FormData(e.currentTarget);
+            fd.set('streamingEnabled', String(streamingEnabled));
+            onSubmit(agent.id, fd);
           }}
           className="flex flex-col gap-4"
         >
@@ -382,6 +406,23 @@ function EditAgentDialog({
               type="number"
               defaultValue={agent.maxTokensPerRun ?? 100000}
               min={1000}
+            />
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="edit-streamingEnabled" className="text-base">
+                Streaming
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Send each reasoning step as a separate message. When off, the user receives one
+                combined reply at the end of the run.
+              </p>
+            </div>
+            <Switch
+              id="edit-streamingEnabled"
+              checked={streamingEnabled}
+              onCheckedChange={setStreamingEnabled}
             />
           </div>
 
@@ -1207,6 +1248,7 @@ export default function UserAgentsPage() {
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
           maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          streamingEnabled: form.get('streamingEnabled') === 'true',
           isOfficial: true,
         }),
       });
@@ -1236,6 +1278,7 @@ export default function UserAgentsPage() {
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
           maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          streamingEnabled: form.get('streamingEnabled') === 'true',
           isOfficial: false,
         }),
       });
@@ -1264,6 +1307,7 @@ export default function UserAgentsPage() {
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
           maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          streamingEnabled: form.get('streamingEnabled') === 'true',
         }),
       });
       setEditAgent(null);

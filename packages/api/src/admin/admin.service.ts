@@ -141,6 +141,7 @@ export class AdminService {
       readonly name?: string;
       readonly config?: Record<string, unknown>;
       readonly isActive?: boolean;
+      readonly toolProgressMode?: string | null;
     },
   ): Promise<Channel> {
     let encryptedConfig: Prisma.InputJsonValue | undefined;
@@ -152,6 +153,7 @@ export class AdminService {
       name: input.name,
       config: encryptedConfig,
       isActive: input.isActive,
+      toolProgressMode: input.toolProgressMode,
     });
     await this.channelManager.reloadAll();
     return this.maskChannelSecrets(channel);

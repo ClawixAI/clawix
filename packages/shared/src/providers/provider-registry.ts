@@ -177,15 +177,30 @@ export function listProviders(): readonly ProviderSpec[] {
   return [...PROVIDERS];
 }
 
+/** Multipliers applied to the base input price for Anthropic prompt caching. */
+const CACHE_WRITE_MULTIPLIER_5M = 1.25;
+const CACHE_READ_MULTIPLIER = 0.1;
+
+export interface CacheTokenUsage {
+  readonly cacheCreationTokens?: number;
+  readonly cacheReadTokens?: number;
+}
+
 /**
  * Estimate USD cost for a given provider/model/token combination.
  * Returns null if pricing is unavailable.
+ *
+ * Cache tokens (Anthropic only) are priced as multiples of the regular
+ * input rate: 5-minute cache writes at 1.25×, cache reads at 0.1×.
+ * Pass them via the optional `cache` parameter; omitted fields are
+ * treated as zero.
  */
 export function estimateCost(
   providerName: string,
   model: string,
   inputTokens: number,
   outputTokens: number,
+  cache?: CacheTokenUsage,
 ): number | null {
   const spec = findProviderByName(providerName);
   const pricingTable = spec?.pricing;
@@ -206,5 +221,12 @@ export function estimateCost(
   const inputCost = (inputTokens / 1_000_000) * pricing.inputPerMillion;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
 
-  return inputCost + outputCost;
+  const cacheWriteTokens = cache?.cacheCreationTokens ?? 0;
+  const cacheReadTokens = cache?.cacheReadTokens ?? 0;
+  const cacheWriteCost =
+    (cacheWriteTokens / 1_000_000) * pricing.inputPerMillion * CACHE_WRITE_MULTIPLIER_5M;
+  const cacheReadCost =
+    (cacheReadTokens / 1_000_000) * pricing.inputPerMillion * CACHE_READ_MULTIPLIER;
+
+  return inputCost + outputCost + cacheWriteCost + cacheReadCost;
 }

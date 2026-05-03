@@ -51,11 +51,20 @@ describe('MessageRouterService', () => {
     isSlashPrefixed: vi.fn().mockReturnValue(false),
     execute: vi.fn(),
   };
+  const mockAgentDefRepo = {
+    findById: vi.fn(),
+  };
+  const mockChannelRepo = {
+    findById: vi.fn(),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockPrisma.agentRun.count.mockResolvedValue(0);
     mockCommandService.isSlashPrefixed.mockReturnValue(false);
+    // Default: non-streaming agent, no channel override
+    mockAgentDefRepo.findById.mockResolvedValue({ id: 'agent-1', streamingEnabled: false });
+    mockChannelRepo.findById.mockResolvedValue({ id: 'channel-1', toolProgressMode: null });
   });
 
   function createRouter() {
@@ -66,6 +75,8 @@ describe('MessageRouterService', () => {
       mockSessionManager as never,
       mockPrisma as never,
       mockCommandService as never,
+      mockAgentDefRepo as never,
+      mockChannelRepo as never,
     );
   }
 
@@ -73,6 +84,7 @@ describe('MessageRouterService', () => {
     const user = { id: 'user-1', telegramId: '123456', isActive: true };
     const userAgent = { agentDefinitionId: 'agent-1' };
     const runResult = {
+      streamingUsed: false,
       sessionId: 'session-1',
       output: 'Hello human',
       status: 'completed',
@@ -116,6 +128,7 @@ describe('MessageRouterService', () => {
     const user = { id: 'user-1', telegramId: '123456', isActive: true };
     const userAgent = { agentDefinitionId: 'agent-1' };
     const runResult = {
+      streamingUsed: false,
       sessionId: 'session-1',
       output: 'Context received',
       status: 'completed',
@@ -154,6 +167,7 @@ describe('MessageRouterService', () => {
     const user = { id: 'user-1', telegramId: '123456', isActive: true };
     const userAgent = { agentDefinitionId: 'agent-1' };
     const runResult = {
+      streamingUsed: false,
       agentRunId: 'run-xyz',
       sessionId: 'session-1',
       output: 'Response',
@@ -331,6 +345,7 @@ describe('MessageRouterService', () => {
     const user = { id: 'user-1', telegramId: '123456', isActive: true };
     const userAgent = { agentDefinitionId: 'agent-1' };
     const runResult = {
+      streamingUsed: false,
       sessionId: 'session-1',
       output: 'Hello human',
       status: 'completed',
@@ -361,6 +376,7 @@ describe('MessageRouterService', () => {
     mockUserRepo.findByTelegramId.mockResolvedValue(user);
     mockUserAgentRepo.findByUserId.mockResolvedValue({ agentDefinitionId: 'agent-1' });
     mockAgentRunner.run.mockResolvedValue({
+      streamingUsed: false,
       sessionId: 'session-1',
       output: 'Response',
       status: 'completed',
@@ -379,6 +395,7 @@ describe('MessageRouterService', () => {
     const user = { id: 'user-1', isActive: true };
     const userAgent = { agentDefinitionId: 'agent-1' };
     const runResult = {
+      streamingUsed: false,
       sessionId: 'session-1',
       output: 'Hello from agent',
       status: 'completed',
@@ -404,6 +421,7 @@ describe('MessageRouterService', () => {
     const user = { id: 'user-1', telegramId: '123456', isActive: true };
     const userAgent = { agentDefinitionId: 'agent-1' };
     const runResult = {
+      streamingUsed: false,
       sessionId: 'session-1',
       output: 'Hello',
       status: 'completed',
@@ -483,6 +501,7 @@ describe('MessageRouterService', () => {
     it('does not intercept non-command messages', async () => {
       mockCommandService.isSlashPrefixed.mockReturnValue(false);
       mockAgentRunner.run.mockResolvedValue({
+        streamingUsed: false,
         output: 'response',
         status: 'completed',
         tokenUsage: { input: 10, output: 5 },
@@ -493,6 +512,180 @@ describe('MessageRouterService', () => {
 
       expect(mockCommandService.execute).not.toHaveBeenCalled();
       expect(mockAgentRunner.run).toHaveBeenCalled();
+    });
+  });
+
+  describe('streaming multi-message', () => {
+    const user = { id: 'user-1', telegramId: '123456', isActive: true };
+    const userAgent = { agentDefinitionId: 'agent-1' };
+
+    beforeEach(() => {
+      mockUserRepo.findByTelegramId.mockResolvedValue(user);
+      mockUserAgentRepo.findByUserId.mockResolvedValue(userAgent);
+    });
+
+    it('streams multiple sendMessage calls when agent has streamingEnabled', async () => {
+      mockAgentDefRepo.findById.mockResolvedValue({ id: 'agent-1', streamingEnabled: true });
+      // telegram channel-1 with no override → mode 'all' (platform default)
+      mockChannelRepo.findById.mockResolvedValue({ id: 'channel-1', toolProgressMode: null });
+
+      mockAgentRunner.run.mockImplementation(
+        async (opts: { onEvent?: (e: unknown) => Promise<void> }) => {
+          if (opts.onEvent) {
+            await opts.onEvent({
+              type: 'assistant_chunk',
+              content: 'Looking it up.',
+              isFinal: false,
+            });
+            await opts.onEvent({
+              type: 'tool_started',
+              name: 'web_search',
+              args: { query: 'cats' },
+            });
+            await opts.onEvent({
+              type: 'assistant_chunk',
+              content: 'Cats are cool.',
+              isFinal: true,
+            });
+          }
+          return {
+            streamingUsed: true,
+            output: 'Cats are cool.',
+            agentRunId: 'run-1',
+            sessionId: 'session-1',
+            status: 'completed',
+            tokenUsage: { input: 10, output: 5 },
+          };
+        },
+      );
+
+      const channel = mockChannel();
+      const router = createRouter();
+      await router.handleInbound(mockInbound(), channel);
+
+      expect(channel.sendMessage).toHaveBeenCalledTimes(3);
+      const calls = (channel.sendMessage as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls[0][0]).toMatchObject({ recipientId: '123456', text: 'Looking it up.' });
+      expect(calls[1][0].text).toMatch(/^🔍 web_search:/);
+      expect(calls[1][0].text).toContain('cats');
+      expect(calls[2][0]).toMatchObject({ recipientId: '123456', text: 'Cats are cool.' });
+
+      // Each streamed chunk must carry a unique messageId so the web client
+      // doesn't dedupe them.
+      const messageIds = (channel.sendMessage as ReturnType<typeof vi.fn>).mock.calls.map(
+        (call) => (call[0].metadata as { messageId?: string } | undefined)?.messageId,
+      );
+      expect(messageIds.every((id) => typeof id === 'string' && id.length > 0)).toBe(true);
+      expect(new Set(messageIds).size).toBe(messageIds.length); // all unique
+    });
+
+    it('does not send a trailing message when streamingUsed is true', async () => {
+      mockAgentDefRepo.findById.mockResolvedValue({ id: 'agent-1', streamingEnabled: true });
+      mockChannelRepo.findById.mockResolvedValue({ id: 'channel-1', toolProgressMode: null });
+
+      mockAgentRunner.run.mockImplementation(
+        async (opts: { onEvent?: (e: unknown) => Promise<void> }) => {
+          if (opts.onEvent) {
+            await opts.onEvent({
+              type: 'assistant_chunk',
+              content: 'Looking it up.',
+              isFinal: false,
+            });
+            await opts.onEvent({
+              type: 'tool_started',
+              name: 'web_search',
+              args: { query: 'cats' },
+            });
+            await opts.onEvent({
+              type: 'assistant_chunk',
+              content: 'Cats are cool.',
+              isFinal: true,
+            });
+          }
+          return {
+            streamingUsed: true,
+            output: 'Cats are cool.',
+            agentRunId: 'run-1',
+            sessionId: 'session-1',
+            status: 'completed',
+            tokenUsage: { input: 10, output: 5 },
+          };
+        },
+      );
+
+      const channel = mockChannel();
+      const router = createRouter();
+      await router.handleInbound(mockInbound(), channel);
+
+      // Exactly 3 calls — no trailing single-message send duplicating the final answer
+      expect(channel.sendMessage).toHaveBeenCalledTimes(3);
+    });
+
+    it('falls back to single-message send when streamingUsed is false', async () => {
+      mockAgentDefRepo.findById.mockResolvedValue({ id: 'agent-1', streamingEnabled: false });
+      mockChannelRepo.findById.mockResolvedValue({ id: 'channel-1', toolProgressMode: null });
+
+      mockAgentRunner.run.mockResolvedValue({
+        streamingUsed: false,
+        output: 'final answer',
+        agentRunId: 'run-2',
+        sessionId: 'session-2',
+        status: 'completed',
+        tokenUsage: { input: 10, output: 5 },
+      });
+
+      const channel = mockChannel();
+      const router = createRouter();
+      await router.handleInbound(mockInbound(), channel);
+
+      expect(channel.sendMessage).toHaveBeenCalledTimes(1);
+      expect(channel.sendMessage).toHaveBeenCalledWith({
+        recipientId: '123456',
+        text: 'final answer',
+        metadata: expect.objectContaining({ messageId: 'run-2' }),
+      });
+    });
+
+    it('respects channel toolProgressMode override (off → no tool bubbles)', async () => {
+      mockAgentDefRepo.findById.mockResolvedValue({ id: 'agent-1', streamingEnabled: true });
+      // toolProgressMode 'off' overrides the telegram platform default of 'all'
+      mockChannelRepo.findById.mockResolvedValue({ id: 'channel-1', toolProgressMode: 'off' });
+
+      mockAgentRunner.run.mockImplementation(
+        async (opts: { onEvent?: (e: unknown) => Promise<void> }) => {
+          if (opts.onEvent) {
+            await opts.onEvent({ type: 'assistant_chunk', content: 'Thinking…', isFinal: false });
+            await opts.onEvent({
+              type: 'tool_started',
+              name: 'web_search',
+              args: { query: 'dogs' },
+            });
+            await opts.onEvent({
+              type: 'assistant_chunk',
+              content: 'Dogs are loyal.',
+              isFinal: true,
+            });
+          }
+          return {
+            streamingUsed: true,
+            output: 'Dogs are loyal.',
+            agentRunId: 'run-3',
+            sessionId: 'session-3',
+            status: 'completed',
+            tokenUsage: { input: 10, output: 5 },
+          };
+        },
+      );
+
+      const channel = mockChannel();
+      const router = createRouter();
+      await router.handleInbound(mockInbound(), channel);
+
+      // Only the 2 assistant_chunks were sent; no bubble for the tool_started event
+      expect(channel.sendMessage).toHaveBeenCalledTimes(2);
+      const calls = (channel.sendMessage as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls[0][0]).toMatchObject({ recipientId: '123456', text: 'Thinking…' });
+      expect(calls[1][0]).toMatchObject({ recipientId: '123456', text: 'Dogs are loyal.' });
     });
   });
 

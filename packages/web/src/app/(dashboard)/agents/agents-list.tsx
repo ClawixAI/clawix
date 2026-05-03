@@ -43,6 +43,7 @@ export interface ApiAgent {
   maxTokensPerRun: number;
   containerConfig: Record<string, unknown>;
   isActive: boolean;
+  streamingEnabled: boolean;
   isOfficial: boolean;
   createdById: string | null;
   createdAt: string;
@@ -190,6 +191,7 @@ export function AgentsList() {
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
           maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          streamingEnabled: form.get('streamingEnabled') === 'true',
           skillIds:
             (form.get('skillIds') as string)
               ?.split(',')
@@ -222,6 +224,7 @@ export function AgentsList() {
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
           maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          streamingEnabled: form.get('streamingEnabled') === 'true',
           skillIds:
             (form.get('skillIds') as string)
               ?.split(',')

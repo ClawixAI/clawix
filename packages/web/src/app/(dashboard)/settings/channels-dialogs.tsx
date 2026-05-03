@@ -13,7 +13,25 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { ApiChannel } from './channels-tab';
+
+// ------------------------------------------------------------------ //
+//  Constants                                                          //
+// ------------------------------------------------------------------ //
+
+const PLATFORM_DEFAULT_LABEL: Record<string, string> = {
+  telegram: 'all',
+  whatsapp: 'new',
+  slack: 'off',
+  web: 'all',
+};
 
 // ------------------------------------------------------------------ //
 //  Create Channel Dialog                                              //
@@ -131,6 +149,8 @@ export function EditChannelDialog({
           {channel.type === 'telegram' && <TelegramConfigFields config={channel.config} />}
           {channel.type === 'whatsapp' && <WhatsAppConfigFields />}
           {channel.type === 'web' && <WebConfigFields config={channel.config} />}
+
+          <ToolProgressField channelType={channel.type} defaultMode={channel.toolProgressMode} />
 
           <DialogFooter>
             <Button
@@ -295,5 +315,43 @@ function WebConfigFields({ config = {} }: { config?: Record<string, unknown> }) 
         <Label htmlFor="cfg-enableToolHints">Enable tool call hints</Label>
       </div>
     </>
+  );
+}
+
+// ------------------------------------------------------------------ //
+//  Tool Progress Field                                                //
+// ------------------------------------------------------------------ //
+
+function ToolProgressField({
+  channelType,
+  defaultMode,
+}: {
+  channelType: string;
+  defaultMode: string | null;
+}) {
+  const [mode, setMode] = useState<string>(defaultMode ?? 'default');
+  const platformDefault = PLATFORM_DEFAULT_LABEL[channelType] ?? 'off';
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor="edit-toolProgressMode">Tool progress</Label>
+      <input type="hidden" name="toolProgressMode" value={mode === 'default' ? '' : mode} />
+      <Select value={mode} onValueChange={setMode}>
+        <SelectTrigger id="edit-toolProgressMode">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="default">Default ({platformDefault})</SelectItem>
+          <SelectItem value="off">Off — no tool bubbles</SelectItem>
+          <SelectItem value="new">New — only when tool changes</SelectItem>
+          <SelectItem value="all">All — every tool call (preview)</SelectItem>
+          <SelectItem value="verbose">Verbose — every tool call (full args)</SelectItem>
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">
+        Controls progress bubbles emitted between tool calls. Only applies when the agent has
+        Streaming enabled.
+      </p>
+    </div>
   );
 }

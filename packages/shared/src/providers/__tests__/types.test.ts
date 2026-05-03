@@ -182,6 +182,28 @@ describe('createLLMResponse', () => {
     // readonly arrays cannot be mutated at runtime if frozen
     expect(Object.isFrozen(response.toolCalls)).toBe(true);
   });
+
+  it('should preserve optional cache token fields when provided', () => {
+    const usage: LLMUsage = {
+      inputTokens: 50,
+      outputTokens: 25,
+      totalTokens: 5195,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 5120,
+    };
+
+    const response = createLLMResponse({ usage });
+
+    expect(response.usage.cacheCreationInputTokens).toBe(0);
+    expect(response.usage.cacheReadInputTokens).toBe(5120);
+  });
+
+  it('should default cache token fields to undefined when omitted', () => {
+    const response = createLLMResponse({});
+
+    expect(response.usage.cacheCreationInputTokens).toBeUndefined();
+    expect(response.usage.cacheReadInputTokens).toBeUndefined();
+  });
 });
 
 // Type-level tests: ensure the types compile correctly

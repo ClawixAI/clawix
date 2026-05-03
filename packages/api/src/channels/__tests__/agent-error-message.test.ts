@@ -94,6 +94,29 @@ describe('classifyAgentError', () => {
     });
   });
 
+  describe('content_filter category', () => {
+    it('classifies Moonshot/Kimi safety rejection as content_filter', () => {
+      const err = new Error(
+        '400 System detected potentially unsafe or sensitive content in input or generation.',
+      );
+      const result = classifyAgentError(err);
+      expect(result.category).toBe('content_filter');
+      expect(result.text).toMatch(/flagged|unsafe|rephrase/i);
+    });
+
+    it('classifies OpenAI content-policy rejection as content_filter', () => {
+      const err = new Error('Your request was rejected as a result of our content policy.');
+      const result = classifyAgentError(err);
+      expect(result.category).toBe('content_filter');
+    });
+
+    it('classifies Anthropic safety-system rejection as content_filter', () => {
+      const err = new Error('Output blocked by safety system');
+      const result = classifyAgentError(err);
+      expect(result.category).toBe('content_filter');
+    });
+  });
+
   describe('unknown category', () => {
     it('falls back for unrecognized errors', () => {
       const err = new Error('something completely unexpected');

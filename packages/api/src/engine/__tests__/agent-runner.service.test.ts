@@ -137,6 +137,7 @@ const mockSession = {
   userId: 'user-1',
   agentDefinitionId: 'agent-def-1',
   isActive: true,
+  cachedSystemPrompt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -955,6 +956,50 @@ describe('AgentRunnerService', () => {
     });
 
     expect(vi.mocked(createSpawnTool)).toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------- //
+  //  Tests 30-32: onEvent / streamingEnabled forwarding               //
+  // ---------------------------------------------------------------- //
+
+  it('does not forward onEvent when agentDef.streamingEnabled is false', async () => {
+    // agentDef without streamingEnabled (defaults to undefined → falsy)
+    mocks.mockAgentDefRepo.findById.mockResolvedValue({ ...mockAgentDef });
+
+    const onEvent = vi.fn();
+    const result = await service.run({ ...defaultOptions, onEvent });
+
+    const loopRunConfig = mockLoopInstance.run.mock.calls[0]![1] as Record<string, unknown>;
+    expect(loopRunConfig['onEvent']).toBeUndefined();
+    expect(result.streamingUsed).toBe(false);
+  });
+
+  it('does not forward onEvent for sub-agents even when streamingEnabled is true', async () => {
+    mocks.mockAgentDefRepo.findById.mockResolvedValue({
+      ...mockAgentDef,
+      streamingEnabled: true,
+    } as unknown as typeof mockAgentDef);
+
+    const onEvent = vi.fn();
+    const result = await service.run({ ...defaultOptions, isSubAgent: true, onEvent });
+
+    const loopRunConfig = mockLoopInstance.run.mock.calls[0]![1] as Record<string, unknown>;
+    expect(loopRunConfig['onEvent']).toBeUndefined();
+    expect(result.streamingUsed).toBe(false);
+  });
+
+  it('forwards onEvent and reports streamingUsed=true for primary runs with streamingEnabled', async () => {
+    mocks.mockAgentDefRepo.findById.mockResolvedValue({
+      ...mockAgentDef,
+      streamingEnabled: true,
+    } as unknown as typeof mockAgentDef);
+
+    const onEvent = vi.fn();
+    const result = await service.run({ ...defaultOptions, onEvent });
+
+    const loopRunConfig = mockLoopInstance.run.mock.calls[0]![1] as Record<string, unknown>;
+    expect(loopRunConfig['onEvent']).toBe(onEvent);
+    expect(result.streamingUsed).toBe(true);
   });
 });
 

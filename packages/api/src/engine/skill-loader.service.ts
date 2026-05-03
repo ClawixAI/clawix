@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '@clawix/shared';
+import { scanContextContent } from './prompt-injection-scanner.js';
 import type { SkillFrontmatter, SkillInfo } from './skill-loader.types.js';
 import {
   SKILL_NAME_PATTERN,
@@ -114,9 +115,13 @@ export class SkillLoaderService {
     if (skills.length === 0) return '';
     const lines = ['<skills>'];
     for (const skill of skills) {
+      const safeDescription = scanContextContent(
+        skill.description,
+        `skill:${skill.name}`,
+      ).sanitized;
       lines.push('  <skill>');
       lines.push(`    <name>${escapeXml(skill.name)}</name>`);
-      lines.push(`    <description>${escapeXml(skill.description)}</description>`);
+      lines.push(`    <description>${escapeXml(safeDescription)}</description>`);
       lines.push(`    <location>${escapeXml(skill.path)}</location>`);
       lines.push(`    <source>${skill.source}</source>`);
       lines.push('  </skill>');

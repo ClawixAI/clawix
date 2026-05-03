@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { LLMResponse } from '@clawix/shared';
+import { createLLMResponse, type LLMResponse } from '@clawix/shared';
 
 vi.mock('@clawix/shared', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@clawix/shared')>();
@@ -193,5 +193,94 @@ describe('TokenCounterService', () => {
       const result = await service.checkProviderAllowed('policy-1', 'openai');
       expect(result).toBe(false);
     });
+  });
+});
+
+describe('TokenCounterService — cache token plumbing', () => {
+  it('forwards cache token counts to the repo on recordUsage', async () => {
+    const repo = { create: vi.fn().mockResolvedValue({}) };
+    const policyRepo = { findById: vi.fn() };
+    const svc = new TokenCounterService(
+      repo as unknown as TokenUsageRepository,
+      policyRepo as unknown as PolicyRepository,
+    );
+
+    await svc.recordUsage({
+      response: createLLMResponse({
+        usage: {
+          inputTokens: 100,
+          outputTokens: 50,
+          totalTokens: 5270,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 5120,
+        },
+      }),
+      agentRunId: 'run-1',
+      userId: 'user-1',
+      providerName: 'anthropic',
+      model: 'claude-sonnet-4-20250514',
+    });
+
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 5270,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 5120,
+      }),
+    );
+  });
+
+  it('applies cache pricing to estimatedCostUsd', async () => {
+    const repo = { create: vi.fn().mockResolvedValue({}) };
+    const policyRepo = { findById: vi.fn() };
+    const svc = new TokenCounterService(
+      repo as unknown as TokenUsageRepository,
+      policyRepo as unknown as PolicyRepository,
+    );
+
+    // 1M cache reads on sonnet-4 → $0.30
+    await svc.recordUsage({
+      response: createLLMResponse({
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 1_000_000,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 1_000_000,
+        },
+      }),
+      agentRunId: 'run-1',
+      userId: 'user-1',
+      providerName: 'anthropic',
+      model: 'claude-sonnet-4-20250514',
+    });
+
+    const call = repo.create.mock.calls[0]![0];
+    expect(call.estimatedCostUsd).toBeCloseTo(0.3, 5);
+  });
+
+  it('omits cache fields from the repo payload when the response has no cache data', async () => {
+    const repo = { create: vi.fn().mockResolvedValue({}) };
+    const policyRepo = { findById: vi.fn() };
+    const svc = new TokenCounterService(
+      repo as unknown as TokenUsageRepository,
+      policyRepo as unknown as PolicyRepository,
+    );
+
+    await svc.recordUsage({
+      response: createLLMResponse({
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      }),
+      agentRunId: 'run-1',
+      userId: 'user-1',
+      providerName: 'anthropic',
+      model: 'claude-sonnet-4-20250514',
+    });
+
+    const call = repo.create.mock.calls[0]![0];
+    expect(call.cacheCreationTokens).toBeUndefined();
+    expect(call.cacheReadTokens).toBeUndefined();
   });
 });

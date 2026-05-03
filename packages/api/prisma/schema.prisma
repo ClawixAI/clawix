@@ -18,23 +18,23 @@ datasource db {
 // ============================================================================
 
 model Policy {
-  id               String   @id @default(cuid())
-  name             String   @unique // "Free", "Pro", "Enterprise"
-  description      String?
-  maxTokenBudget   Int? // monthly budget in USD cents (null = unlimited)
-  maxAgents        Int      @default(5)
-  maxSkills        Int      @default(10)
-  maxMemoryItems   Int      @default(1000)
-  maxGroupsOwned   Int      @default(5)
-  allowedProviders     String[] // ["anthropic", "openai"]
-  features             Json     @default("{}") // feature flags
-  maxScheduledTasks    Int      @default(5)
-  minCronIntervalSecs  Int      @default(300)
-  maxTokensPerCronRun  Int?
-  cronEnabled          Boolean  @default(false)
-  isActive             Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  name                String   @unique // "Free", "Pro", "Enterprise"
+  description         String?
+  maxTokenBudget      Int? // monthly budget in USD cents (null = unlimited)
+  maxAgents           Int      @default(5)
+  maxSkills           Int      @default(10)
+  maxMemoryItems      Int      @default(1000)
+  maxGroupsOwned      Int      @default(5)
+  allowedProviders    String[] // ["anthropic", "openai"]
+  features            Json     @default("{}") // feature flags
+  maxScheduledTasks   Int      @default(5)
+  minCronIntervalSecs Int      @default(300)
+  maxTokensPerCronRun Int?
+  cronEnabled         Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   users User[]
 }
@@ -62,14 +62,14 @@ model User {
   telegramId   String?  @unique
   whatsappJid  String?  @unique
 
-  policy        Policy         @relation(fields: [policyId], references: [id])
-  sessions      Session[]
-  auditLogs     AuditLog[]
-  memoryItems   MemoryItem[]
-  groupMembers  GroupMember[]
-  notifications Notification[]
-  userAgents    UserAgent[]
-  tasks         Task[]
+  policy                  Policy            @relation(fields: [policyId], references: [id])
+  sessions                Session[]
+  auditLogs               AuditLog[]
+  memoryItems             MemoryItem[]
+  groupMembers            GroupMember[]
+  notifications           Notification[]
+  userAgents              UserAgent[]
+  tasks                   Task[]
   createdAgentDefinitions AgentDefinition[] @relation("CreatedAgentDefinitions")
 }
 
@@ -83,28 +83,31 @@ enum AgentRole {
 }
 
 model AgentDefinition {
-  id              String    @id @default(cuid())
-  name            String
-  description     String?
-  systemPrompt    String    @default("")
-  role            AgentRole @default(primary)
-  provider        String    @default("anthropic")
-  model           String    @default("claude-sonnet-4-20250514")
-  apiBaseUrl      String? // for custom/self-hosted endpoints
-  skillIds        String[] // references to Skill.id
-  maxTokensPerRun Int       @default(100000)
-  containerConfig Json      @default("{}")
-  isActive        Boolean   @default(true)
-  isOfficial      Boolean   @default(true)
-  createdById     String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  name             String
+  description      String?
+  systemPrompt     String    @default("")
+  role             AgentRole @default(primary)
+  provider         String    @default("anthropic")
+  model            String    @default("claude-sonnet-4-20250514")
+  apiBaseUrl       String? // for custom/self-hosted endpoints
+  skillIds         String[] // references to Skill.id
+  maxTokensPerRun  Int       @default(100000)
+  containerConfig  Json      @default("{}")
+  isActive         Boolean   @default(true)
+  isOfficial       Boolean   @default(true)
+  /// When true, intermediate model prose is streamed to the channel as
+  /// separate messages instead of bundled into a single final message.
+  streamingEnabled Boolean   @default(false)
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   agentRuns  AgentRun[]
   sessions   Session[]
   userAgents UserAgent[]
   tasks      Task[]
-  createdBy  User?        @relation("CreatedAgentDefinitions", fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy  User?       @relation("CreatedAgentDefinitions", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([isActive])
   @@index([role, isActive])
@@ -176,9 +179,9 @@ model UserAgent {
 model ProviderConfig {
   id          String   @id @default(cuid())
   provider    String   @unique // "anthropic", "openai", "zai-coding", "custom-xxx"
-  displayName String             // "Anthropic", "OpenAI", "Z.AI Coding Plan"
-  apiKey      String             // encrypted at rest (AES-256-GCM)
-  apiBaseUrl  String?            // override endpoint
+  displayName String // "Anthropic", "OpenAI", "Z.AI Coding Plan"
+  apiKey      String // encrypted at rest (AES-256-GCM)
+  apiBaseUrl  String? // override endpoint
   isEnabled   Boolean  @default(true)
   isDefault   Boolean  @default(false)
   sortOrder   Int      @default(0)
@@ -198,13 +201,17 @@ enum ChannelType {
 }
 
 model Channel {
-  id        String      @id @default(cuid())
-  type      ChannelType
-  name      String
-  config    Json        @default("{}") // channel-specific configuration
-  isActive  Boolean     @default(true)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id               String      @id @default(cuid())
+  type             ChannelType
+  name             String
+  config           Json        @default("{}") // channel-specific configuration
+  isActive         Boolean     @default(true)
+  /// Tool-progress emission mode for this channel. Null falls back to
+  /// the platform default resolved in `tool-progress.ts`. Valid values:
+  /// "off" | "new" | "all" | "verbose".
+  toolProgressMode String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
   sessions Session[]
   tasks    Task[]
@@ -225,22 +232,22 @@ enum TaskStatus {
 }
 
 model Task {
-  id                   String      @id @default(cuid())
-  agentDefinitionId    String
-  name                 String
-  schedule             Json // CronSchedule: { type, time/interval/expression }
-  prompt               String
-  channelId            String? // optional: deliver output to a channel
-  enabled              Boolean     @default(true)
-  lastRunAt            DateTime?
-  lastStatus           TaskStatus?
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
-  createdByUserId      String?
-  nextRunAt            DateTime?
-  consecutiveFailures  Int         @default(0)
-  disabledReason       String?
-  timeoutMs            Int?
+  id                  String      @id @default(cuid())
+  agentDefinitionId   String
+  name                String
+  schedule            Json // CronSchedule: { type, time/interval/expression }
+  prompt              String
+  channelId           String? // optional: deliver output to a channel
+  enabled             Boolean     @default(true)
+  lastRunAt           DateTime?
+  lastStatus          TaskStatus?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  createdByUserId     String?
+  nextRunAt           DateTime?
+  consecutiveFailures Int         @default(0)
+  disabledReason      String?
+  timeoutMs           Int?
 
   agentDefinition AgentDefinition @relation(fields: [agentDefinitionId], references: [id], onDelete: Cascade)
   channel         Channel?        @relation(fields: [channelId], references: [id], onDelete: SetNull)
@@ -261,7 +268,7 @@ model TaskRun {
   completedAt DateTime?
   durationMs  Int?
 
-  task     Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task     Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
   messages TaskRunMessage[]
 
   @@index([taskId])
@@ -272,7 +279,7 @@ model TaskRunMessage {
   id         String   @id @default(cuid())
   taskRunId  String
   ordering   Int
-  role       String   // 'system' | 'user' | 'assistant' | 'tool'
+  role       String // 'system' | 'user' | 'assistant' | 'tool'
   content    String   @db.Text
   toolCallId String?
   toolCalls  Json?
@@ -292,15 +299,16 @@ model Session {
   userId             String
   agentDefinitionId  String
   channelId          String?
-  topic              String?   // conversation topic/title (user-editable)
+  topic              String? // conversation topic/title (user-editable)
   lastConsolidatedAt DateTime? // memory consolidation pointer
+  cachedSystemPrompt String? // populated on first run; reused for subsequent runs (Anthropic prompt-cache enabler)
   isActive           Boolean   @default(true)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agentDefinition AgentDefinition @relation(fields: [agentDefinitionId], references: [id], onDelete: Cascade)
-  channel         Channel?        @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentDefinition AgentDefinition  @relation(fields: [agentDefinitionId], references: [id], onDelete: Cascade)
+  channel         Channel?         @relation(fields: [channelId], references: [id], onDelete: SetNull)
   agentRuns       AgentRun[]
   sessionMessages SessionMessage[]
 
@@ -320,7 +328,7 @@ model SessionMessage {
   createdAt  DateTime  @default(now())
   archivedAt DateTime?
 
-  session    Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, ordering])
   @@index([sessionId, archivedAt])
@@ -349,15 +357,17 @@ model AuditLog {
 }
 
 model TokenUsage {
-  id               String   @id @default(cuid())
-  agentRunId       String
-  userId           String // for policy-level budget enforcement
-  model            String
-  inputTokens      Int
-  outputTokens     Int
-  totalTokens      Int
-  estimatedCostUsd Float    @default(0)
-  createdAt        DateTime @default(now())
+  id                  String   @id @default(cuid())
+  agentRunId          String
+  userId              String // for policy-level budget enforcement
+  model               String
+  inputTokens         Int
+  outputTokens        Int
+  totalTokens         Int
+  cacheCreationTokens Int      @default(0) // Anthropic prompt cache writes (charged 1.25× input)
+  cacheReadTokens     Int      @default(0) // Anthropic prompt cache reads (charged 0.1× input)
+  estimatedCostUsd    Float    @default(0)
+  createdAt           DateTime @default(now())
 
   @@index([userId])
   @@index([model])

@@ -308,3 +308,45 @@ describe('estimateCost', () => {
     expect(cost).toBeNull();
   });
 });
+
+describe('estimateCost — cache pricing', () => {
+  it('charges cache write tokens at 1.25× the input rate', () => {
+    // sonnet-4 input: $3 / MTok → cache write: $3.75 / MTok
+    const cost = estimateCost('anthropic', 'claude-sonnet-4-20250514', 0, 0, {
+      cacheCreationTokens: 1_000_000,
+    });
+    expect(cost).toBeCloseTo(3.75, 5);
+  });
+
+  it('charges cache read tokens at 0.1× the input rate', () => {
+    // sonnet-4 input: $3 / MTok → cache read: $0.30 / MTok
+    const cost = estimateCost('anthropic', 'claude-sonnet-4-20250514', 0, 0, {
+      cacheReadTokens: 1_000_000,
+    });
+    expect(cost).toBeCloseTo(0.3, 5);
+  });
+
+  it('combines regular, cache write, and cache read input pricing', () => {
+    // 1M regular + 1M write + 1M read = 3 + 3.75 + 0.30 = 7.05
+    const cost = estimateCost('anthropic', 'claude-sonnet-4-20250514', 1_000_000, 0, {
+      cacheCreationTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+    });
+    expect(cost).toBeCloseTo(7.05, 5);
+  });
+
+  it('treats undefined cache token counts as zero', () => {
+    // Same as the existing "no options" path
+    const withoutOptions = estimateCost('anthropic', 'claude-sonnet-4-20250514', 1000, 1000);
+    const withEmptyOptions = estimateCost('anthropic', 'claude-sonnet-4-20250514', 1000, 1000, {});
+    expect(withEmptyOptions).toBe(withoutOptions);
+  });
+
+  it('returns null when pricing is unavailable, even with cache tokens', () => {
+    const cost = estimateCost('zai-coding', 'glm-4.7', 100, 100, {
+      cacheCreationTokens: 100,
+      cacheReadTokens: 100,
+    });
+    expect(cost).toBeNull();
+  });
+});

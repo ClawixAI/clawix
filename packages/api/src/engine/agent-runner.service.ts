@@ -254,6 +254,9 @@ export class AgentRunnerService {
         isSubAgent,
         isScheduledTask: options.isScheduledTask,
         workers,
+        session: session
+          ? { id: session.id, cachedSystemPrompt: session.cachedSystemPrompt }
+          : undefined,
       });
 
       // Step 9: Save user message to store (skip for sub-agents — they don't own the session)
@@ -423,12 +426,19 @@ export class AgentRunnerService {
       // No default wall-clock timeout — let the model finish. The stale run reaper (10 min) is the safety net.
       const timeoutMs = options.timeoutMs;
 
-      logger.info({ agentRunId: agentRun.id }, 'Starting reasoning loop');
+      // Wire the streaming event sink only for primary runs of agents that
+      // opted into streaming. Sub-agents stay silent (their output is
+      // consumed by the parent, not the user). Without the agent flag,
+      // legacy non-streaming behavior is preserved.
+      const streamingUsed = !isSubAgent && !!agentDef.streamingEnabled && options.onEvent != null;
+
+      logger.info({ agentRunId: agentRun.id, streamingUsed }, 'Starting reasoning loop');
       const loopResult = await loop.run(initialMessages, {
         model: agentDef.model,
         onProgress,
         ...(budgetTracker ? { budgetTracker } : {}),
         timeoutMs,
+        ...(streamingUsed && options.onEvent ? { onEvent: options.onEvent } : {}),
       });
 
       // Step 16: Save loop-generated messages (skip for sub-agents — they don't own the session)
@@ -516,6 +526,7 @@ export class AgentRunnerService {
         output: finalOutput,
         status: runStatus,
         responseMessageId,
+        streamingUsed,
         tokenUsage: {
           inputTokens: loopResult.totalUsage.inputTokens,
           outputTokens: loopResult.totalUsage.outputTokens,

@@ -74,6 +74,7 @@ export class ChannelRepository {
       readonly name?: string;
       readonly config?: Prisma.InputJsonValue;
       readonly isActive?: boolean;
+      readonly toolProgressMode?: string | null;
     },
   ): Promise<Channel> {
     try {
@@ -83,6 +84,9 @@ export class ChannelRepository {
           ...(data.name !== undefined ? { name: data.name } : {}),
           ...(data.config !== undefined ? { config: data.config } : {}),
           ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+          ...(data.toolProgressMode !== undefined
+            ? { toolProgressMode: data.toolProgressMode }
+            : {}),
         },
       });
     } catch (error) {

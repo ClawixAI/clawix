@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ContextBuilderService } from '../context-builder.service.js';
 import type { ContextBuildParams } from '../context-builder.types.js';
 import type { SystemSettingsService } from '../../system-settings/system-settings.service.js';
+import type { SessionRepository } from '../../db/session.repository.js';
 
 const noopSystemSettings = {
   get: vi.fn().mockResolvedValue({
@@ -24,6 +25,7 @@ describe('ContextBuilderService - skill summary integration', () => {
         ),
     };
 
+    const sessionRepoMock = { setCachedSystemPrompt: vi.fn() };
     const service = new ContextBuilderService(
       mockMemoryRepo as any,
       mockBootstrapService as any,
@@ -31,6 +33,7 @@ describe('ContextBuilderService - skill summary integration', () => {
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
       noopSystemSettings,
+      sessionRepoMock as unknown as SessionRepository,
     );
 
     const params: ContextBuildParams = {
@@ -55,11 +58,18 @@ describe('ContextBuilderService - skill summary integration', () => {
     expect(mockSkillLoader.buildSkillsSummary).toHaveBeenCalledWith('/tmp/workspace-user1/skills');
   });
 
-  it('omits skill section when no skills available', async () => {
+  it('omits skill section for sub-agents even when skills are available', async () => {
     const mockMemoryRepo = { findVisibleToUser: vi.fn().mockResolvedValue([]) };
     const mockBootstrapService = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
-    const mockSkillLoader = { buildSkillsSummary: vi.fn().mockResolvedValue('') };
+    const mockSkillLoader = {
+      buildSkillsSummary: vi
+        .fn()
+        .mockResolvedValue(
+          '<skills><skill><name>test</name><description>Test</description><location>/skills/builtin/test/SKILL.md</location><source>builtin</source></skill></skills>',
+        ),
+    };
 
+    const sessionRepoMock = { setCachedSystemPrompt: vi.fn() };
     const service = new ContextBuilderService(
       mockMemoryRepo as any,
       mockBootstrapService as any,
@@ -67,6 +77,44 @@ describe('ContextBuilderService - skill summary integration', () => {
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
       noopSystemSettings,
+      sessionRepoMock as unknown as SessionRepository,
+    );
+
+    const params: ContextBuildParams = {
+      agentDef: {
+        name: 'WorkerAgent',
+        description: 'Specialised worker',
+        systemPrompt: 'Do the task.',
+      },
+      history: [],
+      input: 'Run',
+      userId: 'user1',
+      workspacePath: '/tmp/workspace-user1',
+      isSubAgent: true,
+    };
+
+    const messages = await service.buildMessages(params);
+    const systemContent = messages[0]!.content as string;
+
+    expect(systemContent).not.toContain('<skills>');
+    expect(systemContent).not.toContain('Skills are NOT agents');
+    expect(mockSkillLoader.buildSkillsSummary).not.toHaveBeenCalled();
+  });
+
+  it('omits skill section when no skills available', async () => {
+    const mockMemoryRepo = { findVisibleToUser: vi.fn().mockResolvedValue([]) };
+    const mockBootstrapService = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
+    const mockSkillLoader = { buildSkillsSummary: vi.fn().mockResolvedValue('') };
+
+    const sessionRepoMock = { setCachedSystemPrompt: vi.fn() };
+    const service = new ContextBuilderService(
+      mockMemoryRepo as any,
+      mockBootstrapService as any,
+      mockSkillLoader as any,
+      { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
+      { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
+      noopSystemSettings,
+      sessionRepoMock as unknown as SessionRepository,
     );
 
     const params: ContextBuildParams = {

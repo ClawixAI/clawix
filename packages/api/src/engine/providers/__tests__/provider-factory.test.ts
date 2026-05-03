@@ -124,3 +124,18 @@ describe('createProvider', () => {
     expect(provider).toBeInstanceOf(AnthropicProvider);
   });
 });
+
+describe('createProvider — caching flag', () => {
+  const API_KEY = 'test-api-key';
+
+  it('enables caching for the anthropic provider', () => {
+    const provider = createProvider('anthropic', API_KEY) as AnthropicProvider;
+    // Access the private field via cast — acceptable in tests
+    expect((provider as unknown as { enableCaching: boolean }).enableCaching).toBe(true);
+  });
+
+  it('disables caching for the kimi-code provider', () => {
+    const provider = createProvider('kimi-code', API_KEY) as AnthropicProvider;
+    expect((provider as unknown as { enableCaching: boolean }).enableCaching).toBe(false);
+  });
+});

@@ -1,5 +1,11 @@
 import type { ChatMessage, InboundMessage } from '@clawix/shared';
 
+/** The bare minimum of Session needed by ContextBuilder for prompt caching. */
+export interface SessionCacheRef {
+  readonly id: string;
+  readonly cachedSystemPrompt: string | null;
+}
+
 /** Fields from AgentDefinition needed by ContextBuilder. */
 export interface ContextAgentDef {
   readonly name: string;
@@ -29,12 +35,31 @@ export interface ContextBuildParams {
   readonly isScheduledTask?: boolean;
   /** Available worker agents for the primary agent to spawn. Omit for sub-agents. */
   readonly workers?: readonly WorkerSummary[];
+  /** Session row snapshot whose cachedSystemPrompt should be honored / populated. Optional for sessionless paths. */
+  readonly session?: SessionCacheRef;
 }
 
 /** Lightweight summary of a worker agent injected into the primary agent's system prompt. */
 export interface WorkerSummary {
   readonly name: string;
   readonly description: string | null;
+}
+
+/** Arguments for building (or fetching the cached) system prompt for a single LLM call. */
+export interface SystemPromptArgs {
+  readonly agentDef: ContextAgentDef;
+  readonly userId: string;
+  readonly workspacePath?: string;
+  readonly isSubAgent?: boolean;
+  readonly isScheduledTask?: boolean;
+  readonly workers?: readonly WorkerSummary[];
+  readonly taskId?: string;
+  /**
+   * Session row snapshot. If present and cachedSystemPrompt is non-null,
+   * return that string verbatim. Otherwise render and persist. When undefined
+   * (cron, sessionless paths), render every call and persist nothing.
+   */
+  readonly session?: SessionCacheRef;
 }
 
 /** Maximum estimated tokens for the MEMORY.md long-term narrative section. */

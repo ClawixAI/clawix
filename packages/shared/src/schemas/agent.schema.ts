@@ -31,6 +31,11 @@ export const createAgentDefinitionSchema = z.object({
     allowedMounts: [],
     idleTimeoutSeconds: 300,
   }),
+  /**
+   * When true, intermediate model prose is streamed to the channel as
+   * separate messages. Off by default for backward compatibility.
+   */
+  streamingEnabled: z.boolean().default(false),
 });
 
 export const updateAgentDefinitionSchema = createAgentDefinitionSchema

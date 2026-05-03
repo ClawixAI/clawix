@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ChatMessage, LLMProvider, LLMResponse, LLMUsage } from '@clawix/shared';
 import { createLLMResponse } from '@clawix/shared';
+import type { ReasoningEvent } from '../reasoning-loop.types.js';
 
 import { ReasoningLoop } from '../reasoning-loop.js';
 import { BudgetTracker } from '../budget-tracker.js';
@@ -442,6 +443,46 @@ describe('ReasoningLoop', () => {
     });
   });
 
+  it('aggregates cache token fields across loop iterations', async () => {
+    const toolCallResponse = createLLMResponse({
+      content: null,
+      finishReason: 'tool_use',
+      toolCalls: [{ id: 'tc1', name: 'search', arguments: { query: 'cache test' } }],
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 1015,
+        cacheCreationInputTokens: 1000,
+        cacheReadInputTokens: 0,
+      },
+    });
+    const finalResponse = createLLMResponse({
+      content: 'Cache result.',
+      finishReason: 'stop',
+      usage: {
+        inputTokens: 5,
+        outputTokens: 10,
+        totalTokens: 5015,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 5000,
+      },
+    });
+    const provider = makeMockProvider([toolCallResponse, finalResponse]);
+
+    const searchTool = makeMockTool('search', 'cached data');
+    const registry = new ToolRegistry();
+    registry.register(searchTool);
+
+    const loop = new ReasoningLoop(provider, registry);
+    const result = await loop.run([{ role: 'user', content: 'test cache' }]);
+
+    expect(result.totalUsage.inputTokens).toBe(15);
+    expect(result.totalUsage.outputTokens).toBe(15);
+    expect(result.totalUsage.totalTokens).toBe(1015 + 5015);
+    expect(result.totalUsage.cacheCreationInputTokens).toBe(1000);
+    expect(result.totalUsage.cacheReadInputTokens).toBe(5000);
+  });
+
   it('message accumulation: result.messages contains all message types', async () => {
     const toolCallResponse = createLLMResponse({
       content: null,
@@ -472,5 +513,97 @@ describe('ReasoningLoop', () => {
     expect(result.messages[2]!.role).toBe('tool');
     expect(result.messages[2]!.toolCallId).toBe('tc1');
     expect(result.messages[3]).toEqual({ role: 'assistant', content: 'Final answer.' });
+  });
+
+  it('emits assistant_chunk(isFinal=false), tool_started, assistant_chunk(isFinal=true) in order', async () => {
+    const responses = [
+      createLLMResponse({
+        content: 'Let me search first.',
+        finishReason: 'tool_use',
+        toolCalls: [{ id: 't1', name: 'mock_search', arguments: { query: 'x' } }],
+        usage: makeUsage(10, 5),
+      }),
+      createLLMResponse({
+        content: 'Here is the answer.',
+        finishReason: 'stop',
+        usage: makeUsage(5, 5),
+      }),
+    ];
+    const provider = makeMockProvider(responses);
+    const registry = new ToolRegistry();
+    registry.register(makeMockTool('mock_search', '{"results": []}'));
+    const loop = new ReasoningLoop(provider, registry);
+
+    const events: ReasoningEvent[] = [];
+    await loop.run([{ role: 'user', content: 'hi' }], {
+      onEvent: (e) => {
+        events.push(e);
+      },
+    });
+
+    expect(events).toEqual([
+      { type: 'assistant_chunk', content: 'Let me search first.', isFinal: false },
+      { type: 'tool_started', name: 'mock_search', args: { query: 'x' } },
+      { type: 'assistant_chunk', content: 'Here is the answer.', isFinal: true },
+    ]);
+  });
+
+  it('does not emit assistant_chunk when content is empty or whitespace', async () => {
+    const responses = [
+      createLLMResponse({
+        content: '   ',
+        finishReason: 'tool_use',
+        toolCalls: [{ id: 't1', name: 'mock_search', arguments: { query: 'x' } }],
+        usage: makeUsage(10, 5),
+      }),
+      createLLMResponse({
+        content: 'Done.',
+        finishReason: 'stop',
+        usage: makeUsage(5, 5),
+      }),
+    ];
+    const provider = makeMockProvider(responses);
+    const registry = new ToolRegistry();
+    registry.register(makeMockTool('mock_search', 'ok'));
+    const loop = new ReasoningLoop(provider, registry);
+
+    const events: ReasoningEvent[] = [];
+    await loop.run([{ role: 'user', content: 'hi' }], { onEvent: (e) => events.push(e) });
+
+    expect(events.map((e) => e.type)).toEqual(['tool_started', 'assistant_chunk']);
+  });
+
+  it('awaits async onEvent before continuing', async () => {
+    const responses = [
+      createLLMResponse({
+        content: 'a',
+        finishReason: 'tool_use',
+        toolCalls: [{ id: 't1', name: 'mock_search', arguments: { query: 'x' } }],
+        usage: makeUsage(10, 5),
+      }),
+      createLLMResponse({ content: 'b', finishReason: 'stop', usage: makeUsage(5, 5) }),
+    ];
+    const provider = makeMockProvider(responses);
+    const registry = new ToolRegistry();
+    registry.register(makeMockTool('mock_search', 'ok'));
+    const loop = new ReasoningLoop(provider, registry);
+
+    const order: string[] = [];
+    await loop.run([{ role: 'user', content: 'hi' }], {
+      onEvent: async (e) => {
+        order.push(`start:${e.type}`);
+        await new Promise((r) => setTimeout(r, 5));
+        order.push(`end:${e.type}`);
+      },
+    });
+
+    expect(order).toEqual([
+      'start:assistant_chunk',
+      'end:assistant_chunk',
+      'start:tool_started',
+      'end:tool_started',
+      'start:assistant_chunk',
+      'end:assistant_chunk',
+    ]);
   });
 });

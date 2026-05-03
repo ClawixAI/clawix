@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
@@ -131,6 +132,7 @@ export function CreateAgentDialog({
   onSubmit: (form: FormData) => void;
 }) {
   const providers = useProviders();
+  const [streamingEnabled, setStreamingEnabled] = useState(false);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -144,7 +146,9 @@ export function CreateAgentDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(new FormData(e.currentTarget));
+            const fd = new FormData(e.currentTarget);
+            fd.set('streamingEnabled', String(streamingEnabled));
+            onSubmit(fd);
           }}
           className="flex flex-col gap-4"
         >
@@ -209,6 +213,23 @@ export function CreateAgentDialog({
             <Input id="create-skillIds" name="skillIds" placeholder="Comma-separated skill IDs" />
           </div>
 
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="create-streamingEnabled" className="text-base">
+                Streaming
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Send each reasoning step as a separate message. When off, the user receives one
+                combined reply at the end of the run.
+              </p>
+            </div>
+            <Switch
+              id="create-streamingEnabled"
+              checked={streamingEnabled}
+              onCheckedChange={setStreamingEnabled}
+            />
+          </div>
+
           <DialogFooter>
             <Button
               type="button"
@@ -246,6 +267,7 @@ export function EditAgentDialog({
   onSubmit: (id: string, form: FormData) => void;
 }) {
   const providers = useProviders();
+  const [streamingEnabled, setStreamingEnabled] = useState(agent?.streamingEnabled ?? false);
 
   if (!agent) return null;
 
@@ -259,7 +281,9 @@ export function EditAgentDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(agent.id, new FormData(e.currentTarget));
+            const fd = new FormData(e.currentTarget);
+            fd.set('streamingEnabled', String(streamingEnabled));
+            onSubmit(agent.id, fd);
           }}
           className="flex flex-col gap-4"
         >
@@ -345,6 +369,23 @@ export function EditAgentDialog({
               </select>
             </div>
           )}
+
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="edit-streamingEnabled" className="text-base">
+                Streaming
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Send each reasoning step as a separate message. When off, the user receives one
+                combined reply at the end of the run.
+              </p>
+            </div>
+            <Switch
+              id="edit-streamingEnabled"
+              checked={streamingEnabled}
+              onCheckedChange={setStreamingEnabled}
+            />
+          </div>
 
           <DialogFooter>
             <Button

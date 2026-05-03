@@ -32,7 +32,7 @@ export function createProvider(
 ): LLMProvider {
   switch (providerName) {
     case 'anthropic':
-      return new AnthropicProvider(apiKey, baseURL);
+      return new AnthropicProvider(apiKey, baseURL, { enableCaching: true });
 
     case 'openai':
       if (model && isCodexModel(model)) {
@@ -47,7 +47,9 @@ export function createProvider(
       return new GeminiProvider(apiKey, baseURL);
 
     case 'kimi-code':
-      return new AnthropicProvider(apiKey, baseURL ?? KIMI_CODE_DEFAULT_BASE_URL);
+      return new AnthropicProvider(apiKey, baseURL ?? KIMI_CODE_DEFAULT_BASE_URL, {
+        enableCaching: false,
+      });
 
     default:
       if (!baseURL) {

@@ -13,6 +13,7 @@ export type AgentErrorCategory =
   | 'auth'
   | 'rate_limit'
   | 'bad_request'
+  | 'content_filter'
   | 'policy'
   | 'unknown';
 
@@ -75,11 +76,25 @@ const BAD_REQUEST_PATTERNS = [
 
 const POLICY_PATTERNS = ['is not allowed by policy', 'token budget exceeded', 'is inactive'];
 
+const CONTENT_FILTER_PATTERNS = [
+  'unsafe or sensitive content',
+  'potentially unsafe',
+  'safety system',
+  'content policy',
+  'content_policy',
+  'content_filter',
+  'flagged as inappropriate',
+  'violates our usage policy',
+  'violates our content policy',
+];
+
 const MESSAGES: Record<AgentErrorCategory, string> = {
   network: "I can't reach the AI provider right now. Please try again in a moment.",
   auth: 'The AI provider rejected our credentials. An admin needs to check the API key.',
   rate_limit: "We've hit a rate limit. Please wait a minute and try again.",
   bad_request: "I couldn't process that — the provider rejected the request shape.",
+  content_filter:
+    'Your message was flagged as potentially unsafe by the AI provider. Try rephrasing your request.',
   policy:
     "This request isn't allowed by your account's plan or has exceeded its budget. Please contact your administrator.",
   unknown: 'Something went wrong while processing your message. Please try again.',
@@ -115,6 +130,9 @@ export function classifyAgentError(err: unknown): ClassifiedAgentError {
 
   if (matchesAny(lower, POLICY_PATTERNS)) {
     return { category: 'policy', text: MESSAGES.policy };
+  }
+  if (matchesAny(lower, CONTENT_FILTER_PATTERNS)) {
+    return { category: 'content_filter', text: MESSAGES.content_filter };
   }
   if (matchesAny(lower, AUTH_PATTERNS)) {
     return { category: 'auth', text: MESSAGES.auth };

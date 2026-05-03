@@ -6,11 +6,17 @@ import type { ChatMessage } from '@clawix/shared';
 
 import { MemoryItemRepository } from '../db/memory-item.repository.js';
 import { BootstrapFileService } from './bootstrap-file.service.js';
+import { scanContextContent } from './prompt-injection-scanner.js';
 import { SkillLoaderService } from './skill-loader.service.js';
 import { PolicyRepository } from '../db/policy.repository.js';
 import { UserRepository } from '../db/user.repository.js';
 import { SystemSettingsService } from '../system-settings/system-settings.service.js';
-import type { ContextBuildParams, WorkerSummary } from './context-builder.types.js';
+import { SessionRepository } from '../db/session.repository.js';
+import type {
+  ContextBuildParams,
+  SystemPromptArgs,
+  WorkerSummary,
+} from './context-builder.types.js';
 import {
   MEMORY_FILE_TOKEN_BUDGET,
   DAILY_NOTES_TOKEN_BUDGET,
@@ -37,6 +43,7 @@ export class ContextBuilderService {
     private readonly policyRepo: PolicyRepository,
     private readonly userRepo: UserRepository,
     private readonly systemSettingsService: SystemSettingsService,
+    private readonly sessionRepo: SessionRepository,
   ) {}
 
   /**
@@ -51,15 +58,16 @@ export class ContextBuilderService {
     // chatId format for cron firings is 'cron:<taskId>' (set by CronTaskProcessorService)
     const taskId = isScheduledTask && chatId.startsWith('cron:') ? chatId.slice(5) : undefined;
 
-    const systemPrompt = await this.buildSystemPrompt(
+    const systemPrompt = await this.buildSystemPrompt({
       agentDef,
       userId,
-      params.workspacePath,
+      workspacePath: params.workspacePath,
       isSubAgent,
       isScheduledTask,
-      params.workers,
+      workers: params.workers,
       taskId,
-    );
+      session: params.session,
+    });
     const userContent = await this.buildUserMessage(
       input,
       channel,
@@ -74,15 +82,27 @@ export class ContextBuilderService {
     return [systemMessage, ...history, userMessage];
   }
 
-  private async buildSystemPrompt(
-    agentDef: ContextBuildParams['agentDef'],
-    userId: string,
-    workspacePath?: string,
-    isSubAgent?: boolean,
-    isScheduledTask?: boolean,
-    workers?: readonly WorkerSummary[],
-    taskId?: string,
-  ): Promise<string> {
+  private async buildSystemPrompt(args: SystemPromptArgs): Promise<string> {
+    if (args.session !== undefined) {
+      if (args.session.cachedSystemPrompt !== null) {
+        return args.session.cachedSystemPrompt;
+      }
+      const rendered = await this.renderSystemPrompt(args);
+      try {
+        await this.sessionRepo.setCachedSystemPrompt(args.session.id, rendered);
+      } catch (err) {
+        logger.warn(
+          { sessionId: args.session.id, err },
+          'Failed to persist cached system prompt — continuing with rendered output',
+        );
+      }
+      return rendered;
+    }
+    return this.renderSystemPrompt(args);
+  }
+
+  private async renderSystemPrompt(args: SystemPromptArgs): Promise<string> {
+    const { agentDef, userId, workspacePath, isSubAgent, isScheduledTask, workers, taskId } = args;
     const sections: string[] = [];
 
     if (isSubAgent) {
@@ -109,22 +129,31 @@ export class ContextBuilderService {
     // 4. Agent-defined system prompt
     sections.push(agentDef.systemPrompt);
 
-    // 5. Available sub-agents (primary agents only)
+    // 5. Operating principles — baseline discipline that applies to all agents.
+    // Sub-agents only get the Tool Use paragraph; Memory and Skills are
+    // primary-only because sub-agents rarely save memory and skill access is
+    // gated below.
+    sections.push(this.buildOperatingPrinciplesSection(Boolean(isSubAgent)));
+
+    // 6. Available sub-agents (primary agents only)
     if (!isSubAgent && workers && workers.length > 0) {
       sections.push(this.buildWorkersSection(workers));
     }
 
-    // 6. Skills summary (optional)
-    const customDir = workspacePath ? path.join(workspacePath, 'skills') : '';
-    const skillsSummary = await this.skillLoader.buildSkillsSummary(customDir);
-    if (skillsSummary) {
-      sections.push(
-        '# Skills\n\n' +
-          'Skills are NOT agents — do NOT use the spawn tool for skills.\n' +
-          'To use a skill: call read_file on its SKILL.md location, then follow the instructions inside.\n' +
-          'To create new skills: write them under /workspace/skills/ (writable, lives inside your workspace). /skills/builtin/ is read-only.\n\n' +
-          skillsSummary,
-      );
+    // 6. Skills summary (primary agents only — sub-agents are focused on a single
+    // task and don't need the full skill index, which would waste prompt tokens.)
+    if (!isSubAgent) {
+      const customDir = workspacePath ? path.join(workspacePath, 'skills') : '';
+      const skillsSummary = await this.skillLoader.buildSkillsSummary(customDir);
+      if (skillsSummary) {
+        sections.push(
+          '# Skills\n\n' +
+            'Skills are NOT agents — do NOT use the spawn tool for skills.\n' +
+            'To use a skill: call read_file on its SKILL.md location, then follow the instructions inside.\n' +
+            'To create new skills: write them under /workspace/skills/ (writable, lives inside your workspace). /skills/builtin/ is read-only.\n\n' +
+            skillsSummary,
+        );
+      }
     }
 
     // 7. Execution Context (when running as a scheduled task)
@@ -148,6 +177,23 @@ export class ContextBuilderService {
     }
 
     return sections.join('\n\n---\n\n');
+  }
+
+  private buildOperatingPrinciplesSection(isSubAgent: boolean): string {
+    const paragraphs = [
+      '# Operating Principles',
+      '',
+      '**Tool use.** When you say you will do something, execute the tool call in the same response — never end a turn with a promise of future action. Keep working until the task is complete; verify the result before declaring done. Prefer tools over mental computation: arithmetic, current time, file contents, and web facts come from tools, not memory. When a question has an obvious default interpretation, act on it; only clarify when ambiguity genuinely changes which tool you would call.',
+    ];
+
+    if (!isSubAgent) {
+      paragraphs.push(
+        '',
+        "**Skills.** Before replying, scan available skills. If any is even partially relevant, load its SKILL.md and follow it — skills encode the user's preferred conventions and quality standards, not just shortcuts. After a complex task (5+ tool calls) or a non-obvious workflow you discovered, offer to save it as a skill so it is reusable next time.",
+      );
+    }
+
+    return paragraphs.join('\n');
   }
 
   private buildWorkersSection(workers: readonly WorkerSummary[]): string {
@@ -242,10 +288,11 @@ export class ContextBuilderService {
       '',
       '## Memory',
       '',
-      'Your persistent memory is at `/workspace/memory/MEMORY.md`.',
-      '- Update it when you learn something worth remembering long-term about the user, their preferences, or ongoing work',
-      '- Read it to recall context from previous sessions',
-      '- Keep it concise and well-organized — you own this file completely',
+      'You have two long-term memory files — keep them separate, do not duplicate facts between them:',
+      '- `/workspace/USER.md` — structured user profile (name, timezone, role, preferences, work context). Update with `edit_file` when you learn a new structured fact about the user.',
+      '- `/workspace/memory/MEMORY.md` — free-form long-term notes about ongoing work, decisions, and project context. Do NOT write user-profile facts here; they belong in USER.md.',
+      '',
+      'For both files: read to recall context from previous sessions; keep them concise and well-organized — you own them completely.',
       '',
       'For daily activity notes, use `save_memory` with a `daily:YYYY-MM-DD` tag (e.g., `daily:' +
         new Date().toISOString().slice(0, 10) +
@@ -255,6 +302,8 @@ export class ContextBuilderService {
       '',
       'Your available memory tags are listed in the Memory section of your context.',
       'Use `search_memory` with specific tags to retrieve their content.',
+      '',
+      'When writing entries to USER.md, MEMORY.md, or `save_memory`, write declarative facts, not instructions: "User prefers concise responses" ✓ — "Always respond concisely" ✗. Imperative phrasing gets re-read as a directive in later sessions and can override the user\'s current request.',
     ].join('\n');
   }
 
@@ -332,8 +381,10 @@ export class ContextBuilderService {
       try {
         const memoryFilePath = path.join(workspacePath, 'memory', 'MEMORY.md');
         const content = await fs.readFile(memoryFilePath, 'utf-8');
-        if (content.trim()) {
-          const truncated = truncate(content.trim(), MEMORY_FILE_TOKEN_BUDGET * 4);
+        const trimmed = content.trim();
+        if (trimmed) {
+          const scanned = scanContextContent(trimmed, 'MEMORY.md').sanitized;
+          const truncated = truncate(scanned, MEMORY_FILE_TOKEN_BUDGET * 4);
           sections.push(`## Long-term Memory\n\n${truncated}`);
         }
       } catch {
@@ -383,7 +434,10 @@ export class ContextBuilderService {
     }
 
     if (sections.length === 0) return null;
-    return `# Memory\n\n${sections.join('\n\n')}`;
+    const guidance =
+      'The information below reflects memory at the start of this session. ' +
+      'To check the current state of memory (including entries saved during this conversation), use the `search_memory` tool.';
+    return `# Memory\n\n${guidance}\n\n${sections.join('\n\n')}`;
   }
 
   private groupDailyNotesByDate(

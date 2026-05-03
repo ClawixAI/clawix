@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import type { ToolCallRequest, ToolProgressMode } from '@clawix/shared';
+import { resolveToolProgressMode } from '@clawix/shared';
+
 import { authFetch, getAccessToken } from '@/lib/auth';
 import { uuidv4 } from '@/lib/utils';
 
@@ -43,6 +46,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   createdAt: string;
+  toolCalls?: readonly ToolCallRequest[];
 }
 
 export interface ChatSession {
@@ -72,6 +76,7 @@ interface PaginatedMessages {
     role: string;
     content: string;
     createdAt: string;
+    toolCalls?: unknown;
   }[];
   meta: { total: number; page: number; limit: number };
 }
@@ -121,6 +126,7 @@ export function useChat() {
 
   const [webChannelId, setWebChannelId] = useState<string | null>(null);
   const [channelResolved, setChannelResolved] = useState(false);
+  const [toolProgressMode, setToolProgressMode] = useState<ToolProgressMode>('all');
 
   /* ---- refs ---- */
   const wsRef = useRef<WebSocket | null>(null);
@@ -261,6 +267,9 @@ export function useChat() {
                 role: m.role as ChatMessage['role'],
                 content: m.content,
                 createdAt: m.createdAt,
+                ...(m.toolCalls != null
+                  ? { toolCalls: m.toolCalls as readonly ToolCallRequest[] }
+                  : {}),
               }));
               setMessages((prev) => {
                 if (fetched.length > prev.length) {
@@ -325,8 +334,14 @@ export function useChat() {
           }
 
           // For new chats the session ID isn't known until the server responds.
-          if (!currentSessionIdRef.current) {
+          // Streaming chunks may arrive with sessionId='' before agent-runner has
+          // finished creating the session — only set when we get a real id.
+          if (currentSessionIdRef.current === null && sessionId) {
             setCurrentSessionId(sessionId);
+            setIsInitializing(false);
+          } else if (currentSessionIdRef.current === null && !sessionId) {
+            // Still got a chunk, just no session id yet. Clear the initializing
+            // overlay so the user sees their bubbles arriving.
             setIsInitializing(false);
           }
 
@@ -423,6 +438,7 @@ export function useChat() {
         role: m.role as ChatMessage['role'],
         content: m.content,
         createdAt: m.createdAt,
+        ...(m.toolCalls != null ? { toolCalls: m.toolCalls as readonly ToolCallRequest[] } : {}),
       }));
       setMessages(mapped);
       setHasMore(res.meta.total > MESSAGE_LIMIT);
@@ -450,6 +466,7 @@ export function useChat() {
         role: m.role as ChatMessage['role'],
         content: m.content,
         createdAt: m.createdAt,
+        ...(m.toolCalls != null ? { toolCalls: m.toolCalls as readonly ToolCallRequest[] } : {}),
       }));
       setMessages((prev) => {
         const existingIds = new Set(prev.map((m) => m.id));
@@ -515,9 +532,14 @@ export function useChat() {
 
   /* ---- resolve web channel ID ---- */
   useEffect(() => {
-    void authFetch<{ data: { id: string } | null }>('/api/v1/chat/channel')
+    void authFetch<{
+      data: { id: string; type: string; toolProgressMode: string | null } | null;
+    }>('/api/v1/chat/channel')
       .then((res) => {
-        if (res.data) setWebChannelId(res.data.id);
+        if (res.data) {
+          setWebChannelId(res.data.id);
+          setToolProgressMode(resolveToolProgressMode('web', res.data.toolProgressMode));
+        }
       })
       .catch(() => {
         /* proceed without filter */
@@ -557,6 +579,9 @@ export function useChat() {
             role: m.role as ChatMessage['role'],
             content: m.content,
             createdAt: m.createdAt,
+            ...(m.toolCalls != null
+              ? { toolCalls: m.toolCalls as readonly ToolCallRequest[] }
+              : {}),
           }));
           setMessages((prev) => {
             const realPrev = prev.filter((m) => !m.id.startsWith('tmp-'));
@@ -619,5 +644,6 @@ export function useChat() {
     loadMore,
     loadMoreSessions,
     refreshSessions: fetchSessions,
+    toolProgressMode,
   };
 }

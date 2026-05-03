@@ -1,3 +1,5 @@
+import { randomUUID } from 'crypto';
+
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '@clawix/shared';
 import type { ChannelAdapter, ChannelType, InboundMessage } from '@clawix/shared';
@@ -6,10 +8,15 @@ import type { User } from '../generated/prisma/client.js';
 
 import { UserRepository } from '../db/user.repository.js';
 import { UserAgentRepository } from '../db/user-agent.repository.js';
+import { AgentDefinitionRepository } from '../db/agent-definition.repository.js';
+import { ChannelRepository } from '../db/channel.repository.js';
 import { AgentRunnerService } from '../engine/agent-runner.service.js';
 import { SessionManagerService } from '../engine/session-manager.service.js';
+import type { ReasoningEvent } from '../engine/reasoning-loop.types.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CommandService } from '../commands/command.service.js';
+
+import { resolveToolProgressMode, formatToolBubble, type BubbleState } from '@clawix/shared';
 
 import { classifyAgentError } from './agent-error-message.js';
 
@@ -18,6 +25,7 @@ const ERROR_CODE_BY_CATEGORY: Record<string, string> = {
   auth: 'AUTH_ERROR',
   rate_limit: 'RATE_LIMITED',
   bad_request: 'BAD_REQUEST',
+  content_filter: 'CONTENT_FILTERED',
   policy: 'POLICY_DENIED',
   unknown: 'AGENT_ERROR',
 };
@@ -33,6 +41,8 @@ export class MessageRouterService {
     private readonly sessionManager: SessionManagerService,
     private readonly prisma: PrismaService,
     private readonly commandService: CommandService,
+    private readonly agentDefRepo: AgentDefinitionRepository,
+    private readonly channelRepo: ChannelRepository,
   ) {}
 
   async handleInbound(message: InboundMessage, channel: ChannelAdapter): Promise<void> {
@@ -110,6 +120,45 @@ export class MessageRouterService {
     //    pre-execution validation failures (provider blocked, budget exceeded,
     //    inactive agent) don't leave orphan empty sessions in the database.
     try {
+      // Resolve agent + channel settings for streaming. Reads happen inside
+      // try/catch so NotFoundError (e.g. dangling agent FK) flows to the
+      // user-friendly classifier rather than escaping to Fastify.
+      const [agentDef, channelRow] = await Promise.all([
+        this.agentDefRepo.findById(userAgent.agentDefinitionId),
+        this.channelRepo.findById(channel.id).catch(() => null),
+      ]);
+      const toolProgressMode = resolveToolProgressMode(
+        channel.type,
+        channelRow?.toolProgressMode ?? null,
+      );
+      const bubbleState: BubbleState = { lastToolName: null };
+
+      const onEvent = agentDef.streamingEnabled
+        ? async (e: ReasoningEvent): Promise<void> => {
+            if (e.type === 'assistant_chunk') {
+              if (e.content.trim().length === 0) return;
+              await channel.sendMessage({
+                recipientId: senderId,
+                text: e.content,
+                metadata: { messageId: randomUUID() },
+              });
+            } else if (e.type === 'tool_started') {
+              const bubble = formatToolBubble(
+                { name: e.name, args: e.args },
+                toolProgressMode,
+                bubbleState,
+              );
+              if (bubble) {
+                await channel.sendMessage({
+                  recipientId: senderId,
+                  text: bubble,
+                  metadata: { messageId: randomUUID() },
+                });
+              }
+            }
+          }
+        : undefined;
+
       const result = await this.agentRunner.run({
         agentDefinitionId: userAgent.agentDefinitionId,
         channelId: channel.id,
@@ -119,21 +168,25 @@ export class MessageRouterService {
         chatId: senderId,
         userName: senderName,
         replyContext: message.replyCtx,
+        ...(onEvent ? { onEvent } : {}),
       });
 
-      const responseText = result.output ?? 'Agent completed without output.';
+      // When the runner actually streamed, the user already received every
+      // chunk live. Skip the trailing single-message send to avoid duplicating
+      // the final answer. Non-streaming runs fall through to today's behavior.
+      if (!result.streamingUsed) {
+        const responseText = result.output ?? 'Agent completed without output.';
+        await channel.sendMessage({
+          recipientId: senderId,
+          text: responseText,
+          metadata: {
+            messageId: result.responseMessageId ?? result.agentRunId,
+            ...(result.sessionId ? { sessionId: result.sessionId } : {}),
+          },
+        });
+      }
 
-      // 7. Send response with metadata for WebSocket delivery
-      await channel.sendMessage({
-        recipientId: senderId,
-        text: responseText,
-        metadata: {
-          messageId: result.responseMessageId ?? result.agentRunId,
-          ...(result.sessionId ? { sessionId: result.sessionId } : {}),
-        },
-      });
-
-      // 8. Send typing stop
+      // 7. Send typing stop
       if (channel.sendTypingStop) {
         await channel.sendTypingStop(senderId).catch(() => {});
       }

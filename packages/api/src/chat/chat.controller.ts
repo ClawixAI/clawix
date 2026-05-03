@@ -28,7 +28,7 @@ export class ChatController {
   async getWebChannel() {
     const channel = await this.prisma.channel.findFirst({
       where: { type: 'web', isActive: true },
-      select: { id: true, type: true, isActive: true },
+      select: { id: true, type: true, isActive: true, toolProgressMode: true },
     });
     return { success: true, data: channel };
   }

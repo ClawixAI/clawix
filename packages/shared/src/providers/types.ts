@@ -23,6 +23,18 @@ export interface LLMUsage {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly totalTokens: number;
+  /**
+   * Tokens written to the prompt cache on this call (Anthropic only).
+   * Charged at 1.25× the regular input rate (5-min TTL).
+   * Undefined for providers that don't support prompt caching.
+   */
+  readonly cacheCreationInputTokens?: number;
+  /**
+   * Tokens read from the prompt cache on this call (Anthropic only).
+   * Charged at 0.1× the regular input rate (90% discount).
+   * Undefined for providers that don't support prompt caching.
+   */
+  readonly cacheReadInputTokens?: number;
 }
 
 /** An extended-thinking block returned by the model. */

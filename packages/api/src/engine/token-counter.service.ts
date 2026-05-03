@@ -48,9 +48,18 @@ export class TokenCounterService {
    */
   async recordUsage(input: RecordUsageInput): Promise<void> {
     const { response, agentRunId, userId, providerName, model } = input;
-    const { inputTokens, outputTokens, totalTokens } = response.usage;
+    const {
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      cacheCreationInputTokens,
+      cacheReadInputTokens,
+    } = response.usage;
 
-    const costUsd = estimateCost(providerName, model, inputTokens, outputTokens);
+    const costUsd = estimateCost(providerName, model, inputTokens, outputTokens, {
+      cacheCreationTokens: cacheCreationInputTokens,
+      cacheReadTokens: cacheReadInputTokens,
+    });
 
     log.debug(
       {
@@ -61,6 +70,8 @@ export class TokenCounterService {
         inputTokens,
         outputTokens,
         totalTokens,
+        cacheCreationInputTokens,
+        cacheReadInputTokens,
         estimatedCostUsd: costUsd,
       },
       'Recording token usage',
@@ -73,6 +84,10 @@ export class TokenCounterService {
       inputTokens,
       outputTokens,
       totalTokens,
+      ...(cacheCreationInputTokens !== undefined
+        ? { cacheCreationTokens: cacheCreationInputTokens }
+        : {}),
+      ...(cacheReadInputTokens !== undefined ? { cacheReadTokens: cacheReadInputTokens } : {}),
       ...(costUsd !== null ? { estimatedCostUsd: costUsd } : {}),
     });
   }
@@ -84,12 +99,31 @@ export class TokenCounterService {
    */
   async recordAggregateUsage(input: RecordAggregateUsageInput): Promise<void> {
     const { usage, agentRunId, userId, providerName, model } = input;
-    const { inputTokens, outputTokens, totalTokens } = usage;
+    const {
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      cacheCreationInputTokens,
+      cacheReadInputTokens,
+    } = usage;
 
-    const costUsd = estimateCost(providerName, model, inputTokens, outputTokens);
+    const costUsd = estimateCost(providerName, model, inputTokens, outputTokens, {
+      cacheCreationTokens: cacheCreationInputTokens,
+      cacheReadTokens: cacheReadInputTokens,
+    });
 
     log.debug(
-      { agentRunId, userId, providerName, model, inputTokens, outputTokens, costUsd },
+      {
+        agentRunId,
+        userId,
+        providerName,
+        model,
+        inputTokens,
+        outputTokens,
+        cacheCreationInputTokens,
+        cacheReadInputTokens,
+        costUsd,
+      },
       'Recording aggregate token usage',
     );
 
@@ -100,6 +134,10 @@ export class TokenCounterService {
       inputTokens,
       outputTokens,
       totalTokens,
+      ...(cacheCreationInputTokens !== undefined
+        ? { cacheCreationTokens: cacheCreationInputTokens }
+        : {}),
+      ...(cacheReadInputTokens !== undefined ? { cacheReadTokens: cacheReadInputTokens } : {}),
       ...(costUsd !== null ? { estimatedCostUsd: costUsd } : {}),
     });
   }

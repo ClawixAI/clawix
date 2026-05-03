@@ -17,10 +17,14 @@ const GRACE_TURN_MAX_TOKENS = 1500;
 
 /** Returns a new LLMUsage that is the sum of two usage records. */
 function addUsage(a: LLMUsage, b: LLMUsage): LLMUsage {
+  const cacheCreation = (a.cacheCreationInputTokens ?? 0) + (b.cacheCreationInputTokens ?? 0);
+  const cacheRead = (a.cacheReadInputTokens ?? 0) + (b.cacheReadInputTokens ?? 0);
   return {
     inputTokens: a.inputTokens + b.inputTokens,
     outputTokens: a.outputTokens + b.outputTokens,
     totalTokens: a.totalTokens + b.totalTokens,
+    ...(cacheCreation > 0 ? { cacheCreationInputTokens: cacheCreation } : {}),
+    ...(cacheRead > 0 ? { cacheReadInputTokens: cacheRead } : {}),
   };
 }
 
@@ -175,6 +179,17 @@ export class ReasoningLoop {
         totalUsage = addUsage(totalUsage, response.usage);
         tracker?.record(response.usage);
 
+        // Streaming: emit the iteration's prose immediately if non-empty.
+        // `isFinal` lets consumers distinguish the closing chunk from
+        // intermediate ones without a separate end-of-stream event.
+        if (config?.onEvent && response.content && response.content.trim().length > 0) {
+          await config.onEvent({
+            type: 'assistant_chunk',
+            content: response.content,
+            isFinal: response.toolCalls.length === 0,
+          });
+        }
+
         // Hard stop: budget + grace exhausted. Could be triggered by this call
         // or by a sub-agent that ran while a previous iteration was awaiting.
         if (tracker?.isOverGrace()) {
@@ -232,6 +247,16 @@ export class ReasoningLoop {
         // Execute each tool call and append result messages
         for (const toolCall of response.toolCalls) {
           logger.debug({ tool: toolCall.name, id: toolCall.id }, 'Executing tool call');
+
+          // Streaming: announce the tool call before running it so the
+          // channel can render a progress bubble while the tool executes.
+          if (config?.onEvent) {
+            await config.onEvent({
+              type: 'tool_started',
+              name: toolCall.name,
+              args: toolCall.arguments,
+            });
+          }
 
           const result = await this.toolRegistry.execute(toolCall.name, toolCall.arguments);
 

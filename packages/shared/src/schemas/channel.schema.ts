@@ -15,6 +15,11 @@ export const updateChannelSchema = z.object({
   name: z.string().min(1).max(128).optional(),
   config: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
+  /**
+   * Tool-progress emission mode. Null falls back to the platform default
+   * resolved server-side. Allowed values: 'off' | 'new' | 'all' | 'verbose'.
+   */
+  toolProgressMode: z.enum(['off', 'new', 'all', 'verbose']).nullable().optional(),
 });
 
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;

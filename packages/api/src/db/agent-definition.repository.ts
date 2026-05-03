@@ -19,6 +19,7 @@ interface CreateAgentDefinitionData {
   readonly skillIds?: string[];
   readonly maxTokensPerRun?: number;
   readonly containerConfig?: Prisma.InputJsonValue;
+  readonly streamingEnabled?: boolean;
   readonly isOfficial?: boolean;
   readonly createdById?: string | null;
 }
@@ -224,6 +225,9 @@ export class AgentDefinitionRepository {
           ...(data.skillIds !== undefined ? { skillIds: data.skillIds } : {}),
           ...(data.maxTokensPerRun !== undefined ? { maxTokensPerRun: data.maxTokensPerRun } : {}),
           ...(data.containerConfig !== undefined ? { containerConfig: data.containerConfig } : {}),
+          ...(data.streamingEnabled !== undefined
+            ? { streamingEnabled: data.streamingEnabled }
+            : {}),
           ...(data.isOfficial !== undefined ? { isOfficial: data.isOfficial } : {}),
           ...(data.createdById !== undefined ? { createdById: data.createdById } : {}),
         },
@@ -248,6 +252,9 @@ export class AgentDefinitionRepository {
           ...(data.skillIds !== undefined ? { skillIds: data.skillIds } : {}),
           ...(data.maxTokensPerRun !== undefined ? { maxTokensPerRun: data.maxTokensPerRun } : {}),
           ...(data.containerConfig !== undefined ? { containerConfig: data.containerConfig } : {}),
+          ...(data.streamingEnabled !== undefined
+            ? { streamingEnabled: data.streamingEnabled }
+            : {}),
           ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
           ...(data.isOfficial !== undefined ? { isOfficial: data.isOfficial } : {}),
         },

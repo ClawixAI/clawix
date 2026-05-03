@@ -2,6 +2,7 @@ import type { AgentStatus, InboundMessage, TokenUsageRecord } from '@clawix/shar
 
 import type { MessageStore } from './message-store/message-store.js';
 import type { BudgetTracker } from './budget-tracker.js';
+import type { ReasoningEvent } from './reasoning-loop.types.js';
 
 /** Options for running an agent. */
 export interface RunOptions {
@@ -58,6 +59,13 @@ export interface RunOptions {
    *   emitted before tool calls are not lost behind the agent's confirmation message.
    */
   readonly outputMode?: 'final' | 'fullTranscript';
+  /**
+   * Streaming event sink. When provided, the agent runner forwards it to
+   * the underlying ReasoningLoop — but ONLY when the run is a primary
+   * (non-sub-agent) run AND `agentDef.streamingEnabled` is true. In all
+   * other cases the callback is dropped. See `RunResult.streamingUsed`.
+   */
+  readonly onEvent?: (event: ReasoningEvent) => void | Promise<void>;
 }
 
 /** Result returned after an agent run completes (or fails). */
@@ -69,4 +77,12 @@ export interface RunResult {
   readonly tokenUsage: TokenUsageRecord;
   readonly responseMessageId?: string;
   readonly error?: string;
+  /**
+   * True when the runner actually wired the caller's `onEvent` callback
+   * through to the reasoning loop. Channel adapters use this to decide
+   * whether to send a trailing single-message reply (when false) or skip
+   * it because the user already received the content as streamed chunks
+   * (when true).
+   */
+  readonly streamingUsed: boolean;
 }

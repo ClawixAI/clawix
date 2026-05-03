@@ -106,6 +106,9 @@ export class WorkspaceController {
     }
     const pathField = data.fields['path'];
     const dirPath = (pathField && 'value' in pathField ? pathField.value : '/') as string;
+    const relativePathField = data.fields['relativePath'];
+    const relativePath =
+      relativePathField && 'value' in relativePathField ? relativePathField.value : null;
     const buffer = await data.toBuffer();
     return this.workspaceService.uploadFile(
       req.user.sub,
@@ -113,6 +116,7 @@ export class WorkspaceController {
       data.filename,
       buffer,
       overwrite === 'true',
+      relativePath as string | null,
     );
   }
 

@@ -453,6 +453,7 @@ export class WorkspaceService {
     filename: string,
     data: Buffer,
     overwrite = false,
+    fileRelativePath: string | null = null,
   ): Promise<FileEntry> {
     const { fs: sfs, basePath } = await this.createScopedFs(userId);
     if (dirPath !== '/') {
@@ -460,13 +461,26 @@ export class WorkspaceService {
       if (!dirStat?.isDirectory()) throw new NotFoundException('Target directory not found');
     }
     const resolved = sfs.resolve(dirPath);
-    const fileResolved = path.join(resolved, filename);
+
+    // For folder uploads, fileRelativePath contains subdir structure (e.g., "myFolder/sub/file.txt")
+    const effectiveFilename = fileRelativePath ?? filename;
+    const fileResolved = path.join(resolved, effectiveFilename);
     const relativePath = '/' + path.relative(basePath, fileResolved);
+
     if (!overwrite && (await sfs.exists(relativePath)))
-      throw new ConflictException(`"${filename}" already exists`);
+      throw new ConflictException(`"${effectiveFilename}" already exists`);
+
+    // writeFile creates parent dirs automatically
     await sfs.writeFile(relativePath, data);
     const stat = await sfs.stat(relativePath);
     logger.info({ userId, path: relativePath, size: stat.size }, 'Uploaded file to workspace');
-    return this.buildFileEntry(filename, relativePath, false, stat.size, stat.mtime.toISOString());
+    const displayName = path.basename(relativePath);
+    return this.buildFileEntry(
+      displayName,
+      relativePath,
+      false,
+      stat.size,
+      stat.mtime.toISOString(),
+    );
   }
 }

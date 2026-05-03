@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { Upload, X } from 'lucide-react';
+import { Upload, FolderUp, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getAccessToken } from '@/lib/auth';
@@ -17,8 +17,54 @@ interface UploadZoneProps {
   readonly onClose: () => void;
 }
 
+interface FileWithPath {
+  readonly file: File;
+  readonly relativePath: string | null;
+}
+
+async function readAllEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+  const allEntries: FileSystemEntry[] = [];
+  let entries: FileSystemEntry[];
+
+  // readEntries returns max 100 entries per call, must call repeatedly until empty
+  do {
+    entries = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+      reader.readEntries(resolve, reject);
+    });
+    allEntries.push(...entries);
+  } while (entries.length > 0);
+
+  return allEntries;
+}
+
+async function traverseFileTree(
+  entry: FileSystemEntry,
+  basePath: string,
+  results: FileWithPath[],
+): Promise<void> {
+  if (entry.isFile) {
+    const fileEntry = entry as FileSystemFileEntry;
+    const file = await new Promise<File>((resolve, reject) => {
+      fileEntry.file(resolve, reject);
+    });
+    // Include folder name in path: basePath is empty for root, entry.name is filename
+    const relativePath = basePath ? basePath + '/' + file.name : file.name;
+    results.push({ file, relativePath });
+  } else if (entry.isDirectory) {
+    const dirEntry = entry as FileSystemDirectoryEntry;
+    const reader = dirEntry.createReader();
+    const entries = await readAllEntries(reader);
+    // Build path: if basePath empty, use entry.name; else basePath/entry.name
+    const newBasePath = basePath ? basePath + '/' + entry.name : entry.name;
+    for (const childEntry of entries) {
+      await traverseFileTree(childEntry, newBasePath, results);
+    }
+  }
+}
+
 interface UploadItem {
   readonly file: File;
+  readonly relativePath: string | null;
   progress: number;
   status: 'pending' | 'uploading' | 'done' | 'error';
   error?: string;
@@ -28,13 +74,14 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const updateUpload = useCallback((index: number, patch: Partial<UploadItem>) => {
     setUploads((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
   }, []);
 
   const uploadFile = useCallback(
-    async (file: File, index: number) => {
+    async (file: File, relativePath: string | null, index: number) => {
       if (file.size > MAX_FILE_SIZE) {
         updateUpload(index, {
           status: 'error',
@@ -54,6 +101,9 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
       const formData = new FormData();
       formData.append('file', file);
       formData.append('path', currentPath);
+      if (relativePath) {
+        formData.append('relativePath', relativePath);
+      }
 
       await new Promise<void>((resolve) => {
         const xhr = new XMLHttpRequest();
@@ -99,19 +149,19 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
   );
 
   const addFiles = useCallback(
-    (files: FileList | File[]) => {
-      const fileArray = Array.from(files);
+    (filesWithPath: FileWithPath[]) => {
       const startIndex = uploads.length;
-      const newItems: UploadItem[] = fileArray.map((file) => ({
+      const newItems: UploadItem[] = filesWithPath.map(({ file, relativePath }) => ({
         file,
+        relativePath,
         progress: 0,
         status: 'pending',
       }));
 
       setUploads((prev) => [...prev, ...newItems]);
 
-      fileArray.forEach((file, i) => {
-        void uploadFile(file, startIndex + i);
+      filesWithPath.forEach(({ file, relativePath }, i) => {
+        void uploadFile(file, relativePath, startIndex + i);
       });
     },
     [uploads.length, uploadFile],
@@ -134,9 +184,42 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
       e.preventDefault();
       e.stopPropagation();
       setIsDragOver(false);
-      if (e.dataTransfer.files.length > 0) {
-        addFiles(e.dataTransfer.files);
+
+      const items = e.dataTransfer.items;
+      if (!items || items.length === 0) return;
+
+      // Collect entries synchronously - dataTransfer.items cleared after handler returns
+      const entries: FileSystemEntry[] = [];
+      const plainFiles: File[] = [];
+
+      for (const item of Array.from(items)) {
+        if (item.kind !== 'file') continue;
+
+        const entry = item.webkitGetAsEntry?.();
+        if (entry) {
+          entries.push(entry);
+        } else {
+          const file = item.getAsFile();
+          if (file) plainFiles.push(file);
+        }
       }
+
+      // Process entries async
+      void (async () => {
+        const filesWithPath: FileWithPath[] = [];
+
+        for (const entry of entries) {
+          await traverseFileTree(entry, '', filesWithPath);
+        }
+
+        for (const file of plainFiles) {
+          filesWithPath.push({ file, relativePath: null });
+        }
+
+        if (filesWithPath.length > 0) {
+          addFiles(filesWithPath);
+        }
+      })();
     },
     [addFiles],
   );
@@ -145,11 +228,33 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
     fileInputRef.current?.click();
   }, []);
 
+  const handleFolderBrowseClick = useCallback(() => {
+    folderInputRef.current?.click();
+  }, []);
+
   const handleFileInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
-        addFiles(e.target.files);
-        // Reset so the same file can be selected again
+        const filesWithPath: FileWithPath[] = Array.from(e.target.files).map((file) => ({
+          file,
+          relativePath: null,
+        }));
+        addFiles(filesWithPath);
+        e.target.value = '';
+      }
+    },
+    [addFiles],
+  );
+
+  const handleFolderInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+        const filesWithPath: FileWithPath[] = Array.from(e.target.files).map((file) => {
+          // webkitRelativePath includes folder name: "folderName/subdir/file.txt"
+          const relativePath = file.webkitRelativePath || null;
+          return { file, relativePath };
+        });
+        addFiles(filesWithPath);
         e.target.value = '';
       }
     },
@@ -170,15 +275,26 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
             : 'border-border text-muted-foreground hover:border-muted-foreground/50',
         )}
       >
-        <Upload className="h-8 w-8" />
+        <div className="flex items-center gap-4">
+          <Upload className="h-8 w-8" />
+          <FolderUp className="h-8 w-8" />
+        </div>
         <p className="text-sm">
-          Drop files here or{' '}
+          Drop files here,{' '}
           <button
             type="button"
             onClick={handleBrowseClick}
             className="cursor-pointer font-medium text-amber-500 underline-offset-4 hover:underline focus:outline-none"
           >
-            browse
+            browse files
+          </button>
+          , or{' '}
+          <button
+            type="button"
+            onClick={handleFolderBrowseClick}
+            className="cursor-pointer font-medium text-amber-500 underline-offset-4 hover:underline focus:outline-none"
+          >
+            upload folder
           </button>
         </p>
         <p className="text-xs text-muted-foreground">
@@ -196,13 +312,25 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
         aria-hidden="true"
       />
 
+      {/* Hidden folder input */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFolderInputChange}
+        aria-hidden="true"
+        // @ts-expect-error - webkitdirectory is non-standard but widely supported
+        webkitdirectory=""
+      />
+
       {/* Upload list */}
       {uploads.length > 0 && (
         <ul className="flex flex-col gap-2">
           {uploads.map((item, index) => (
             <li key={index} className="flex flex-col gap-1 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate font-medium">{item.file.name}</span>
+                <span className="truncate font-medium">{item.relativePath ?? item.file.name}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {formatFileSize(item.file.size)}
                 </span>

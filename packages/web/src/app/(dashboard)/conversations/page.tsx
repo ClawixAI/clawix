@@ -50,17 +50,26 @@ export default function ConversationsPage() {
     loadMore,
     loadMoreSessions,
     refreshSessions,
+    toolProgressMode,
   } = useChat();
 
-  // Auto-select the latest active session when sessions load
+  // Auto-select the latest active session when sessions load.
+  // Only run when currentSessionId is EXPLICITLY null (not yet set) and there are
+  // no messages on screen — this prevents debouncedFetchSessions from race-triggering
+  // selectSession() while streaming is in progress, which would wipe the bubble list.
   useEffect(() => {
-    if (!loadingSessions && sessions.length > 0 && !currentSessionId) {
+    if (
+      !loadingSessions &&
+      sessions.length > 0 &&
+      currentSessionId === null &&
+      messages.length === 0
+    ) {
       const activeSession = sessions.find((s) => s.isActive);
       if (activeSession) {
         void selectSession(activeSession.id);
       }
     }
-  }, [loadingSessions, sessions, currentSessionId, selectSession]);
+  }, [loadingSessions, sessions, currentSessionId, selectSession, messages.length]);
 
   // Refresh sessions when page becomes visible (handles Safari bfcache and tab switching)
   useEffect(() => {
@@ -151,6 +160,7 @@ export default function ConversationsPage() {
               loadingMore={loadingMore}
               hasMore={hasMore}
               onLoadMore={loadMore}
+              toolProgressMode={toolProgressMode}
             />
             {isTyping && (
               <div className="flex justify-center py-1">

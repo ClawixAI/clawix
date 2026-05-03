@@ -16,6 +16,8 @@ describe('TokenUsageRepository', () => {
     inputTokens: 1000,
     outputTokens: 500,
     totalTokens: 1500,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
     estimatedCostUsd: 0.015,
     createdAt: new Date('2026-01-15'),
   };
@@ -185,6 +187,8 @@ describe('TokenUsageRepository', () => {
           inputTokens: 5000,
           outputTokens: 2500,
           totalTokens: 7500,
+          cacheCreationTokens: 200,
+          cacheReadTokens: 1000,
           estimatedCostUsd: 0.075,
         },
       });
@@ -197,6 +201,8 @@ describe('TokenUsageRepository', () => {
         totalInputTokens: 5000,
         totalOutputTokens: 2500,
         totalTokens: 7500,
+        totalCacheCreationTokens: 200,
+        totalCacheReadTokens: 1000,
         totalEstimatedCostUsd: 0.075,
       });
       expect(mockPrisma.tokenUsage.aggregate).toHaveBeenCalledWith({
@@ -208,6 +214,8 @@ describe('TokenUsageRepository', () => {
           inputTokens: true,
           outputTokens: true,
           totalTokens: true,
+          cacheCreationTokens: true,
+          cacheReadTokens: true,
           estimatedCostUsd: true,
         },
       });
@@ -219,6 +227,8 @@ describe('TokenUsageRepository', () => {
           inputTokens: null,
           outputTokens: null,
           totalTokens: null,
+          cacheCreationTokens: null,
+          cacheReadTokens: null,
           estimatedCostUsd: null,
         },
       });
@@ -233,6 +243,8 @@ describe('TokenUsageRepository', () => {
         totalInputTokens: 0,
         totalOutputTokens: 0,
         totalTokens: 0,
+        totalCacheCreationTokens: 0,
+        totalCacheReadTokens: 0,
         totalEstimatedCostUsd: 0,
       });
     });
@@ -304,6 +316,95 @@ describe('TokenUsageRepository', () => {
 
     it('should not expose a delete method', () => {
       expect((repository as unknown as Record<string, unknown>)['delete']).toBeUndefined();
+    });
+  });
+
+  describe('TokenUsageRepository — cache fields', () => {
+    it('persists cache token counts on create', async () => {
+      const mockWithCache = {
+        ...mockTokenUsage,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 5120,
+        totalTokens: 5270,
+        estimatedCostUsd: 0.42,
+      };
+      mockPrisma.tokenUsage.create.mockResolvedValue(mockWithCache);
+
+      const created = await repository.create({
+        agentRunId: 'run-1',
+        userId: 'user-1',
+        model: 'claude-sonnet-4-20250514',
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 5270,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 5120,
+        estimatedCostUsd: 0.42,
+      });
+
+      expect(created.cacheCreationTokens).toBe(0);
+      expect(created.cacheReadTokens).toBe(5120);
+      expect(mockPrisma.tokenUsage.create).toHaveBeenCalledWith({
+        data: {
+          agentRunId: 'run-1',
+          userId: 'user-1',
+          model: 'claude-sonnet-4-20250514',
+          inputTokens: 100,
+          outputTokens: 50,
+          totalTokens: 5270,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 5120,
+          estimatedCostUsd: 0.42,
+        },
+      });
+    });
+
+    it('defaults cache token counts to 0 when omitted', async () => {
+      mockPrisma.tokenUsage.create.mockResolvedValue(mockTokenUsage);
+
+      const created = await repository.create({
+        agentRunId: 'run-1',
+        userId: 'user-1',
+        model: 'claude-sonnet-4-20250514',
+        inputTokens: 100,
+        outputTokens: 50,
+        totalTokens: 150,
+      });
+
+      expect(created.cacheCreationTokens).toBe(0);
+      expect(created.cacheReadTokens).toBe(0);
+      expect(mockPrisma.tokenUsage.create).toHaveBeenCalledWith({
+        data: {
+          agentRunId: 'run-1',
+          userId: 'user-1',
+          model: 'claude-sonnet-4-20250514',
+          inputTokens: 100,
+          outputTokens: 50,
+          totalTokens: 150,
+        },
+      });
+    });
+
+    it('includes cache token sums in sumByUserId', async () => {
+      mockPrisma.tokenUsage.aggregate.mockResolvedValue({
+        _sum: {
+          inputTokens: 20,
+          outputTokens: 20,
+          totalTokens: 6040,
+          cacheCreationTokens: 1000,
+          cacheReadTokens: 5000,
+          estimatedCostUsd: null,
+        },
+      });
+
+      const sum = await repository.sumByUserId(
+        'user-1',
+        new Date(Date.now() - 60_000),
+        new Date(Date.now() + 60_000),
+      );
+
+      expect(sum.totalCacheCreationTokens).toBe(1000);
+      expect(sum.totalCacheReadTokens).toBe(5000);
     });
   });
 });

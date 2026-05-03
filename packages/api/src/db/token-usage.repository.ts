@@ -13,6 +13,8 @@ interface CreateTokenUsageData {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly totalTokens: number;
+  readonly cacheCreationTokens?: number;
+  readonly cacheReadTokens?: number;
   readonly estimatedCostUsd?: number;
 }
 
@@ -20,6 +22,8 @@ interface TokenUsageSum {
   readonly totalInputTokens: number;
   readonly totalOutputTokens: number;
   readonly totalTokens: number;
+  readonly totalCacheCreationTokens: number;
+  readonly totalCacheReadTokens: number;
   readonly totalEstimatedCostUsd: number;
 }
 
@@ -106,6 +110,10 @@ export class TokenUsageRepository {
           inputTokens: data.inputTokens,
           outputTokens: data.outputTokens,
           totalTokens: data.totalTokens,
+          ...(data.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: data.cacheCreationTokens }
+            : {}),
+          ...(data.cacheReadTokens !== undefined ? { cacheReadTokens: data.cacheReadTokens } : {}),
           ...(data.estimatedCostUsd !== undefined
             ? { estimatedCostUsd: data.estimatedCostUsd }
             : {}),
@@ -129,6 +137,8 @@ export class TokenUsageRepository {
         inputTokens: true,
         outputTokens: true,
         totalTokens: true,
+        cacheCreationTokens: true,
+        cacheReadTokens: true,
         estimatedCostUsd: true,
       },
     });
@@ -137,6 +147,8 @@ export class TokenUsageRepository {
       totalInputTokens: result._sum.inputTokens ?? 0,
       totalOutputTokens: result._sum.outputTokens ?? 0,
       totalTokens: result._sum.totalTokens ?? 0,
+      totalCacheCreationTokens: result._sum.cacheCreationTokens ?? 0,
+      totalCacheReadTokens: result._sum.cacheReadTokens ?? 0,
       totalEstimatedCostUsd: result._sum.estimatedCostUsd ?? 0,
     };
   }
@@ -150,6 +162,8 @@ export class TokenUsageRepository {
       totalInputTokens: number;
       totalOutputTokens: number;
       totalTokens: number;
+      totalCacheCreationTokens: number;
+      totalCacheReadTokens: number;
       totalEstimatedCostUsd: number;
     }[]
   > {
@@ -162,6 +176,8 @@ export class TokenUsageRepository {
         inputTokens: true,
         outputTokens: true,
         totalTokens: true,
+        cacheCreationTokens: true,
+        cacheReadTokens: true,
         estimatedCostUsd: true,
       },
     });
@@ -171,6 +187,8 @@ export class TokenUsageRepository {
       totalInputTokens: row._sum.inputTokens ?? 0,
       totalOutputTokens: row._sum.outputTokens ?? 0,
       totalTokens: row._sum.totalTokens ?? 0,
+      totalCacheCreationTokens: row._sum.cacheCreationTokens ?? 0,
+      totalCacheReadTokens: row._sum.cacheReadTokens ?? 0,
       totalEstimatedCostUsd: row._sum.estimatedCostUsd ?? 0,
     }));
   }

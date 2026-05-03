@@ -33,6 +33,20 @@ export class SessionRepository {
     return result;
   }
 
+  /**
+   * Persist the rendered system prompt for a session if not already set.
+   * Uses a `cachedSystemPrompt: null` predicate so concurrent first-call
+   * races are idempotent: the second concurrent run's UPDATE matches zero
+   * rows and silently no-ops. Both runs' rendered output is byte-identical
+   * by construction, so the user sees no inconsistency.
+   */
+  async setCachedSystemPrompt(id: string, prompt: string): Promise<void> {
+    await this.prisma.session.updateMany({
+      where: { id, cachedSystemPrompt: null },
+      data: { cachedSystemPrompt: prompt },
+    });
+  }
+
   async findAll(pagination: PaginationInput): Promise<PaginatedResponse<Session>> {
     const { skip, take } = buildPaginationArgs(pagination);
 

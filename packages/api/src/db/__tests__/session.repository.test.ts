@@ -302,4 +302,28 @@ describe('SessionRepository', () => {
       await expect(repository.delete('missing')).rejects.toThrow();
     });
   });
+
+  describe('setCachedSystemPrompt', () => {
+    it('persists the prompt when cachedSystemPrompt is null', async () => {
+      mockPrisma.session.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.setCachedSystemPrompt('sess-1', 'system prompt v1');
+
+      expect(mockPrisma.session.updateMany).toHaveBeenCalledWith({
+        where: { id: 'sess-1', cachedSystemPrompt: null },
+        data: { cachedSystemPrompt: 'system prompt v1' },
+      });
+    });
+
+    it('is a no-op when cachedSystemPrompt is already set (concurrent-race idempotency)', async () => {
+      mockPrisma.session.updateMany.mockResolvedValue({ count: 0 });
+
+      await repository.setCachedSystemPrompt('sess-1', 'system prompt v2');
+
+      expect(mockPrisma.session.updateMany).toHaveBeenCalledWith({
+        where: { id: 'sess-1', cachedSystemPrompt: null },
+        data: { cachedSystemPrompt: 'system prompt v2' },
+      });
+    });
+  });
 });

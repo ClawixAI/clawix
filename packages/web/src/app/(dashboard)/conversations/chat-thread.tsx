@@ -5,6 +5,8 @@ import { ArrowDown, Bot, Copy, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import { formatToolBubble } from '@clawix/shared';
+import type { BubbleState, ToolProgressMode } from '@clawix/shared';
 import { Button } from '@/components/ui/button';
 import type { ChatMessage } from './use-chat';
 
@@ -126,6 +128,7 @@ interface ChatThreadProps {
   loadingMore: boolean;
   hasMore: boolean;
   onLoadMore: () => void;
+  toolProgressMode: ToolProgressMode;
 }
 
 /* ------------------------------------------------------------------ */
@@ -139,6 +142,7 @@ export function ChatThread({
   loadingMore,
   hasMore,
   onLoadMore,
+  toolProgressMode,
 }: ChatThreadProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -261,6 +265,9 @@ export function ChatThread({
 
   // Group messages by date for date separators
   let lastDateLabel = '';
+  // Hoisted above the messages.map() so 'new'-mode dedup works correctly
+  // across the whole rendered thread, not just within a single message.
+  const bubbleState: BubbleState = { lastToolName: null };
 
   return (
     <div className="relative flex-1 overflow-hidden">
@@ -290,9 +297,11 @@ export function ChatThread({
           )}
 
           {messages.map((msg) => {
-            // Hide system messages, tool results, and empty assistant messages (tool call requests)
+            // Hide system messages and tool results
             if (msg.role === 'system' || msg.role === 'tool') return null;
-            if (msg.role === 'assistant' && !msg.content.trim()) return null;
+            // Hide empty assistant messages only when there are no toolCalls to render
+            const hasToolCalls = msg.toolCalls != null && msg.toolCalls.length > 0;
+            if (msg.role === 'assistant' && !msg.content.trim() && !hasToolCalls) return null;
             // Hide sub-agent result injections (system-generated, stored as user role)
             if (msg.role === 'user' && msg.content.startsWith('[Sub-Agent Result]')) return null;
             // Hide runtime context injections (system-generated, stored as user role)
@@ -309,7 +318,27 @@ export function ChatThread({
                 {msg.role === 'user' ? (
                   <UserMessage content={msg.content} createdAt={msg.createdAt} />
                 ) : (
-                  <AgentMessage content={msg.content} createdAt={msg.createdAt} />
+                  <>
+                    {msg.content.trim().length > 0 && (
+                      <AgentMessage content={msg.content} createdAt={msg.createdAt} />
+                    )}
+                    {hasToolCalls &&
+                      msg.toolCalls!.map((tc, i) => {
+                        const bubble = formatToolBubble(
+                          { name: tc.name, args: tc.arguments },
+                          toolProgressMode,
+                          bubbleState,
+                        );
+                        if (!bubble) return null;
+                        return (
+                          <AgentMessage
+                            key={`${msg.id}-bubble-${i}`}
+                            content={bubble}
+                            createdAt={msg.createdAt}
+                          />
+                        );
+                      })}
+                  </>
                 )}
               </div>
             );

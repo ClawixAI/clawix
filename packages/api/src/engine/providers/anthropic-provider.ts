@@ -80,6 +80,16 @@ function toAnthropicTool(tool: {
   };
 }
 
+export interface AnthropicProviderOptions {
+  /**
+   * Whether to inject Anthropic prompt-caching markers (`cache_control`) on
+   * the system block and last tool definition. Defaults to true.
+   * Set to false for Anthropic-wire-compatible third-party gateways
+   * (e.g. kimi-code) that may not support cache_control.
+   */
+  readonly enableCaching?: boolean;
+}
+
 /**
  * LLM provider for Anthropic Claude models.
  *
@@ -94,12 +104,14 @@ function toAnthropicTool(tool: {
 export class AnthropicProvider implements LLMProvider {
   readonly name = 'anthropic';
   private readonly client: Anthropic;
+  private readonly enableCaching: boolean;
 
-  constructor(apiKey: string, baseURL?: string) {
+  constructor(apiKey: string, baseURL?: string, options?: AnthropicProviderOptions) {
     this.client = new Anthropic({
       apiKey,
       ...(baseURL ? { baseURL } : {}),
     });
+    this.enableCaching = options?.enableCaching ?? true;
   }
 
   async chat(messages: readonly ChatMessage[], options?: ChatOptions): Promise<LLMResponse> {
@@ -111,11 +123,28 @@ export class AnthropicProvider implements LLMProvider {
     const systemMsg = messages.find((m) => m.role === 'system');
     const nonSystemMessages = messages.filter((m) => m.role !== 'system');
 
+    const systemBlock: Anthropic.MessageCreateParamsNonStreaming['system'] | undefined = systemMsg
+      ? this.enableCaching
+        ? [{ type: 'text', text: systemMsg.content, cache_control: { type: 'ephemeral' } }]
+        : systemMsg.content
+      : undefined;
+
+    const baseTools =
+      options?.tools && options.tools.length > 0 ? options.tools.map(toAnthropicTool) : undefined;
+    const toolsForRequest: Anthropic.Tool[] | undefined =
+      baseTools && this.enableCaching
+        ? baseTools.map((tool, idx) =>
+            idx === baseTools.length - 1
+              ? ({ ...tool, cache_control: { type: 'ephemeral' } } as Anthropic.Tool)
+              : tool,
+          )
+        : baseTools;
+
     const requestParams: Anthropic.MessageCreateParamsNonStreaming = {
       model,
       max_tokens: maxTokens,
       messages: nonSystemMessages.map(toAnthropicMessage),
-      ...(systemMsg ? { system: systemMsg.content } : {}),
+      ...(systemBlock !== undefined ? { system: systemBlock } : {}),
       ...(options?.settings?.temperature !== undefined && {
         temperature: options.settings.temperature,
       }),
@@ -125,10 +154,7 @@ export class AnthropicProvider implements LLMProvider {
       ...(options?.settings?.stopSequences && {
         stop_sequences: options.settings.stopSequences as string[],
       }),
-      ...(options?.tools &&
-        options.tools.length > 0 && {
-          tools: options.tools.map(toAnthropicTool),
-        }),
+      ...(toolsForRequest ? { tools: toolsForRequest } : {}),
     };
 
     const response = await this.client.messages.create(
@@ -153,13 +179,21 @@ export class AnthropicProvider implements LLMProvider {
 
     const finishReason = mapStopReason(response.stop_reason);
 
+    const cacheCreation = response.usage.cache_creation_input_tokens ?? undefined;
+    const cacheRead = response.usage.cache_read_input_tokens ?? undefined;
+    const inputTokens = response.usage.input_tokens;
+    const outputTokens = response.usage.output_tokens;
+    const totalTokens = inputTokens + outputTokens + (cacheCreation ?? 0) + (cacheRead ?? 0);
+
     log.debug(
       {
         model,
         finishReason,
         toolCallCount: toolCalls.length,
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
+        inputTokens,
+        outputTokens,
+        cacheCreationInputTokens: cacheCreation,
+        cacheReadInputTokens: cacheRead,
       },
       'Received chat response',
     );
@@ -169,9 +203,11 @@ export class AnthropicProvider implements LLMProvider {
       toolCalls,
       finishReason,
       usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-        totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+        inputTokens,
+        outputTokens,
+        totalTokens,
+        ...(cacheCreation !== undefined ? { cacheCreationInputTokens: cacheCreation } : {}),
+        ...(cacheRead !== undefined ? { cacheReadInputTokens: cacheRead } : {}),
       },
     });
   }

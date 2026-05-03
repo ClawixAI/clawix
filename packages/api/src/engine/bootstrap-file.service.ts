@@ -5,6 +5,8 @@ import { createLogger } from '@clawix/shared';
 
 import * as fs from 'fs/promises';
 
+import { scanContextContent } from './prompt-injection-scanner.js';
+
 const logger = createLogger('engine:bootstrap-file');
 
 /** Ordered list of bootstrap files to load from the workspace root. */
@@ -31,7 +33,8 @@ export class BootstrapFileService {
           continue;
         }
 
-        sections.push({ filename, content: trimmed });
+        const scan = scanContextContent(trimmed, filename);
+        sections.push({ filename, content: scan.sanitized });
       } catch (err: unknown) {
         const error = err as { code?: string; message?: string };
         if (error.code === 'ENOENT') {

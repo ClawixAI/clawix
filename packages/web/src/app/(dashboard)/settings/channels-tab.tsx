@@ -51,6 +51,7 @@ export interface ApiChannel {
   name: string;
   config: Record<string, unknown>;
   isActive: boolean;
+  toolProgressMode: string | null;
   createdAt: string;
 }
 
@@ -182,9 +183,12 @@ export function ChannelsTab() {
     try {
       const channel = channels.find((ch) => ch.id === id);
       const config = buildConfig(channel?.type ?? '', form, channel?.config ?? {});
+      const toolProgressRaw = form.get('toolProgressMode');
+      const toolProgressMode =
+        typeof toolProgressRaw === 'string' && toolProgressRaw !== '' ? toolProgressRaw : null;
       await authFetch(`/admin/channels/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name: form.get('name'), config }),
+        body: JSON.stringify({ name: form.get('name'), config, toolProgressMode }),
       });
       setEditChannel(null);
       await fetchChannels();
