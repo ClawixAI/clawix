@@ -18,15 +18,25 @@ import { CommandService } from '../commands/command.service.js';
 
 import { resolveToolProgressMode, formatToolBubble, type BubbleState } from '@clawix/shared';
 
-import { classifyAgentError } from './agent-error-message.js';
+import { classifyError } from '../engine/error-classifier.js';
+import type { ErrorCategory } from '../engine/recovery-loop.types.js';
+import { agentErrorTotal } from '../engine/recovery-metrics.js';
 
-const ERROR_CODE_BY_CATEGORY: Record<string, string> = {
+const ERROR_CODE_BY_CATEGORY: Record<ErrorCategory, string> = {
   network: 'NETWORK_ERROR',
-  auth: 'AUTH_ERROR',
+  timeout: 'TIMEOUT',
+  overloaded: 'OVERLOADED',
+  server_error: 'SERVER_ERROR',
   rate_limit: 'RATE_LIMITED',
+  auth: 'AUTH_ERROR',
+  billing: 'BILLING_ERROR',
+  model_not_found: 'MODEL_UNAVAILABLE',
+  provider_policy: 'CONTENT_FILTERED',
+  context_overflow: 'CONTEXT_OVERFLOW',
+  payload_too_large: 'PAYLOAD_TOO_LARGE',
   bad_request: 'BAD_REQUEST',
-  content_filter: 'CONTENT_FILTERED',
   policy: 'POLICY_DENIED',
+  loop_aborted: 'LOOP_ABORTED',
   unknown: 'AGENT_ERROR',
 };
 
@@ -119,6 +129,7 @@ export class MessageRouterService {
     // 6. Run agent — session creation is delegated to agent-runner so that
     //    pre-execution validation failures (provider blocked, budget exceeded,
     //    inactive agent) don't leave orphan empty sessions in the database.
+    let agentProviderName: string | undefined;
     try {
       // Resolve agent + channel settings for streaming. Reads happen inside
       // try/catch so NotFoundError (e.g. dangling agent FK) flows to the
@@ -127,6 +138,7 @@ export class MessageRouterService {
         this.agentDefRepo.findById(userAgent.agentDefinitionId),
         this.channelRepo.findById(channel.id).catch(() => null),
       ]);
+      agentProviderName = agentDef.provider;
       const toolProgressMode = resolveToolProgressMode(
         channel.type,
         channelRow?.toolProgressMode ?? null,
@@ -196,7 +208,11 @@ export class MessageRouterService {
         cause instanceof Error
           ? { message: cause.message, code: (cause as { code?: string }).code }
           : undefined;
-      const classified = classifyAgentError(error);
+      const classified = classifyError(error);
+      agentErrorTotal.inc({
+        category: classified.category,
+        provider: agentProviderName ?? 'unknown',
+      });
       logger.error(
         { userId: user.id, err: error, cause: causeInfo, category: classified.category },
         'Agent execution failed',

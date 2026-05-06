@@ -98,12 +98,15 @@ export function UploadZone({ currentPath, onUploadComplete, onClose }: UploadZon
         return;
       }
 
+      // @fastify/multipart's req.file() only exposes fields that were
+      // streamed BEFORE the file part. Append text fields first so the
+      // controller can read req.file().fields['path'] / ['relativePath'].
       const formData = new FormData();
-      formData.append('file', file);
       formData.append('path', currentPath);
       if (relativePath) {
         formData.append('relativePath', relativePath);
       }
+      formData.append('file', file);
 
       await new Promise<void>((resolve) => {
         const xhr = new XMLHttpRequest();

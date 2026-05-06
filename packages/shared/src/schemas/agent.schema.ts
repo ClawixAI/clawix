@@ -36,6 +36,12 @@ export const createAgentDefinitionSchema = z.object({
    * separate messages. Off by default for backward compatibility.
    */
   streamingEnabled: z.boolean().default(false),
+  /**
+   * When true, the agent is a Public (official) agent visible to all users.
+   * The server enforces that only admins may set this to true; for all other
+   * callers the value is forced to false in the service layer.
+   */
+  isOfficial: z.boolean().default(false),
 });
 
 export const updateAgentDefinitionSchema = createAgentDefinitionSchema

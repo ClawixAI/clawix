@@ -32,6 +32,11 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter({
       logger: false,
+      // Honor X-Forwarded-Proto / X-Forwarded-For when behind a TLS-terminating
+      // reverse proxy (Caddy, Traefik, nginx, Tailscale Funnel). request.protocol
+      // then reflects the original client scheme, which auth.controller uses to
+      // decide whether to mark the refresh cookie Secure.
+      trustProxy: true,
     }),
     {
       logger: {

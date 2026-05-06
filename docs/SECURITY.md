@@ -119,7 +119,8 @@ Structured logs (`pino`) record every tool call, LLM invocation, and container l
 | DB-level append-only enforcement for `AuditLog` | **[pending]**                                                               |
 | Key rotation automation                         | **[pending]** — manual re-encryption via `scripts/encrypt-secret.mjs` today |
 | Self-service registration and password reset    | **[pending]**                                                               |
-| WhatsApp / Slack channel adapters               | **[pending]**                                                               |
+| WhatsApp channel adapter                        | Implemented                                                                 |
+| Slack channel adapter                           | **[pending]**                                                               |
 | Responsible-disclosure policy and contact       | **[pending]**                                                               |
 
 ---

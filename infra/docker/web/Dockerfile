@@ -2,26 +2,7 @@
 # Build: docker build -t clawix-web:latest -f infra/docker/web/Dockerfile .
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Stage 1: Install dependencies
-# ─────────────────────────────────────────────────────────────────────────────
-FROM node:22-slim AS deps
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-WORKDIR /app
-
-# Copy workspace config and lockfile
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
-
-# Copy package.json files for each workspace package
-COPY packages/shared/package.json packages/shared/
-COPY packages/web/package.json packages/web/
-
-# Install all dependencies (including devDependencies for build)
-RUN pnpm install --frozen-lockfile
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Stage 2: Build
+# Stage 1: Build
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:22-slim AS builder
 
@@ -35,13 +16,19 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ARG NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
 
-# Copy dependencies from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
-
-# Copy source code
+# Copy workspace config and package manifests first so the install layer is
+# cached when only source code changes.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages/shared/package.json packages/shared/
+COPY packages/web/package.json packages/web/
+
+# Install all dependencies (including devDependencies for build).
+# pnpm creates a virtual store at ./node_modules/.pnpm/ with symlinks from each
+# package's node_modules. Installing inside the container ensures the layout
+# matches the Linux platform exactly.
+RUN pnpm install --frozen-lockfile
+
+# Copy source code after install — keeps the install layer cacheable.
 COPY packages/shared ./packages/shared
 COPY packages/web ./packages/web
 
@@ -50,7 +37,7 @@ RUN pnpm --filter @clawix/shared build && \
     pnpm --filter @clawix/web build
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Stage 3: Production image
+# Stage 2: Production image
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:22-slim AS runner
 

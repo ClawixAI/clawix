@@ -23,6 +23,7 @@ import { ContextBuilderService } from './context-builder.service.js';
 import { BootstrapFileService } from './bootstrap-file.service.js';
 import { WorkspaceSeederService } from './workspace-seeder.service.js';
 import { StaleRunReaperService } from './stale-run-reaper.service.js';
+import { CompressorService } from './compressor.js';
 import { SearchProviderRegistry } from './tools/web/search-provider.js';
 import { BraveSearchProvider } from './tools/web/providers/brave.js';
 import { DuckDuckGoProvider } from './tools/web/providers/duckduckgo.js';
@@ -49,6 +50,7 @@ import { DuckDuckGoProvider } from './tools/web/providers/duckduckgo.js';
     CronTaskProcessorService,
     CronSchedulerService,
     StaleRunReaperService,
+    CompressorService,
     {
       provide: SkillLoaderService,
       useFactory: () => {

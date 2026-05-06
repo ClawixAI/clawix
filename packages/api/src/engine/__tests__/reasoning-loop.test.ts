@@ -56,6 +56,9 @@ function makeUsage(input: number, output: number): LLMUsage {
 /*  Tests                                                              */
 /* ------------------------------------------------------------------ */
 
+const mockCompressor = { compress: vi.fn() } as never;
+const providerInfo = { provider: 'mock', model: 'test-model' };
+
 describe('ReasoningLoop', () => {
   it('single-turn (no tool calls): returns model response, 1 iteration', async () => {
     const response = createLLMResponse({
@@ -65,7 +68,7 @@ describe('ReasoningLoop', () => {
     });
     const provider = makeMockProvider([response]);
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
     const result = await loop.run([{ role: 'user', content: 'Hi' }]);
 
@@ -94,7 +97,7 @@ describe('ReasoningLoop', () => {
     const registry = new ToolRegistry();
     registry.register(searchTool);
 
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const result = await loop.run([{ role: 'user', content: 'Find info' }]);
 
     expect(result.content).toBe('Found the answer.');
@@ -127,7 +130,7 @@ describe('ReasoningLoop', () => {
     registry.register(searchTool);
     registry.register(readTool);
 
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const result = await loop.run([{ role: 'user', content: 'Do stuff' }]);
 
     expect(result.content).toBe('Done.');
@@ -156,7 +159,7 @@ describe('ReasoningLoop', () => {
     const registry = new ToolRegistry();
     registry.register(searchTool);
 
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const result = await loop.run([{ role: 'user', content: 'Loop forever' }], {
       maxIterations: maxIter,
     });
@@ -174,7 +177,7 @@ describe('ReasoningLoop', () => {
     });
     const provider = makeMockProvider([errorResponse]);
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
     const result = await loop.run([{ role: 'user', content: 'test' }]);
 
@@ -191,7 +194,7 @@ describe('ReasoningLoop', () => {
       }),
     };
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
     await expect(loop.run([{ role: 'user', content: 'test' }])).rejects.toThrow('API failure');
   });
@@ -215,7 +218,7 @@ describe('ReasoningLoop', () => {
     registry.register(searchTool);
 
     const onProgress = vi.fn();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     await loop.run([{ role: 'user', content: 'test' }], { onProgress });
 
     expect(onProgress).toHaveBeenCalledOnce();
@@ -232,7 +235,7 @@ describe('ReasoningLoop', () => {
       });
       const provider = makeMockProvider([response]);
       const registry = new ToolRegistry();
-      const loop = new ReasoningLoop(provider, registry);
+      const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
       const result = await loop.run([{ role: 'user', content: 'Hi' }]);
 
@@ -248,7 +251,7 @@ describe('ReasoningLoop', () => {
       });
       const provider = makeMockProvider([response]);
       const registry = new ToolRegistry();
-      const loop = new ReasoningLoop(provider, registry);
+      const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
       const tracker = new BudgetTracker(100, 10);
       const result = await loop.run([{ role: 'user', content: 'Hi' }], {
@@ -281,7 +284,7 @@ describe('ReasoningLoop', () => {
       const registry = new ToolRegistry();
       registry.register(searchTool);
 
-      const loop = new ReasoningLoop(provider, registry);
+      const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
       const result = await loop.run([{ role: 'user', content: 'test' }], {
         budgetTracker: new BudgetTracker(100, 10),
       });
@@ -312,7 +315,7 @@ describe('ReasoningLoop', () => {
       const registry = new ToolRegistry();
       registry.register(searchTool);
 
-      const loop = new ReasoningLoop(provider, registry);
+      const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
       await loop.run([{ role: 'user', content: 'test' }], {
         budgetTracker: new BudgetTracker(100, 10),
       });
@@ -352,7 +355,7 @@ describe('ReasoningLoop', () => {
       const registry = new ToolRegistry();
       registry.register(searchTool);
 
-      const loop = new ReasoningLoop(provider, registry);
+      const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
       const result = await loop.run([{ role: 'user', content: 'test' }], {
         budgetTracker: new BudgetTracker(100, 10),
       });
@@ -380,7 +383,7 @@ describe('ReasoningLoop', () => {
       const registry = new ToolRegistry();
       registry.register(searchTool);
 
-      const loop = new ReasoningLoop(provider, registry);
+      const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
       const result = await loop.run([{ role: 'user', content: 'test' }], {
         budgetTracker: new BudgetTracker(100, 10),
       });
@@ -401,7 +404,7 @@ describe('ReasoningLoop', () => {
         usage: makeUsage(30, 30),
       });
       const provider1 = makeMockProvider([firstResp]);
-      const loop1 = new ReasoningLoop(provider1, new ToolRegistry());
+      const loop1 = new ReasoningLoop(provider1, new ToolRegistry(), mockCompressor, providerInfo);
       await loop1.run([{ role: 'user', content: 'p' }], { budgetTracker: tracker });
       expect(tracker.used).toBe(60);
 
@@ -414,7 +417,7 @@ describe('ReasoningLoop', () => {
         usage: makeUsage(40, 30), // 60 + 70 = 130 ≥ 110
       });
       const provider2 = makeMockProvider([subResp]);
-      const loop2 = new ReasoningLoop(provider2, new ToolRegistry());
+      const loop2 = new ReasoningLoop(provider2, new ToolRegistry(), mockCompressor, providerInfo);
       const result2 = await loop2.run([{ role: 'user', content: 's' }], {
         budgetTracker: tracker,
       });
@@ -431,7 +434,7 @@ describe('ReasoningLoop', () => {
         usage: makeUsage(10_000_000, 10_000_000), // way past any sane limit
       });
       const provider = makeMockProvider([response]);
-      const loop = new ReasoningLoop(provider, new ToolRegistry());
+      const loop = new ReasoningLoop(provider, new ToolRegistry(), mockCompressor, providerInfo);
 
       const result = await loop.run([{ role: 'user', content: 'go' }], {
         budgetTracker: tracker,
@@ -473,7 +476,7 @@ describe('ReasoningLoop', () => {
     const registry = new ToolRegistry();
     registry.register(searchTool);
 
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const result = await loop.run([{ role: 'user', content: 'test cache' }]);
 
     expect(result.totalUsage.inputTokens).toBe(15);
@@ -501,7 +504,7 @@ describe('ReasoningLoop', () => {
     const registry = new ToolRegistry();
     registry.register(searchTool);
 
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const initialMessages: readonly ChatMessage[] = [{ role: 'user', content: 'question' }];
     const result = await loop.run(initialMessages);
 
@@ -532,7 +535,7 @@ describe('ReasoningLoop', () => {
     const provider = makeMockProvider(responses);
     const registry = new ToolRegistry();
     registry.register(makeMockTool('mock_search', '{"results": []}'));
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
     const events: ReasoningEvent[] = [];
     await loop.run([{ role: 'user', content: 'hi' }], {
@@ -565,7 +568,7 @@ describe('ReasoningLoop', () => {
     const provider = makeMockProvider(responses);
     const registry = new ToolRegistry();
     registry.register(makeMockTool('mock_search', 'ok'));
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
     const events: ReasoningEvent[] = [];
     await loop.run([{ role: 'user', content: 'hi' }], { onEvent: (e) => events.push(e) });
@@ -586,7 +589,7 @@ describe('ReasoningLoop', () => {
     const provider = makeMockProvider(responses);
     const registry = new ToolRegistry();
     registry.register(makeMockTool('mock_search', 'ok'));
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
     const order: string[] = [];
     await loop.run([{ role: 'user', content: 'hi' }], {

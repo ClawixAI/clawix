@@ -3,6 +3,12 @@ import type { ToolDefinition } from '@clawix/shared';
 /** Result returned by a tool execution. */
 export interface ToolResult {
   readonly output: string;
+
+  /**
+   * True when the tool failed to produce a normal result and the `output`
+   * contains an error description. Used by ToolLoopGuard to detect
+   * pathological retry-the-same-broken-call patterns.
+   */
   readonly isError: boolean;
 }
 

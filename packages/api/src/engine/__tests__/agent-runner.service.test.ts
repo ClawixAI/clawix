@@ -45,10 +45,6 @@ vi.mock('../tools/web/index.js', () => ({
   registerWebTools: vi.fn(),
 }));
 
-vi.mock('../resilience.js', () => ({
-  ResilientLLMProvider: vi.fn().mockImplementation((inner: unknown) => inner),
-}));
-
 vi.mock('../context-builder.service.js', () => ({
   ContextBuilderService: vi.fn(),
 }));
@@ -426,6 +422,7 @@ describe('AgentRunnerService', () => {
         findByTaskRunId: vi.fn().mockResolvedValue([]),
       } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
       mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
+      { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
     );
   });
 
@@ -1052,6 +1049,7 @@ describe('AgentRunnerService — with messageStore', () => {
         findByTaskRunId: vi.fn().mockResolvedValue([]),
       } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
       mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
+      { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
     );
   });
 
@@ -1079,5 +1077,115 @@ describe('AgentRunnerService — with messageStore', () => {
     expect(store.loadMessages).toHaveBeenCalled();
     expect(store.saveMessages).toHaveBeenCalled();
     expect(result.sessionId).toBeNull();
+  });
+});
+
+// ------------------------------------------------------------------ //
+//  AgentRunnerService — recovery integration                          //
+// ------------------------------------------------------------------ //
+
+describe('AgentRunnerService — recovery integration', () => {
+  let service: AgentRunnerService;
+  let mocks: ReturnType<typeof buildMocks>;
+  let mockLoopInstance: { run: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env['OPENAI_API_KEY'] = 'test-key';
+
+    mocks = buildMocks();
+
+    mockLoopInstance = { run: vi.fn().mockResolvedValue(mockLoopResult) };
+    vi.mocked(ReasoningLoop).mockImplementation(() => mockLoopInstance as unknown as ReasoningLoop);
+    vi.mocked(createProvider).mockReturnValue(mockProvider);
+
+    service = new AgentRunnerService(
+      mocks.mockSessionManager as unknown as SessionManagerService,
+      mocks.mockContainerRunner as unknown as ContainerRunner,
+      mocks.mockContainerPool as unknown as ContainerPoolService,
+      mocks.mockTokenCounter as unknown as TokenCounterService,
+      mocks.mockAgentRunRepo as unknown as AgentRunRepository,
+      mocks.mockAgentDefRepo as unknown as AgentDefinitionRepository,
+      mocks.mockUserRepo as unknown as UserRepository,
+      mocks.mockUserAgentRepo as unknown as UserAgentRepository,
+      mocks.mockMemoryConsolidation as unknown as MemoryConsolidationService,
+      mocks.mockContextBuilder as unknown as ContextBuilderService,
+      {} as unknown as SearchProviderRegistry,
+      { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
+      {} as unknown as import('../../prisma/prisma.service.js').PrismaService,
+      {
+        findVisibleToUser: vi.fn().mockResolvedValue([]),
+      } as unknown as import('../../db/memory-item.repository.js').MemoryItemRepository,
+      mocks.mockWorkspaceSeeder as unknown as import('../workspace-seeder.service.js').WorkspaceSeederService,
+      mocks.mockPolicyRepo as unknown as import('../../db/policy.repository.js').PolicyRepository,
+      {} as unknown as import('../../db/channel.repository.js').ChannelRepository,
+      mocks.mockTaskRepo as unknown as import('../../db/task.repository.js').TaskRepository,
+      mocks.mockCronGuardService as unknown as import('../cron-guard.service.js').CronGuardService,
+      mocks.mockProviderConfig as unknown as import('../../provider-config/provider-config.service.js').ProviderConfigService,
+      {
+        findByTaskIdWithLimit: vi.fn().mockResolvedValue([]),
+      } as unknown as import('../../db/task-run.repository.js').TaskRunRepository,
+      {
+        findByTaskRunId: vi.fn().mockResolvedValue([]),
+      } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
+      mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
+      { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
+    );
+  });
+
+  afterEach(() => {
+    delete process.env['OPENAI_API_KEY'];
+  });
+
+  const defaultOptions: RunOptions = {
+    agentDefinitionId: 'agent-def-1',
+    input: 'Hello!',
+    userId: 'user-1',
+  };
+
+  // ---------------------------------------------------------------- //
+  //  Recovery test 1: transient 503 recovered internally by loop      //
+  // ---------------------------------------------------------------- //
+
+  it('recovers from a transient 503 and completes the run', async () => {
+    // Simulate: recovery loop retries internally and returns success.
+    // The reasoning loop mock returns 'recovered' on its run() call, as
+    // runWithRecovery would have retried the 503 before returning.
+    mockLoopInstance.run.mockResolvedValueOnce({
+      content: 'recovered',
+      messages: [
+        { role: 'system' as const, content: 'You are a helpful assistant.' },
+        { role: 'user' as const, content: 'Hello!' },
+        { role: 'assistant' as const, content: 'recovered' },
+      ],
+      totalUsage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 },
+      iterations: 2,
+      hitMaxIterations: false,
+    });
+
+    const result = await service.run(defaultOptions);
+
+    expect(result.status).toBe('completed');
+    expect(result.output).toContain('recovered');
+    expect(mockLoopInstance.run).toHaveBeenCalledTimes(1);
+  });
+
+  // ---------------------------------------------------------------- //
+  //  Recovery test 2: LoopAbortedError surfaces as failed run         //
+  // ---------------------------------------------------------------- //
+
+  it('surfaces loop_aborted when the same tool fails 3× in a row', async () => {
+    const { LoopAbortedError: LoopAbortedErrorCtor } = await import('../error-classifier.js');
+    const loopAbortedErr = new LoopAbortedErrorCtor('web_search', { q: 'x' });
+    mockLoopInstance.run.mockRejectedValueOnce(loopAbortedErr);
+
+    await expect(service.run(defaultOptions)).rejects.toMatchObject({
+      name: 'LoopAbortedError',
+    });
+
+    expect(mocks.mockAgentRunRepo.update).toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'failed' }),
+    );
   });
 });

@@ -27,6 +27,7 @@
     "docker:prod:logs": "docker compose -f docker-compose.prod.yml logs -f",
     "install:clawix": "node scripts/install.mjs",
     "update:clawix": "node scripts/update.mjs",
+    "uninstall:clawix": "node scripts/uninstall.mjs",
     "db:migrate": "pnpm --filter @clawix/api exec prisma migrate dev && pnpm --filter @clawix/api exec prisma generate",
     "db:seed": "pnpm --filter @clawix/api exec prisma db seed",
     "db:reset": "pnpm --filter @clawix/api exec prisma migrate reset --force",

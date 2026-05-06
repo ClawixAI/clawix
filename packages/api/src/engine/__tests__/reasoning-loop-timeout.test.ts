@@ -5,6 +5,9 @@ import { ReasoningLoop } from '../reasoning-loop.js';
 import { ToolRegistry } from '../tool-registry.js';
 import type { Tool, ToolResult } from '../tool.js';
 
+const mockCompressor = { compress: vi.fn() } as never;
+const providerInfo = { provider: 'mock', model: 'test-model' };
+
 function createSlowProvider(delayMs: number): LLMProvider {
   return {
     name: 'test',
@@ -54,7 +57,7 @@ describe('ReasoningLoop timeout', () => {
     // start of iteration 2 sees the signal and breaks.
     const provider = createSlowProvider(200);
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
 
     const result = await loop.run(messages, {
@@ -67,7 +70,7 @@ describe('ReasoningLoop timeout', () => {
   it('completes normally when within timeout', async () => {
     const provider = createSlowProvider(10);
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
 
     const result = await loop.run(messages, { timeoutMs: 5000 });
@@ -79,7 +82,7 @@ describe('ReasoningLoop timeout', () => {
   it('returns hitTimeout false when no timeout configured', async () => {
     const provider = createSlowProvider(10);
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
 
     const result = await loop.run(messages);
@@ -90,7 +93,7 @@ describe('ReasoningLoop timeout', () => {
   it('aborts immediately when external signal is already aborted', async () => {
     const provider = createSlowProvider(10);
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
 
     const controller = new AbortController();
@@ -112,7 +115,7 @@ describe('ReasoningLoop timeout', () => {
     const tool = makeMockTool('slow_tool', 'result');
     const registry = new ToolRegistry();
     registry.register(tool);
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
 
     const result = await loop.run(messages, { timeoutMs: 50 });
@@ -127,7 +130,7 @@ describe('ReasoningLoop timeout', () => {
   it('aborts when external signal fires during execution', async () => {
     const provider = createSlowProvider(200);
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
     const messages: ChatMessage[] = [{ role: 'user', content: 'hello' }];
 
     const controller = new AbortController();
@@ -157,7 +160,7 @@ describe('ReasoningLoop timeout', () => {
       }),
     };
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
     await loop.run([{ role: 'user', content: 'hi' }], { timeoutMs: 5000 });
 
@@ -182,7 +185,7 @@ describe('ReasoningLoop timeout', () => {
       }),
     };
     const registry = new ToolRegistry();
-    const loop = new ReasoningLoop(provider, registry);
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
 
     const result = await loop.run([{ role: 'user', content: 'hi' }], { timeoutMs: 30 });
 

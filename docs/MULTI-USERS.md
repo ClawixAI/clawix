@@ -117,7 +117,8 @@ flowchart LR
 
 - **Web** — the authenticated JWT carries `userId`; the WebSocket gateway verifies the JWT on connect.
 - **Telegram** — each Clawix user can claim one `telegramId`. Messages from an un-claimed Telegram id are rejected.
-- **WhatsApp / Slack** — **[pending]** (adapters not implemented).
+- **WhatsApp** — implemented via `@whiskeysockets/baileys` (Business API).
+- **Slack** — **[pending]** (adapter not implemented).
 
 ---
 

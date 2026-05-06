@@ -149,11 +149,17 @@ async function main() {
     console.log('  1) Anthropic           (default model: claude-sonnet-4-5)');
     console.log('  2) OpenAI              (default model: gpt-4o)');
     console.log('  3) Z.AI Coding Plan    (default model: glm-4.7)');
+    console.log('  4) Kimi Coding Plan    (model entered below)');
+    console.log('  5) Google Gemini       (default model: gemini-3-flash-preview)');
     console.log(
-      '  4) Custom              (any OpenAI-compatible endpoint — local LLM, OpenRouter, vLLM, etc.)',
+      '  6) Custom              (any OpenAI-compatible endpoint — local LLM, OpenRouter, vLLM, etc.)',
     );
 
-    /** Catalog of built-in providers. Mirrors packages/shared/src/providers/provider-registry.ts. */
+    /**
+     * Catalog of built-in providers. Mirrors packages/shared/src/providers/provider-registry.ts.
+     * A parity test in packages/shared/src/providers/__tests__/install-parity.test.ts
+     * fails CI if any non-custom registry provider is missing here.
+     */
     const CATALOG = {
       1: {
         id: 'anthropic',
@@ -173,7 +179,22 @@ async function main() {
         envKey: 'ZAI_CODING_API_KEY',
         defaultModel: 'glm-4.7',
       },
+      4: {
+        id: 'kimi-code',
+        displayName: 'Kimi Coding Plan',
+        envKey: 'KIMI_CODE_API_KEY',
+        defaultModel: '',
+      },
+      5: {
+        id: 'gemini',
+        displayName: 'Google Gemini',
+        envKey: 'GEMINI_API_KEY',
+        defaultModel: 'gemini-3-flash-preview',
+      },
     };
+    const CUSTOM_CHOICE = 6;
+    const VALID_CHOICES = [1, 2, 3, 4, 5, 6];
+    const RESERVED_IDS = Object.values(CATALOG).map((c) => c.id);
 
     /** Parse "1,3,4" → unique ordered list of integers from `valid`. */
     function parseSelection(input, valid) {
@@ -191,29 +212,25 @@ async function main() {
     let selection;
     while (true) {
       const raw = (await ask('  Selection: ')).trim();
-      const parsed = parseSelection(raw, [1, 2, 3, 4]);
+      const parsed = parseSelection(raw, VALID_CHOICES);
       if (parsed) {
         selection = parsed;
         break;
       }
-      warn('Enter one or more numbers from 1–4, comma-separated. Each value used at most once.');
+      warn(
+        `Enter one or more numbers from 1–${CUSTOM_CHOICE}, comma-separated. Each value used at most once.`,
+      );
     }
 
     const providers = [];
     for (const choice of selection) {
-      if (choice === 4) {
+      if (choice === CUSTOM_CHOICE) {
         step('Custom provider');
         info('OpenAI-compatible endpoint (Chat Completions API). Stored as a separate provider.');
         let id;
         while (true) {
           id = (await ask('  Provider id (lowercase, a–z 0–9 -, used as DB key): ')).trim();
-          if (
-            /^[a-z0-9][a-z0-9-]*$/.test(id) &&
-            id !== 'anthropic' &&
-            id !== 'openai' &&
-            id !== 'zai-coding'
-          )
-            break;
+          if (/^[a-z0-9][a-z0-9-]*$/.test(id) && !RESERVED_IDS.includes(id)) break;
           warn('Use lowercase letters, digits, and hyphens. Cannot reuse a built-in provider id.');
         }
         const displayName = (await ask(`  Display name ${dim(`[${id}]`)}: `)).trim() || id;
@@ -263,12 +280,74 @@ async function main() {
       }
     }
 
-    const defaultModel =
-      (
+    let defaultModel = '';
+    const placeholder = defaultProvider.defaultModel
+      ? dim(`[${defaultProvider.defaultModel}]`)
+      : dim('(no default — must enter a model name)');
+    while (true) {
+      const raw = (
+        await ask(`  Default model for ${defaultProvider.displayName} ${placeholder}: `)
+      ).trim();
+      defaultModel = raw || defaultProvider.defaultModel;
+      if (defaultModel.length > 0) break;
+      warn('Model name cannot be empty for this provider.');
+    }
+
+    /**
+     * Strip any scheme / port / trailing slash the user may have pasted, so
+     * we can rebuild the URLs ourselves. Accepts hostnames, IPv4, IPv6 in
+     * brackets. Returns null on empty/invalid input.
+     */
+    function normalizeHost(input) {
+      let s = input.trim().replace(/^https?:\/\//i, '');
+      s = s.replace(/\/.*$/, '');
+      const ipv6 = s.match(/^\[([^\]]+)](?::\d+)?$/);
+      if (ipv6) return `[${ipv6[1]}]`;
+      s = s.replace(/:\d+$/, '');
+      if (!s || /\s/.test(s)) return null;
+      return s;
+    }
+
+    let publicHost = 'localhost';
+    let useHttps = false;
+    let extraCorsOrigins = [];
+    if (deployMode === 'production') {
+      step('Public address');
+      info(
+        'Where will the dashboard be reached? Hostname, IPv4, or IPv6 (in brackets). ' +
+          'Used to bake NEXT_PUBLIC_API_URL into the web image and configure CORS.',
+      );
+      while (true) {
+        const raw =
+          (await ask(`  Public host or IP ${dim('[localhost]')}: `)).trim() || 'localhost';
+        const normalized = normalizeHost(raw);
+        if (normalized) {
+          publicHost = normalized;
+          break;
+        }
+        warn('Enter a hostname (e.g. clawix.example.com), IPv4, or [::1]-style IPv6.');
+      }
+      const httpsAns = (await ask(`  Use HTTPS? (y/N): `)).trim().toLowerCase();
+      useHttps = httpsAns === 'y' || httpsAns === 'yes';
+      if (useHttps) {
+        warn(
+          'HTTPS only works if a TLS-terminating proxy (Caddy, Traefik, nginx, ' +
+            'Tailscale Funnel) sits in front of ports 3000/3001. The API trusts ' +
+            'X-Forwarded-Proto from the proxy.',
+        );
+      }
+      const extraRaw = (
         await ask(
-          `  Default model for ${defaultProvider.displayName} ${dim(`[${defaultProvider.defaultModel}]`)}: `,
+          `  Extra CORS origins (comma-separated, blank to skip)\n  ${dim('e.g. https://other.example.com')}: `,
         )
-      ).trim() || defaultProvider.defaultModel;
+      ).trim();
+      if (extraRaw) {
+        extraCorsOrigins = extraRaw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+      }
+    }
 
     let adminEmail = 'admin@clawix.test';
     let adminPassword = '';
@@ -287,6 +366,13 @@ async function main() {
     }
 
     step('Optional channels');
+    info('Channels available out-of-the-box:');
+    info(`  • ${bold('Web dashboard')}  — already active (this is what you're installing)`);
+    info(`  • ${bold('Telegram bot')}   — easiest to add now; just paste a BotFather token below`);
+    info(
+      `  • ${bold('WhatsApp')}       — supported, but requires QR pairing from the dashboard after install`,
+    );
+    console.log('');
     const enableTelegram =
       (await ask('  Enable Telegram bot? (y/N): ')).trim().toLowerCase() === 'y';
     let telegramBotToken = '';
@@ -298,6 +384,20 @@ async function main() {
       }
     }
 
+    const scheme = useHttps ? 'https' : 'http';
+    const wsScheme = useHttps ? 'wss' : 'ws';
+    const webOrigin = `${scheme}://${publicHost}:3000`;
+    const apiUrl = `${scheme}://${publicHost}:3001`;
+    const wsUrl = `${wsScheme}://${publicHost}:3001`;
+    // CORS only allows the public origin (plus any operator-supplied extras).
+    // We deliberately do NOT auto-include http://localhost:3000: the refresh
+    // cookie is SameSite=Strict, so browsing the dashboard via a different
+    // host than the one baked into the web bundle would log the user out on
+    // every reload (cross-site cookie blocked) — login looks fine, refresh
+    // doesn't, which is worse than not allowing it at all.
+    const corsList = [webOrigin, ...extraCorsOrigins];
+    const corsOrigins = [...new Set(corsList)].join(',');
+
     step('Summary');
     info(`Mode:     ${bold(deployMode)}`);
     info(`Providers:`);
@@ -306,7 +406,12 @@ async function main() {
       info(`  - ${p.displayName} [${p.id}]${tag}`);
     }
     info(`Default:  ${bold(defaultProvider.displayName)} (${defaultModel})`);
-    if (deployMode === 'production') info(`Admin:    ${bold(adminName)} <${adminEmail}>`);
+    if (deployMode === 'production') {
+      info(`Admin:    ${bold(adminName)} <${adminEmail}>`);
+      info(`Web:      ${bold(webOrigin)}`);
+      info(`API:      ${bold(apiUrl)}`);
+      info(`CORS:     ${dim(corsOrigins)}`);
+    }
     info(`Telegram: ${enableTelegram ? bold('enabled') : dim('disabled')}`);
 
     const go = (await ask('\n  Proceed? (Y/n): ')).trim().toLowerCase();
@@ -325,6 +430,12 @@ async function main() {
       adminName,
       enableTelegram,
       telegramBotToken,
+      publicHost,
+      useHttps,
+      webOrigin,
+      apiUrl,
+      wsUrl,
+      corsOrigins,
     };
   }
 
@@ -365,11 +476,9 @@ async function main() {
       env = upsertEnvLine(env, 'POSTGRES_PASSWORD', secret(16));
       env = upsertEnvLine(env, 'POSTGRES_USER', 'clawix');
       env = upsertEnvLine(env, 'POSTGRES_DB', 'clawix');
-      env = upsertEnvLine(
-        env,
-        'CORS_ALLOWED_ORIGINS',
-        process.env['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:3000',
-      );
+      env = upsertEnvLine(env, 'CORS_ALLOWED_ORIGINS', answers.corsOrigins);
+      env = upsertEnvLine(env, 'NEXT_PUBLIC_API_URL', answers.apiUrl);
+      env = upsertEnvLine(env, 'NEXT_PUBLIC_WS_URL', answers.wsUrl);
       env = upsertEnvLine(env, 'INITIAL_ADMIN_EMAIL', answers.adminEmail);
       env = upsertEnvLine(env, 'INITIAL_ADMIN_PASSWORD', answers.adminPassword);
       env = upsertEnvLine(env, 'INITIAL_ADMIN_NAME', answers.adminName);
@@ -418,8 +527,10 @@ async function main() {
   ok('API is healthy');
 
   console.log(`\n${bold(green('=== Installation complete ==='))}\n`);
-  console.log(`  ${bold('API:')}           ${cyan('http://localhost:3001')}`);
-  console.log(`  ${bold('Web dashboard:')} ${cyan('http://localhost:3000')}`);
+  const finalApi = answers?.apiUrl ?? 'http://localhost:3001';
+  const finalWeb = answers?.webOrigin ?? 'http://localhost:3000';
+  console.log(`  ${bold('API:')}           ${cyan(finalApi)}`);
+  console.log(`  ${bold('Web dashboard:')} ${cyan(finalWeb)}`);
   if (deployMode === 'production' && answers) {
     console.log(`\n  ${bold('Log in with:')}`);
     console.log(`    Email:    ${answers.adminEmail}`);

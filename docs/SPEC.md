@@ -16,7 +16,7 @@ flowchart TB
     subgraph Clients
         TG[Telegram Bot]
         WEB[Next.js Dashboard / WebSocket]
-        WA[WhatsApp pending]
+        WA[WhatsApp]
         SL[Slack pending]
     end
 
@@ -52,7 +52,7 @@ flowchart TB
 
     TG --> CH
     WEB --> CH
-    WA -.-> CH
+    WA --> CH
     SL -.-> CH
     CH --> ROUTER
     ROUTER --> CMD
@@ -102,12 +102,12 @@ Channels are pluggable adapters that translate platform-specific events (Telegra
 
 ### 2.2 Supported channels
 
-| Channel         | Status        | Notes                                                                       |
-| --------------- | ------------- | --------------------------------------------------------------------------- |
-| Telegram        | Implemented   | Polling (default) or webhook; user keyed by `telegramId`.                   |
-| Web (WebSocket) | Implemented   | JWT-authenticated WebSocket on `/ws/chat`; user keyed by `userId`.          |
-| WhatsApp        | **[pending]** | `ChannelType` enum + Prisma `Channel` row supported; no adapter registered. |
-| Slack           | **[pending]** | Same as WhatsApp — enum and config-crypto stubs exist; no adapter.          |
+| Channel         | Status        | Notes                                                              |
+| --------------- | ------------- | ------------------------------------------------------------------ |
+| Telegram        | Implemented   | Polling (default) or webhook; user keyed by `telegramId`.          |
+| Web (WebSocket) | Implemented   | JWT-authenticated WebSocket on `/ws/chat`; user keyed by `userId`. |
+| WhatsApp        | Implemented   | WhatsApp Business API via `@whiskeysockets/baileys`.               |
+| Slack           | **[pending]** | Enum and config-crypto stubs exist; no adapter yet.                |
 
 ### 2.3 Channel lifecycle
 
@@ -146,8 +146,8 @@ clawix_dev/
 │   │   └── prisma/           schema.prisma + migrations
 │   ├── web/                  Next.js 15 dashboard (React 19, Tailwind 4, shadcn/ui)
 │   ├── shared/               Cross-package types, Zod schemas, providers, logger
-│   ├── engine/               **[pending]** — reserved; engine code currently lives in api/src/engine
-│   └── worker/               **[pending]** — reserved; background jobs run in-process in api
+│   ├── engine/               Reserved; engine code currently lives in api/src/engine
+│   └── worker/               Reserved; background jobs run in-process in api
 ├── skills/
 │   ├── builtin/              System skills (projector-creator, skill-creator)
 │   └── custom/               User-authored skills
@@ -177,6 +177,8 @@ Configuration is env-driven. Values are resolved in this order: **DB-backed conf
 | Auth       | `JWT_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`, `BCRYPT_SALT_ROUNDS`        | Access / refresh token config.                             |
 | Crypto     | `PROVIDER_ENCRYPTION_KEY`                                                             | 32-byte hex; AES-256-GCM for provider & channel secrets.   |
 | Providers  | `DEFAULT_PROVIDER`, `DEFAULT_LLM_MODEL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`        | Default LLM routing.                                       |
+| Providers  | `GEMINI_API_KEY`                                                                      | Google Gemini API key.                                     |
+| Providers  | `KIMI_CODE_API_KEY`                                                                   | Kimi Coding Plan API key.                                  |
 | Containers | `AGENT_CONTAINER_IMAGE`, `AGENT_MAX_RETRIES`, `AGENT_TIMEOUT_SECONDS`                 | Container pool defaults.                                   |
 | Workspace  | `WORKSPACE_BASE_PATH`, `WORKSPACE_HOST_BASE_PATH` (a.k.a. `CLAWIX_HOST_DATA_DIR`)     | In-container vs host paths for bind mounts.                |
 | Skills     | `SKILLS_BUILTIN_DIR`, `SKILLS_CUSTOM_DIR`, `SKILLS_*_HOST_DIR`, `MAX_SKILLS_PER_USER` | Skill loader roots (container + host).                     |
@@ -379,7 +381,19 @@ flowchart LR
 
 ---
 
-## 10. MCP Servers — **[pending]**
+## 10. Prompt Caching
+
+Anthropic prompt caching with frozen-snapshot system prompts (Stage 2). The system prompt is cached once and reused across turns within a session, reducing token costs. Implemented via `@anthropic-ai/sdk` built-in caching with `cacheControl: { type: 'ephemeral' }` breakpoints.
+
+---
+
+## 11. Streaming Multi-Message Delivery
+
+Per-agent streaming delivery flag. When enabled, intermediate agent messages (tool calls, progress updates) are streamed to the client in real-time via WebSocket and channel adapters. Implemented in #63.
+
+---
+
+## 12. MCP Servers — **[pending]**
 
 MCP (Model Context Protocol) is **not yet integrated**. The Anthropic SDK shipped with the repo (`@anthropic-ai/sdk`) includes MCP helpers, but no Clawix code imports them and there is no MCP server registry, config table, or tool adapter.
 
@@ -412,23 +426,23 @@ Open design questions: per-user vs per-org server configs, credential storage (r
 
 ---
 
-## 11. Deployment
+## 13. Deployment
 
-### 11.1 Development (`docker-compose.dev.yml`)
+### 13.1 Development (`docker-compose.dev.yml`)
 
 - `postgres` — `postgres:16-alpine` on host port `5433`.
 - `redis` — `redis:7-alpine`, appendonly + LRU, 256 MB cap.
 - `api-server` — `node:22-slim` with source bind-mounts for hot-reload; runs `pnpm` via corepack. Mounts `/var/run/docker.sock` so the API can spawn agent containers. Bind-mounts `./data`, `./skills`, `./infra/templates`.
 - `web` — Next.js dev server (see compose file).
 
-### 11.2 Production (`docker-compose.prod.yml`)
+### 13.2 Production (`docker-compose.prod.yml`)
 
 - Multi-stage images: `clawix-api:latest` (Dockerfile in `infra/docker/api/`), `clawix-web:latest`, `clawix-agent:latest`.
 - API stage 2: `node:22-slim` + `docker.io` + `openssl`; Prisma CLI global; `entrypoint.sh` runs migrations; health check `GET /health` with 60 s start period.
 - Redis cap raised to 512 MB; persistent volumes for Postgres and Redis.
 - Required secrets: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `JWT_SECRET`, `PROVIDER_ENCRYPTION_KEY`, `CLAWIX_HOST_DATA_DIR`, `CLAWIX_HOST_SKILLS_DIR`.
 
-### 11.3 Topology
+### 13.3 Topology
 
 ```mermaid
 flowchart TB
@@ -449,51 +463,51 @@ flowchart TB
 
 ---
 
-## 12. Security Considerations
+## 14. Security Considerations
 
-### 12.1 Authentication & Authorization
+### 14.1 Authentication & Authorization
 
 - JWT access + refresh tokens; refresh tokens tracked in Redis with TTL.
 - Bcrypt password hashing (12 rounds).
 - `JwtAuthGuard` + `RolesGuard` + `@Roles()` decorator for RBAC (Admin / User / Guest).
 - Policy-throttled endpoints via `policy-throttler.guard.ts` (Redis-backed).
 
-### 12.2 Container isolation
+### 14.2 Container isolation
 
 - `ContainerPoolService` warms containers per primary agent; `ContainerRunner` wraps `docker` CLI.
 - Hardening defaults: non-root UID 1000, `--network none`, PID limit 256, `no-new-privileges`, optional read-only rootfs + tmpfs, CPU 0.5 / mem 512 MB, 10 s graceful stop.
 - Spawn tool launches worker sub-agents in fresh containers.
 
-### 12.3 Mount security (`engine/mount-security.ts`)
+### 14.3 Mount security (`engine/mount-security.ts`)
 
 - **Host-level allowlist** — JSON of allowed roots + blocked patterns.
 - **Per-agent allowlist** — additional DB-backed restriction.
 - **Default-blocked** — `.ssh`, `.aws`, `.docker`, `.kube`, `*.pem`, `*.key`, `/etc/passwd`, `/proc`, `/sys`, credentials files.
 - Symlink resolution + glob match before every mount.
 
-### 12.4 Secret handling
+### 14.4 Secret handling
 
 - `common/crypto.ts` — AES-256-GCM utilities keyed off `PROVIDER_ENCRYPTION_KEY`.
 - `channels/channel-config-crypto.ts` — selective encryption of channel secrets; masked in admin API responses.
 - `ProviderConfigRepository` — encrypted API keys with 60 s in-memory cache.
 - `scripts/encrypt-secret.mjs` — operator helper.
 
-### 12.5 HTTP hardening
+### 14.5 HTTP hardening
 
 - Helmet: strict CSP in prod (`default-src 'none'`), HSTS with 1 y + preload, COEP on in prod.
 - CORS: explicit allowlist (no wildcards with credentials).
 - All API inputs validated with Zod schemas (`packages/shared/src/schemas`).
 
-### 12.6 Observability & audit
+### 14.6 Observability & audit
 
 - `common/audit-log.interceptor.ts` writes `AuditLog` rows for sensitive actions; rows are append-only.
 - `pino` + `pino-http` structured logs; `prom-client` metrics. Grafana / Loki dashboards **[pending]**.
 - `TokenCounterService` logs per-call token usage; budgets enforced via user policy.
 
-### 12.7 Known gaps / pending
+### 14.7 Known gaps / pending
 
-- WhatsApp and Slack adapters.
-- MCP server integration (§10).
+- Slack adapter.
+- MCP server integration (§12).
 - Kubernetes manifests under `infra/k8s/`.
 - `packages/engine` and `packages/worker` are reserved but empty; engine code currently lives inside `packages/api/src/engine`.
 - Grafana / Loki dashboards and alerting wiring.

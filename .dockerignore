@@ -1,0 +1,61 @@
+# Dependencies — must be installed inside the container, never copied from host
+node_modules
+**/node_modules
+
+# Build output
+.next
+**/.next
+dist
+**/dist
+build
+**/build
+
+# Generated Prisma client (regenerated in container)
+packages/api/src/generated
+
+# TypeScript incremental build info — stale buildinfo causes tsc to skip
+# emitting .d.ts files in the container. Must be recursive (**) since the
+# files live inside each package directory.
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Git
+.git
+.gitignore
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+**/.DS_Store
+
+# Logs
+*.log
+**/*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Env files (mounted at runtime, not baked into images)
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Test artifacts
+coverage
+**/coverage
+.nyc_output
+playwright-report
+test-results
+
+# Misc
+.turbo
+.cache
+**/.turbo
+**/.cache
+
+# References / docs (not needed in image)
+references
+docs

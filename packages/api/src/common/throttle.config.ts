@@ -14,10 +14,25 @@ const POLICY_LIMITS: Readonly<Record<string, number>> = {
 const DEFAULT_LIMIT = 30;
 const DEFAULT_TTL_MS = 60_000;
 
-/** Auth endpoints: stricter limit to prevent brute-force. */
-export const AUTH_THROTTLE_LIMIT = 5;
+/** Shared window for auth endpoints. */
 export const AUTH_THROTTLE_TTL_MS = 60_000;
-export const AUTH_THROTTLE_BLOCK_MS = 300_000; // 5-minute block
+
+/**
+ * Login: strict limit + punitive block to deter password brute-force.
+ * Each attempt consumes credentials, so 5/min with a 5-min lockout fits
+ * the threat model.
+ */
+export const LOGIN_THROTTLE_LIMIT = 5;
+export const LOGIN_THROTTLE_BLOCK_MS = 300_000;
+
+/**
+ * Refresh: relaxed limit, no block. The endpoint already requires a valid
+ * refresh token, so it is not a brute-force surface. The dashboard may fire
+ * several refreshes in quick succession (parallel API calls on page load,
+ * multiple open tabs), and a 5-min lockout after a transient burst makes
+ * the app unusable for legitimate users.
+ */
+export const REFRESH_THROTTLE_LIMIT = 30;
 
 /**
  * Resolvable limit function: reads the user's policyName from the JWT payload

@@ -14,6 +14,7 @@ export const updateUserSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   role: userRoleSchema.optional(),
   isActive: z.boolean().optional(),
+  policyId: z.string().cuid().optional(),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;

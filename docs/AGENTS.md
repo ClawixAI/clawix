@@ -90,13 +90,13 @@ The page is divided into three sections:
 
 The **Public Agents** table columns:
 
-| Column      | Meaning                                         |
-| ----------- | ----------------------------------------------- |
-| **Agent**   | Agent name and internal identifier              |
-| **Model**   | Provider / model name (e.g., `openai / gpt-4o`) |
-| **Role**    | `primary` or `worker` badge                     |
-| **Type**    | `Public` (visible to all users)                 |
-| **Enabled** | Toggle switch; primary agents show "Always on"  |
+| Column      | Meaning                                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Agent**   | Agent name and internal identifier                                                                                  |
+| **Model**   | Provider / model name (e.g., `anthropic / claude-sonnet-4-6`, `openai / gpt-4o`, `gemini / gemini-3-flash-preview`) |
+| **Role**    | `primary` or `worker` badge                                                                                         |
+| **Type**    | `Public` (visible to all users)                                                                                     |
+| **Enabled** | Toggle switch; primary agents show "Always on"                                                                      |
 
 ---
 
@@ -118,9 +118,9 @@ Public agents are available to all users and serve as the shared pool of officia
    | **Name**               | Yes      | 1–255 characters. Used to reference the agent by name in spawn calls.                                                   |
    | **Description**        | No       | Up to 2000 characters. Shown in the UI and injected into the primary agent's context so it knows what each worker does. |
    | **System Prompt**      | Yes      | 1–50 000 characters. Defines the agent's persona, instructions, and capabilities.                                       |
-   | **Provider**           | Yes      | Select from configured providers (e.g., `openai`, `anthropic`).                                                         |
-   | **Model**              | Yes      | Model identifier (e.g., `gpt-4o`, `claude-sonnet-4-6`). Must match the selected provider.                               |
-   | **API Base URL**       | No       | Override the provider's default endpoint. Leave blank for standard Anthropic/OpenAI endpoints.                          |
+   | **Provider**           | Yes      | Select from configured providers (e.g., `anthropic`, `openai`, `gemini`, `zai-coding`, `kimi-code`).                    |
+   | **Model**              | Yes      | Model identifier (e.g., `claude-sonnet-4-6`, `gpt-4o`, `gemini-3-flash-preview`). Must match the selected provider.     |
+   | **API Base URL**       | No       | Override the provider's default endpoint. Leave blank for the provider's built-in default.                              |
    | **Max Tokens per Run** | No       | Hard cap on tokens consumed per single run. Default: 100 000.                                                           |
 
 4. Click **Create**. The agent appears in the **Public Agents** table.
@@ -335,18 +335,18 @@ curl -X POST http://localhost:3001/api/v1/agents/sub-agents \
 
 ## Field Reference Summary
 
-| Field             | Type     | Constraints                               | Default             |
-| ----------------- | -------- | ----------------------------------------- | ------------------- |
-| `name`            | string   | 1–255 chars, required                     | —                   |
-| `description`     | string   | 0–2000 chars, optional                    | —                   |
-| `systemPrompt`    | string   | 1–50 000 chars, required                  | `""`                |
-| `role`            | enum     | `primary` or `worker`                     | `primary`           |
-| `provider`        | string   | Must match a configured ProviderConfig ID | `anthropic`         |
-| `model`           | string   | Must be compatible with the provider      | `claude-sonnet-4-6` |
-| `apiBaseUrl`      | URL      | Valid URL or null                         | `null`              |
-| `skillIds`        | string[] | Array of Skill CUIDs                      | `[]`                |
-| `maxTokensPerRun` | integer  | ≥ 1                                       | `100000`            |
-| `isActive`        | boolean  | —                                         | `true`              |
+| Field             | Type     | Constraints                               | Default                    |
+| ----------------- | -------- | ----------------------------------------- | -------------------------- |
+| `name`            | string   | 1–255 chars, required                     | —                          |
+| `description`     | string   | 0–2000 chars, optional                    | —                          |
+| `systemPrompt`    | string   | 1–50 000 chars, required                  | `""`                       |
+| `role`            | enum     | `primary` or `worker`                     | `primary`                  |
+| `provider`        | string   | Must match a configured ProviderConfig ID | `anthropic`                |
+| `model`           | string   | Must be compatible with the provider      | `claude-sonnet-4-20250514` |
+| `apiBaseUrl`      | URL      | Valid URL or null                         | `null`                     |
+| `skillIds`        | string[] | Array of Skill CUIDs                      | `[]`                       |
+| `maxTokensPerRun` | integer  | ≥ 1                                       | `100000`                   |
+| `isActive`        | boolean  | —                                         | `true`                     |
 
 ---
 

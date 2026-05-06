@@ -129,7 +129,7 @@ export class AgentsController {
     @Req() req: AuthRequest,
   ) {
     const { user } = req;
-    return this.agentsService.createAgent(body, user.sub);
+    return this.agentsService.createAgent(body, user.sub, user.role);
   }
 
   @Patch(':id')

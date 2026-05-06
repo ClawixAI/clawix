@@ -10,7 +10,7 @@ Clawix lets you securely run AI-powered agents in isolated containers, coordinat
 
 ## Key Features
 
-- **Multi-Provider AI** - Anthropic, OpenAI, Azure, DeepSeek, Gemini, and custom endpoints
+- **Multi-Provider AI** - Anthropic, OpenAI, Z.AI Coding, Gemini, Kimi-code, and custom endpoints
 - **Container Isolation** - Every agent runs in a sandboxed Docker container with resource limits
 - **Warm Container Pool** - Eliminates cold-start latency for primary agents (1-3s → ~50ms)
 - **Swarm Orchestration** - Delegate complex tasks to specialized sub-agents with DAG dependencies
@@ -28,12 +28,13 @@ Clawix lets you securely run AI-powered agents in isolated containers, coordinat
 - [Node.js 20+](https://nodejs.org/)
 - [pnpm 9+](https://pnpm.io/installation) (`npm install -g pnpm`)
 - [Docker](https://docs.docker.com/get-docker/) + Docker Compose
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (user-friendly platform for container management)
 
 ### Installation
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/clawixAI/clawix.git
+git clone https://github.com/jasonli0226/clawix.git
 cd clawix
 
 # 2. Prepare your environment file
@@ -118,6 +119,34 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml logs api | grep '\[bootstrap\]'
 ```
 
+### Uninstallation
+
+Remove Clawix completely:
+
+```bash
+pnpm run uninstall:clawix               # preserve host data
+pnpm run uninstall:clawix -- --full     # complete removal
+```
+
+| Flag            | Description                                                             |
+| --------------- | ----------------------------------------------------------------------- |
+| `--full` / `-f` | Remove Docker resources AND host data (.env, ./data/, ./skills/custom/) |
+| `--yes` / `-y`  | Skip confirmation prompt                                                |
+
+**What gets removed:**
+
+- **Docker cleanup (default):** containers, images, named volumes from both dev and prod environments
+- **Host data (with `--full`):** `.env`, `./data/` (workspaces), `./skills/custom/` (user skills)
+
+**Fresh reinstall:**
+
+```bash
+pnpm run uninstall:clawix -- --full -y
+pnpm run install:clawix
+```
+
+> Without `--full`, host data is preserved. The installer detects existing `.env` and reuses your previous settings.
+
 ## Architecture
 
 ```
@@ -134,7 +163,7 @@ docker compose -f docker-compose.prod.yml logs api | grep '\[bootstrap\]'
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Core Engine                              │
 │   Reasoning Loops │ Tool Execution │ Swarm Coordinator          │
-│   Multi-Provider (Anthropic, OpenAI, Azure, Custom)             │
+│   Multi-Provider (Anthropic, OpenAI, Z.AI Coding, Gemini, Kimi-code, Custom)             │
 └─────────────────────────────────────────────────────────────────┘
                                 │
 ┌─────────────────────────────────────────────────────────────────┐
@@ -152,15 +181,17 @@ docker compose -f docker-compose.prod.yml logs api | grep '\[bootstrap\]'
 
 Clawix supports multiple AI providers through a unified interface:
 
-| Provider     | Detection                      | Notes                  | Status      |
-| ------------ | ------------------------------ | ---------------------- | ----------- |
-| Anthropic    | model contains "claude"        | Primary provider       | done        |
-| OpenAI       | model contains "gpt"           | Fallback               | done        |
-| Azure OpenAI | config key "azure_openai"      | Enterprise deployments | coming soon |
-| DeepSeek     | model contains "deepseek"      | Cost-effective         | coming soon |
-| Gemini       | model contains "gemini"        | Google AI              | coming soon |
-| OpenRouter   | API key starts with "sk-or-"   | Gateway                | coming soon |
-| Custom       | any OpenAI-compatible endpoint | vLLM, Ollama, etc.     | coming soon |
+| Provider     | Detection                      | Notes                  | Status  |
+| ------------ | ------------------------------ | ---------------------- | ------- |
+| Anthropic    | model contains "claude"        | Primary provider       | done    |
+| OpenAI       | model contains "gpt"           | Fallback               | done    |
+| Z.AI Coding  | model contains "glm"           | Z.AI Coding Plan       | done    |
+| Gemini       | model contains "gemini"        | Google AI              | done    |
+| Kimi-code    | model contains "kimi"          | Moonshot AI            | done    |
+| Azure OpenAI | config key "azure_openai"      | Enterprise deployments | planned |
+| DeepSeek     | model contains "deepseek"      | Cost-effective         | planned |
+| OpenRouter   | API key starts with "sk-or-"   | Gateway                | planned |
+| Custom       | any OpenAI-compatible endpoint | vLLM, Ollama, etc.     | done    |
 
 New providers can be added by defining a `ProviderSpec` entry—no code changes needed.
 
@@ -216,7 +247,7 @@ pnpm run test           # Run all tests (Vitest)
 pnpm run test:coverage  # Tests with coverage report
 pnpm run lint           # ESLint + type check
 pnpm run format         # Prettier format
-pnpm run docker:prod     # Start Postgres, Redis, pgAdmin, API, Web
+pnpm run docker:dev     # Start Postgres, Redis, pgAdmin
 pnpm run docker:down    # Stop local infra
 pnpm run db:migrate     # Run Prisma migrations
 pnpm run db:studio      # Open Prisma Studio
@@ -236,7 +267,7 @@ pnpm run db:studio      # Open Prisma Studio
 
 - **API:** NestJS 11 + Fastify adapter
 - **Frontend:** Next.js 15 + Tailwind CSS + shadcn/ui
-- **AI:** Multi-provider (Anthropic, OpenAI, Azure, DeepSeek, Gemini, custom)
+- **AI:** Multi-provider (Anthropic, OpenAI, Z.AI Coding, Gemini, Kimi-code, custom)
 - **Database:** Prisma + PostgreSQL 16
 - **Cache:** Redis 7 (ioredis)
 - **Testing:** Vitest + Playwright
@@ -290,7 +321,7 @@ We welcome contributions! Please see our contributing guidelines:
 
 ## Security
 
-If you discover a security vulnerability, please open a [GitHub Security Advisory](https://github.com/clawixAI/clawix/security/advisories/new) instead of using the public issue tracker.
+If you discover a security vulnerability, please open a [GitHub Security Advisory](https://github.com/jasonli0226/clawix/security/advisories/new) instead of using the public issue tracker.
 
 Security best practices:
 
@@ -301,8 +332,11 @@ Security best practices:
 
 ## Roadmap
 
-- [ ] WhatsApp Business API integration
+- [x] WhatsApp Business API integration
 - [ ] Slack integration
+- [ ] Azure OpenAI provider support
+- [ ] DeepSeek provider support
+- [ ] OpenRouter gateway support
 - [ ] Advanced analytics dashboard
 - [ ] Skill marketplace UI
 - [ ] Multi-region deployment support

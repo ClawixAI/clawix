@@ -18,10 +18,10 @@ Navigate to **Skills** in the left sidebar (path: `/skills`) to browse all avail
 
 The page is split into two sections:
 
-| Section             | What it shows                                                                                         |
-| ------------------- | ----------------------------------------------------------------------------------------------------- |
-| **Built-in Skills** | Platform-shipped skills (`skills/builtin/`). Read-only. Available to every user.                      |
-| **Your Skills**     | Custom skills you (or your agent) have created (`skills/custom/{userId}/`). Writable. Private to you. |
+| Section             | What it shows                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------- |
+| **Built-in Skills** | Platform-shipped skills (`skills/builtin/`). Read-only. Available to every user.                  |
+| **Your Skills**     | Custom skills you (or your agent) have created (`<workspace>/skills/`). Writable. Private to you. |
 
 Each skill card displays the skill **name**, **description** excerpt, and the **file path** to its `SKILL.md`. The page description reminds you that the `/create-skill` shorthand in a conversation triggers the skill-creator workflow.
 
@@ -53,29 +53,29 @@ Each skill card displays the skill **name**, **description** excerpt, and the **
 
 ```
 skills/
-├── builtin/                   # Shipped with Clawix — git-tracked, read-only
-│   ├── skill-creator/
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       └── init_skill.py
-│   └── projector-creator/
-│       ├── SKILL.md
-│       └── references/
-│           └── starter-template.html
-└── custom/                    # Runtime data — gitignored, per-user read-write
-    ├── {userId-1}/
-    │   └── my-workflow/
-    │       └── SKILL.md
-    └── {userId-2}/
-        └── ...
+└── builtin/                   # Shipped with Clawix — git-tracked, read-only
+    ├── skill-creator/
+    │   ├── SKILL.md
+    │   └── scripts/
+    │       ├── init_skill.py
+    │       ├── quick_validate.py
+    │       └── package_skill.py
+    └── projector-creator/
+        ├── SKILL.md
+        └── references/
+            └── starter-template.html
+
+<workspace>/skills/             # Inside each user's workspace — gitignored, per-user read-write
+└── my-workflow/
+    └── SKILL.md
 ```
 
 ### Two tiers
 
-| Tier         | Path                      | Access                  | Purpose                                         |
-| ------------ | ------------------------- | ----------------------- | ----------------------------------------------- |
-| **Built-in** | `skills/builtin/`         | Read-only               | Platform-shipped skills, updated via `git pull` |
-| **Custom**   | `skills/custom/{userId}/` | Read-write (owner only) | User- and agent-created skills                  |
+| Tier         | Path                  | Access                  | Purpose                                         |
+| ------------ | --------------------- | ----------------------- | ----------------------------------------------- |
+| **Built-in** | `skills/builtin/`     | Read-only               | Platform-shipped skills, updated via `git pull` |
+| **Custom**   | `<workspace>/skills/` | Read-write (owner only) | User- and agent-created skills                  |
 
 **Override rule:** If a custom skill directory shares the same name as a built-in skill directory, the custom skill takes precedence for that user. The directory name is the override key.
 
@@ -156,7 +156,7 @@ The `SkillLoaderService` scans both tiers and builds an XML summary injected int
   <skill>
     <name>data-parser</name>
     <description>Parse CSV and JSON files into structured summaries. Use when...</description>
-    <location>/skills/custom/data-parser/SKILL.md</location>
+    <location>/app/skills/custom/{userId}/data-parser/SKILL.md</location>
     <source>custom</source>
   </skill>
 </skills>
@@ -164,7 +164,7 @@ The `SkillLoaderService` scans both tiers and builds an XML summary injected int
 
 **Stage 2 — On-demand loading:**
 
-When the agent decides a skill is relevant, it uses the `read_file` tool to load the full `SKILL.md` from the path in `<location>`. No special "use_skill" command exists — agents use the same file tools they already have.
+When the agent decides a skill is relevant, it uses the `read_file` tool to load the full `SKILL.md` from the path in `<location>`. No special "use_skill" command exists — agents use the same file tools they already have (e.g. `read_file`).
 
 ### System prompt ordering
 
@@ -181,12 +181,12 @@ When the agent decides a skill is relevant, it uses the `read_file` tool to load
 
 When a container starts for a user:
 
-| Host path                       | Container path     | Mode       |
-| ------------------------------- | ------------------ | ---------- |
-| `{SKILLS_BUILTIN_DIR}/`         | `/skills/builtin/` | Read-only  |
-| `{SKILLS_CUSTOM_DIR}/{userId}/` | `/skills/custom/`  | Read-write |
+| Host path                 | Container path                 | Mode       |
+| ------------------------- | ------------------------------ | ---------- |
+| `{SKILLS_BUILTIN_DIR}/`   | `/skills/builtin/`             | Read-only  |
+| `skills/custom/{userId}/` | `/app/skills/custom/{userId}/` | Read-write |
 
-The agent sees a flat `/skills/` tree inside the container and has no awareness of the host user directory structure. Built-in skills cannot be modified from inside the container.
+The agent sees built-in skills at `/skills/builtin/` (read-only) and its own custom skills at `/app/skills/custom/{userId}/` (read-write). Built-in skills cannot be modified from inside the container.
 
 ---
 
@@ -214,7 +214,7 @@ Example prompts that trigger skill creation:
 
 #### Step 2 — Agent scaffolds and confirms
 
-The agent reads `skill-creator`'s instructions, creates the directory structure under `/skills/custom/`, writes the `SKILL.md`, adds any scripts, and confirms what it built.
+The agent reads `skill-creator`'s instructions, creates the directory structure under `/app/skills/custom/{userId}/`, writes the `SKILL.md`, adds any scripts, and confirms what it built.
 
 ![Agent response confirming the stripe-webhook-parser skill was created with its components](./assets/skills-chat-created.png)
 
@@ -228,7 +228,7 @@ The command palette shows all available slash commands with their descriptions p
 
 ### Option B — Create files directly (advanced)
 
-1. Create the directory `skills/custom/<skill-name>/` inside the container at `/skills/custom/<skill-name>/` (writable).
+1. Create the directory under `/app/skills/custom/{userId}/<skill-name>/` inside the container (writable).
 2. Write `SKILL.md` with valid frontmatter (see format above).
 3. Optionally create `scripts/`, `references/`, `assets/` subdirectories.
 
@@ -246,7 +246,7 @@ The skill is discoverable on the next agent run. Within the same session, the ag
 To validate programmatically:
 
 ```bash
-python3 /skills/builtin/skill-creator/scripts/quick_validate.py /skills/custom/<skill-name>
+python3 /skills/builtin/skill-creator/scripts/quick_validate.py /app/skills/custom/{userId}/<skill-name>
 ```
 
 ---
@@ -263,7 +263,7 @@ Simply describe the task. If a skill's `description` matches the situation, the 
 "Parse this Stripe webhook payload for me: {...}"
 ```
 
-The agent matches `stripe-webhook-parser` from the skill summary index, reads `/skills/custom/stripe-webhook-parser/SKILL.md`, and executes the parsing script.
+The agent matches `stripe-webhook-parser` from the skill summary index, reads `/app/skills/custom/{userId}/stripe-webhook-parser/SKILL.md`, and executes the parsing script.
 
 ### Explicit invocation
 
@@ -280,8 +280,8 @@ The agent reads the skill file, calls the script inside the container (`parser.p
 ### What the agent does step by step
 
 1. Reads the skill summary XML in its system prompt — finds matching skill by description
-2. Calls `read_file("/skills/custom/stripe-webhook-parser/SKILL.md")` to load full instructions
-3. Follows the skill's instructions — may call `exec` to run scripts in the container
+2. Calls `read_file("/app/skills/custom/{userId}/stripe-webhook-parser/SKILL.md")` to load full instructions
+3. Follows the skill's instructions — may call `shell` to run scripts in the container
 4. Returns the output in the format the skill specifies
 
 ---
@@ -332,11 +332,10 @@ Built-in skills live in `skills/builtin/` (git-tracked). They are updated when C
 
 ## Configuration
 
-| Env var               | Default                               | Description                                |
-| --------------------- | ------------------------------------- | ------------------------------------------ |
-| `SKILLS_BUILTIN_DIR`  | `<repo-root>/skills/builtin`          | Absolute path to built-in skills directory |
-| `SKILLS_CUSTOM_DIR`   | `<WORKSPACE_BASE_PATH>/skills/custom` | Absolute path to custom skills root        |
-| `MAX_SKILLS_PER_USER` | `50`                                  | Maximum custom skills per user             |
+| Env var               | Default                      | Description                                |
+| --------------------- | ---------------------------- | ------------------------------------------ |
+| `SKILLS_BUILTIN_DIR`  | `<repo-root>/skills/builtin` | Absolute path to built-in skills directory |
+| `MAX_SKILLS_PER_USER` | `50`                         | Maximum custom skills per user             |
 
 ---
 
@@ -346,5 +345,5 @@ Built-in skills live in `skills/builtin/` (git-tracked). They are updated when C
 - **No symlinks** — symlinked skill directories are rejected during scanning.
 - **File size limit** — `SKILL.md` must be under 1 MB.
 - **Built-in protection** — `skills/builtin/` is mounted read-only inside containers.
-- **User isolation** — only the owning user's `skills/custom/{userId}/` directory is mounted; no other user's custom directory is visible.
+- **User isolation** — only the owning user's workspace (including `/app/skills/custom/{userId}/`) is mounted; no other user's workspace is visible.
 - **Host-side execution** — skill content is read as data by the host-side loader. Scripts execute exclusively inside agent containers, never on the host.

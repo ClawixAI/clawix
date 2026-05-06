@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { Eye, EyeOff, GalleryVerticalEnd, Loader2 } from 'lucide-react';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/components/auth-provider';
+import { ApiError } from '@/lib/api';
 
 export default function LoginPage() {
   return (
@@ -26,9 +27,23 @@ function LoginForm() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [waitTime, setWaitTime] = useState(0);
+
+  // Countdown timer when the API returns 429 from progressive delay or
+  // the per-IP throttler. Re-enables the form when it hits 0.
+  useEffect(() => {
+    if (waitTime <= 0) return;
+    const timer = setInterval(() => {
+      setWaitTime((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [waitTime]);
 
   async function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
+    if (waitTime > 0) return;
     setError('');
     setIsLoading(true);
 
@@ -39,11 +54,22 @@ function LoginForm() {
       const target = redirect?.startsWith('/') ? redirect : '/conversations';
       router.push(target);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      if (err instanceof ApiError && err.status === 429) {
+        // Server messages: "Too many attempts. Try again in 8s" (per-email)
+        // or "ThrottlerException: Too Many Requests" (per-IP, no Xs).
+        const match = /(\d+)s/.exec(err.message);
+        const seconds = match ? Math.min(Number(match[1]), 60) : 30;
+        setWaitTime(seconds);
+        setError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : 'Login failed');
+      }
     } finally {
       setIsLoading(false);
     }
   }
+
+  const isDisabled = isLoading || waitTime > 0;
 
   return (
     <div className="flex min-h-svh w-full">
@@ -88,7 +114,7 @@ function LoginForm() {
                       setEmail(e.target.value);
                     }}
                     required
-                    disabled={isLoading}
+                    disabled={isDisabled}
                   />
                 </div>
 
@@ -104,7 +130,7 @@ function LoginForm() {
                         setPassword(e.target.value);
                       }}
                       required
-                      disabled={isLoading}
+                      disabled={isDisabled}
                       className="pr-10"
                     />
                     <button
@@ -123,9 +149,9 @@ function LoginForm() {
 
               {error && <p className="text-sm text-destructive">{error}</p>}
 
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isDisabled}>
                 {isLoading && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Login
+                {waitTime > 0 ? `Wait ${waitTime}s` : 'Login'}
               </Button>
             </form>
           </div>

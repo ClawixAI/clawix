@@ -101,12 +101,12 @@ A **Channel** is a configured integration that allows external messaging platfor
 
 ### Supported channel types
 
-| Type         | Use case                                           | Required credentials      |
-| ------------ | -------------------------------------------------- | ------------------------- |
-| **Telegram** | Bot receives messages from Telegram users          | Bot Token from @BotFather |
-| **Web**      | Built-in web chat widget / dashboard conversations | None — always available   |
-| **Slack**    | Slash commands and DMs via Slack Bolt              | App credentials (OAuth)   |
-| **WhatsApp** | Production messaging via WhatsApp Business API     | Business API credentials  |
+| Type         | Use case                                           | Required credentials                              |
+| ------------ | -------------------------------------------------- | ------------------------------------------------- |
+| **Telegram** | Bot receives messages from Telegram users          | Bot Token from @BotFather                         |
+| **Web**      | Built-in web chat widget / dashboard conversations | None — always available                           |
+| **Slack**    | Slash commands and DMs via Slack Bolt              | App credentials (OAuth)                           |
+| **WhatsApp** | Production messaging via WhatsApp Business API     | WhatsApp Business API via @whiskeysockets/baileys |
 
 ### Adding a Channel
 
@@ -198,6 +198,8 @@ Click **⋯** → **Edit**. API Key field: leave blank to keep the existing key;
 | `anthropic`  | `claude-opus-4-*`, `claude-sonnet-4-*`, `claude-haiku-4-*` | `ANTHROPIC_API_KEY`  |
 | `openai`     | `gpt-4.1`, `gpt-4o`, `gpt-4o-mini`, `o3`, `codex-*`        | `OPENAI_API_KEY`     |
 | `zai-coding` | `glm-*`                                                    | `ZAI_CODING_API_KEY` |
+| `gemini`     | `gemini-3-pro-preview`, `gemini-3-flash-preview`, etc.     | `GEMINI_API_KEY`     |
+| `kimi-code`  | (various)                                                  | `KIMI_CODE_API_KEY`  |
 | `custom`     | Any (OpenAI-compatible) — Base URL required                | —                    |
 
 → **Full detail:** [PROVIDERS.md](./PROVIDERS.md)

@@ -1,6 +1,7 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import helmet, { type FastifyHelmetOptions } from '@fastify/helmet';
 import cors from '@fastify/cors';
+import cookie from '@fastify/cookie';
 import type { FastifyInstance } from 'fastify';
 
 /**
@@ -86,4 +87,5 @@ export async function registerSecurityPlugins(app: NestFastifyApplication): Prom
   const fastify = app.getHttpAdapter().getInstance() as unknown as FastifyInstance;
   await fastify.register(helmet, buildHelmetOptions());
   await fastify.register(cors, buildCorsOptions());
+  await fastify.register(cookie);
 }

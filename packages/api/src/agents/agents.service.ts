@@ -51,9 +51,12 @@ export class AgentsService {
   async createAgent(
     input: CreateAgentDefinitionInput,
     createdById?: string,
+    userRole?: string,
   ): Promise<AgentDefinition> {
-    // User-created agents are always custom (not official)
-    return this.agentDefRepo.create({ ...input, createdById, isOfficial: false });
+    // Only admins may create Public (official) agents; force false otherwise
+    // so non-admins can't escalate by setting the flag in the request body.
+    const isOfficial = userRole === 'admin' ? (input.isOfficial ?? false) : false;
+    return this.agentDefRepo.create({ ...input, createdById, isOfficial });
   }
 
   async updateAgent(

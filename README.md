@@ -248,6 +248,49 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml logs api | grep '\[bootstrap\]'
 ```
 
+## Uninstallation
+
+Remove Clawix completely with:
+
+```bash
+pnpm run uninstall:clawix               # preserve host data
+pnpm run uninstall:clawix -- --full     # complete removal
+```
+
+### Flags
+
+| Flag            | Description                                                             |
+| --------------- | ----------------------------------------------------------------------- |
+| `--full` / `-f` | Remove Docker resources AND host data (.env, ./data/, ./skills/custom/) |
+| `--yes` / `-y`  | Skip confirmation prompt                                                |
+
+### What gets removed
+
+**Docker cleanup (default):**
+
+- Containers from both dev and prod environments
+- Images built by compose + `clawix-agent:latest`
+- Named volumes (`postgres_data`, `redis_data`, etc.)
+- Orphan containers
+
+**Host data (with `--full`):**
+
+- `.env` — configuration and secrets
+- `./data/` — runtime data, user workspaces
+- `./skills/custom/` — user-created skills
+
+### Fresh reinstall
+
+```bash
+# Full cleanup
+pnpm run uninstall:clawix -- --full -y
+
+# Reinstall from scratch
+pnpm run install:clawix
+```
+
+> Without `--full`, host data is preserved. The installer detects existing `.env` and skips configuration prompts, reusing your previous settings.
+
 ---
 
 ## Multi-Provider Support

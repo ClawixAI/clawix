@@ -4,6 +4,11 @@ import type { ChatMessage, ChatOptions, LLMProvider, LLMResponse, LLMUsage } fro
 import type { ToolRegistry } from './tool-registry.js';
 import type { LoopResult, ReasoningLoopConfig } from './reasoning-loop.types.js';
 import type { BudgetTracker } from './budget-tracker.js';
+import { runWithRecovery } from './recovery-loop.js';
+import { classifyError, LoopAbortedError } from './error-classifier.js';
+import { ToolLoopGuard } from './tool-loop-guard.js';
+import { wireRecoveryMetrics, toolLoopAbortedTotal } from './recovery-metrics.js';
+import { CompressorService } from './compressor.js';
 
 const logger = createLogger('engine:reasoning-loop');
 
@@ -50,20 +55,19 @@ function formatArgs(args: Readonly<Record<string, unknown>>): string {
  * Stops when: model produces no tool calls, error finish reason, or max iterations reached.
  */
 export class ReasoningLoop {
-  private readonly provider: LLMProvider;
-  private readonly toolRegistry: ToolRegistry;
-
-  constructor(provider: LLMProvider, toolRegistry: ToolRegistry) {
-    this.provider = provider;
-    this.toolRegistry = toolRegistry;
-  }
+  constructor(
+    private readonly provider: LLMProvider,
+    private readonly toolRegistry: ToolRegistry,
+    private readonly compressor: CompressorService,
+    private readonly providerInfo: { provider: string; model: string },
+  ) {}
 
   async run(
     initialMessages: readonly ChatMessage[],
     config?: ReasoningLoopConfig,
   ): Promise<LoopResult> {
     const maxIterations = config?.maxIterations ?? DEFAULT_MAX_ITERATIONS;
-    const messages: ChatMessage[] = [...initialMessages];
+    let messages: ChatMessage[] = [...initialMessages];
     let totalUsage: LLMUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     let iterations = 0;
     let lastResponse: LLMResponse | null = null;
@@ -120,6 +124,8 @@ export class ReasoningLoop {
       abortSignal: abortController.signal,
     };
 
+    const toolLoopGuard = new ToolLoopGuard();
+
     try {
       while (iterations < maxIterations) {
         if (abortController.signal.aborted) {
@@ -161,7 +167,15 @@ export class ReasoningLoop {
 
         let response: LLMResponse;
         try {
-          response = await this.provider.chat(messages, callOptions);
+          const recoveryResult = await runWithRecovery(this.provider, messages, callOptions, {
+            classifier: classifyError,
+            compressor: (msgs) => this.compressor.compress(msgs, this.providerInfo),
+            onRecoveryEvent: wireRecoveryMetrics,
+            provider: this.providerInfo.provider,
+          });
+          response = recoveryResult.response;
+          // Adopt possibly-compressed messages for subsequent iterations.
+          messages = [...recoveryResult.messages];
         } catch (err: unknown) {
           // If abort fired while the SDK call was in flight, the provider
           // throws an AbortError. Treat that as a clean timeout exit rather
@@ -259,6 +273,14 @@ export class ReasoningLoop {
           }
 
           const result = await this.toolRegistry.execute(toolCall.name, toolCall.arguments);
+          try {
+            toolLoopGuard.record(toolCall.name, toolCall.arguments, result.isError);
+          } catch (loopErr) {
+            if (loopErr instanceof LoopAbortedError) {
+              toolLoopAbortedTotal.inc({ tool_name: loopErr.toolName });
+            }
+            throw loopErr;
+          }
 
           messages.push({
             role: 'tool',

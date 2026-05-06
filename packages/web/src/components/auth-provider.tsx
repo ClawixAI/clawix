@@ -3,13 +3,11 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import {
   type AuthUser,
-  clearTokens,
-  getStoredTokens,
-  isTokenExpired,
+  ensureAccessToken,
+  hasSessionCookie,
   login as authLogin,
   logout as authLogout,
   parseJwtPayload,
-  refreshTokens,
 } from '@/lib/auth';
 
 interface AuthContextValue {
@@ -26,26 +24,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = getStoredTokens();
-    if (!stored) {
+    // Fresh page load: in-memory access token is empty.
+    // If clawix_has_session=1 is present, ensureAccessToken() will refresh
+    // via the httpOnly cookie. Otherwise treat as logged-out.
+    if (!hasSessionCookie()) {
       setIsLoading(false);
       return;
     }
-
-    if (!isTokenExpired(stored.accessToken)) {
-      setUser(parseJwtPayload(stored.accessToken));
-      setIsLoading(false);
-      return;
-    }
-
-    void refreshTokens().then((tokens) => {
-      if (tokens) {
-        setUser(parseJwtPayload(tokens.accessToken));
-      } else {
-        clearTokens();
-      }
-      setIsLoading(false);
-    });
+    void ensureAccessToken()
+      .then((token) => {
+        if (token) setUser(parseJwtPayload(token));
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

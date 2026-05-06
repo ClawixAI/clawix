@@ -13,7 +13,7 @@
  *  8.  Build initial messages (system + history + user)
  *  9.  Save user message to session
  *  10. Resolve API key from env vars
- *  11. Create LLMProvider via createProvider, wrap with ResilientLLMProvider
+ *  11. Create LLMProvider via createProvider — recovery is handled inside ReasoningLoop
  *  12. Start container
  *  13. Create ToolRegistry + registerBuiltinTools + register spawn tool
  *  14. Create ReasoningLoop
@@ -58,9 +58,9 @@ import type { MessageStore } from './message-store/message-store.js';
 import type { Session } from '../generated/prisma/client.js';
 import { ProviderConfigService } from '../provider-config/provider-config.service.js';
 import { createProvider } from './providers/provider-factory.js';
-import { ResilientLLMProvider } from './resilience.js';
 import { MemoryConsolidationService } from './memory-consolidation.service.js';
 import { ReasoningLoop } from './reasoning-loop.js';
+import { CompressorService } from './compressor.js';
 import { BudgetTracker } from './budget-tracker.js';
 import { ToolRegistry } from './tool-registry.js';
 import { registerBuiltinTools, registerMemoryTools, registerCronTools } from './tools/index.js';
@@ -114,6 +114,7 @@ export class AgentRunnerService {
     private readonly taskRunRepo: TaskRunRepository,
     private readonly taskRunMessageRepo: TaskRunMessageRepository,
     private readonly systemSettingsService: SystemSettingsService,
+    private readonly compressor: CompressorService,
   ) {}
 
   /** Lazy accessor to break circular dependency with TaskExecutorService. */
@@ -267,14 +268,13 @@ export class AgentRunnerService {
       // Step 10: Resolve provider credentials (DB first, env var fallback)
       const resolved = await this.providerConfig.resolveProvider(agentDef.provider);
 
-      // Step 11: Create LLMProvider, wrap with resilience
-      const baseProvider = createProvider(
+      // Step 11: Create LLMProvider
+      const provider = createProvider(
         agentDef.provider,
         resolved.apiKey,
         agentDef.apiBaseUrl ?? resolved.apiBaseUrl ?? undefined,
         agentDef.model,
       );
-      const provider = new ResilientLLMProvider(baseProvider);
 
       // Step 12: Resolve workspace path and acquire container
       // Prisma returns containerConfig as JsonValue; cast to the shared type
@@ -420,7 +420,10 @@ export class AgentRunnerService {
       );
 
       // Step 14: Create ReasoningLoop
-      const loop = new ReasoningLoop(provider, registry);
+      const loop = new ReasoningLoop(provider, registry, this.compressor, {
+        provider: agentDef.provider,
+        model: agentDef.model,
+      });
 
       // Step 15: Run loop
       // No default wall-clock timeout — let the model finish. The stale run reaper (10 min) is the safety net.

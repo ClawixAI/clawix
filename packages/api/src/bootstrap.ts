@@ -12,6 +12,7 @@
  * Invocation (inside the prod image): `node dist/bootstrap.js`
  */
 import { PrismaPg } from '@prisma/adapter-pg';
+import { listProviders } from '@clawix/shared';
 import { PrismaClient } from './generated/prisma/client.js';
 import bcrypt from 'bcryptjs';
 import { encrypt } from './common/crypto.js';
@@ -48,16 +49,18 @@ interface ProviderSeed {
 }
 
 function buildProviderSeeds(): ProviderSeed[] {
-  const seeds: ProviderSeed[] = [
-    { provider: 'anthropic', displayName: 'Anthropic', envKey: 'ANTHROPIC_API_KEY' },
-    { provider: 'openai', displayName: 'OpenAI', envKey: 'OPENAI_API_KEY' },
-    {
-      provider: 'zai-coding',
-      displayName: 'Z.AI Coding Plan',
-      envKey: 'ZAI_CODING_API_KEY',
-      baseUrl: 'https://api.z.ai/api/coding/paas/v4',
-    },
-  ];
+  // Derive from the registry so bootstrap, the installer, and the runtime
+  // SDK never drift. The 'custom' entry is excluded — it's a placeholder
+  // spec; real custom providers come from CUSTOM_PROVIDER_* env vars below.
+  const seeds: ProviderSeed[] = listProviders()
+    .filter((p) => p.name !== 'custom')
+    .map((p) => ({
+      provider: p.name,
+      displayName: p.displayName,
+      envKey: p.envKey,
+      ...(p.defaultBaseUrl ? { baseUrl: p.defaultBaseUrl } : {}),
+    }));
+
   const customName = process.env['CUSTOM_PROVIDER_NAME'];
   const customBase = process.env['CUSTOM_PROVIDER_BASE_URL'];
   if (customName && customBase) {

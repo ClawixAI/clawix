@@ -9,7 +9,8 @@ export { PolicyThrottlerGuard } from './policy-throttler.guard.js';
 export {
   resolvePolicyLimit,
   resolvePolicyTtl,
-  AUTH_THROTTLE_LIMIT,
   AUTH_THROTTLE_TTL_MS,
-  AUTH_THROTTLE_BLOCK_MS,
+  LOGIN_THROTTLE_LIMIT,
+  LOGIN_THROTTLE_BLOCK_MS,
+  REFRESH_THROTTLE_LIMIT,
 } from './throttle.config.js';

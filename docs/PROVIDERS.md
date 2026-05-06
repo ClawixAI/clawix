@@ -40,7 +40,7 @@ Configuring more than one provider gives your organization several concrete adva
 
 ## Built-in Provider Types
 
-Clawix ships with first-class support for three provider types. A `custom` type is also available for OpenAI-compatible endpoints.
+Clawix ships with first-class support for five provider types. A `custom` type is also available for OpenAI-compatible endpoints.
 
 ### Anthropic
 
@@ -53,8 +53,8 @@ Clawix ships with first-class support for three provider types. A `custom` type 
 ### OpenAI
 
 - **Provider ID:** `openai`
-- **Models:** `gpt-4.1`, `gpt-4o`, `gpt-4o-mini`, `o3`, `o3-mini`, `codex-*`, `gpt-5.*`
-- **Capabilities:** Tool calling (note: codex/GPT-5 models use the Responses API automatically)
+- **Models:** `gpt-4.1`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-4o`, `gpt-4o-mini`, `o3`, `o3-mini`, `o4-mini`, `codex-*`, `gpt-5.*`
+- **Capabilities:** Tool calling. Note: `codex-*` and `gpt-5.*` models use the **Responses API** automatically instead of the Chat Completions API.
 - **Default endpoint:** OpenAI SDK default (no Base URL needed)
 - **Environment seed variable:** `OPENAI_API_KEY`
 
@@ -65,11 +65,36 @@ Clawix ships with first-class support for three provider types. A `custom` type 
 - **Default endpoint:** `https://api.z.ai/api/coding/paas/v4`
 - **Environment seed variable:** `ZAI_CODING_API_KEY`
 
+### Google Gemini
+
+- **Provider ID:** `gemini`
+- **Models:** `gemini-3-pro-preview`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3-flash-lite-preview`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`
+- **Capabilities:** Tool calling
+- **Default endpoint:** `https://generativelanguage.googleapis.com/v1beta/`
+- **Environment seed variable:** `GEMINI_API_KEY`
+
+### Kimi Coding
+
+- **Provider ID:** `kimi-code`
+- **Models:** (various, via Kimi API)
+- **Default endpoint:** `https://api.kimi.com/coding`
+- **Environment seed variable:** `KIMI_CODE_API_KEY`
+
 ### Custom (OpenAI-compatible)
 
 - **Provider ID:** any name matching `^[a-z0-9-]+$` that is not one of the above
 - **Base URL:** required — point to your self-hosted or third-party OpenAI-compatible endpoint
 - **Capabilities:** depends on the target model; tool calling not guaranteed
+
+### Planned providers
+
+The following providers are on the roadmap but not yet implemented:
+
+| Provider     | Detection                    | Notes                  |
+| ------------ | ---------------------------- | ---------------------- |
+| Azure OpenAI | config key "azure_openai"    | Enterprise deployments |
+| DeepSeek     | model contains "deepseek"    | Cost-effective         |
+| OpenRouter   | API key starts with "sk-or-" | Gateway                |
 
 ---
 
@@ -201,6 +226,8 @@ On first startup (when the `ProviderConfig` table is empty), Clawix automaticall
 | `ANTHROPIC_API_KEY`  | `anthropic`     |
 | `OPENAI_API_KEY`     | `openai`        |
 | `ZAI_CODING_API_KEY` | `zai-coding`    |
+| `GEMINI_API_KEY`     | `gemini`        |
+| `KIMI_CODE_API_KEY`  | `kimi-code`     |
 
 The **first** variable found becomes the default provider. Once records exist in the database, the seed step is skipped on subsequent restarts. All future credential management should be done via the UI or admin API.
 

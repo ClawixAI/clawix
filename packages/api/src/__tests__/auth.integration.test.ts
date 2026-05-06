@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ConfigModule } from '@nestjs/config';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -6,6 +6,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { hash } from 'bcryptjs';
+import cookie from '@fastify/cookie';
 import { AuthController } from '../auth/auth.controller.js';
 import { AuthService } from '../auth/auth.service.js';
 import { JwtStrategy } from '../auth/jwt.strategy.js';
@@ -85,8 +86,19 @@ describe('Auth Integration', () => {
     }).compile();
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    // Register @fastify/cookie so reply.setCookie / req.cookies work in
+    // the auth controller. Production registers this in security.config.ts;
+    // the integration test must do it explicitly since it skips main
+    // bootstrap.
+    await app.getHttpAdapter().getInstance().register(cookie);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+  });
+
+  beforeEach(() => {
+    // Reset the in-memory Redis store between tests so leftover login_fail
+    // counters or refresh tokens from one test don't affect the next.
+    redisStore.clear();
   });
 
   afterAll(async () => {

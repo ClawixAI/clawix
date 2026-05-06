@@ -19,6 +19,9 @@ export async function apiFetch<T>(
     ...rest,
     body,
     cache: 'no-store',
+    // Send/receive cookies cross-origin so the httpOnly clawix_refresh
+    // cookie reaches /auth/refresh and /auth/logout.
+    credentials: 'include',
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),

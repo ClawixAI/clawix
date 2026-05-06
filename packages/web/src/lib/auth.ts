@@ -12,40 +12,67 @@ export interface AuthUser {
   planName: string;
 }
 
-// SECURITY NOTE: Tokens are stored in localStorage for simplicity in this phase.
-// localStorage is vulnerable to XSS — any script on the page can read tokens.
-// TODO: Migrate refresh token to httpOnly cookie set by the API server.
-// The access token can stay in memory (React state) once that's done.
-const ACCESS_TOKEN_KEY = 'clawix_access_token';
-const REFRESH_TOKEN_KEY = 'clawix_refresh_token';
+// Access token lives in memory only — never in localStorage. If the user
+// reloads the tab, AuthProvider calls ensureAccessToken() which uses the
+// httpOnly clawix_refresh cookie to mint a new access token.
+//
+// The clawix_has_session cookie (non-httpOnly) is a simple "yes, you have a
+// refresh cookie" flag so we know whether to attempt a refresh on mount
+// versus immediately redirecting to login.
+let accessTokenCache: string | null = null;
 
-function sessionCookie(set: boolean): void {
-  if (set) {
-    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `clawix_has_session=1; path=/; SameSite=Lax${secure}`;
-  } else {
-    document.cookie = 'clawix_has_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+const SESSION_COOKIE_NAME = 'clawix_has_session';
+const LEGACY_ACCESS_KEY = 'clawix_access_token';
+const LEGACY_REFRESH_KEY = 'clawix_refresh_token';
+
+// One-shot migration: clear any tokens left in localStorage from before
+// the cookie migration. Safe to keep indefinitely; eventually all live
+// browsers will have flushed these.
+if (typeof window !== 'undefined') {
+  try {
+    localStorage.removeItem(LEGACY_ACCESS_KEY);
+    localStorage.removeItem(LEGACY_REFRESH_KEY);
+  } catch {
+    // localStorage can throw in private browsing modes — ignore.
   }
 }
 
-export function getStoredTokens(): TokenPair | null {
-  if (typeof window === 'undefined') return null;
-  const accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
-  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-  if (!accessToken || !refreshToken) return null;
-  return { accessToken, refreshToken };
+function setSessionCookie(set: boolean): void {
+  if (typeof window === 'undefined') return;
+  if (set) {
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${SESSION_COOKIE_NAME}=1; path=/; SameSite=Lax${secure}`;
+  } else {
+    document.cookie = `${SESSION_COOKIE_NAME}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+  }
 }
 
-export function storeTokens(tokens: TokenPair): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
-  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
-  sessionCookie(true);
+export function hasSessionCookie(): boolean {
+  if (typeof window === 'undefined') return false;
+  return document.cookie.split(';').some((c) => c.trim().startsWith(`${SESSION_COOKIE_NAME}=1`));
+}
+
+/**
+ * Returns the in-memory access token (and a placeholder refresh token to
+ * preserve the existing TokenPair shape). The real refresh token lives in
+ * the httpOnly clawix_refresh cookie and is never exposed to JS.
+ *
+ * Returns null when there is no access token in memory.
+ */
+export function getStoredTokens(): TokenPair | null {
+  if (!accessTokenCache) return null;
+  return { accessToken: accessTokenCache, refreshToken: '' };
+}
+
+/** Store the access token in memory and mark the session cookie. */
+function rememberAccessToken(accessToken: string): void {
+  accessTokenCache = accessToken;
+  setSessionCookie(true);
 }
 
 export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-  sessionCookie(false);
+  accessTokenCache = null;
+  setSessionCookie(false);
 }
 
 function decodeJwt(token: string): Record<string, unknown> | null {
@@ -80,26 +107,26 @@ export async function login(email: string, password: string): Promise<AuthUser> 
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
-  storeTokens(tokens);
+  rememberAccessToken(tokens.accessToken);
   const user = parseJwtPayload(tokens.accessToken);
   if (!user) throw new Error('Invalid token received');
   return user;
 }
 
-// Mutex to prevent concurrent refresh calls from invalidating each other.
-// The API rotates refresh tokens — only one call can succeed at a time.
+// Mutex prevents concurrent refresh calls from racing each other —
+// the API rotates refresh tokens on every refresh, so only the first
+// caller would succeed.
 let refreshPromise: Promise<TokenPair | null> | null = null;
 
 async function doRefresh(): Promise<TokenPair | null> {
-  const stored = getStoredTokens();
-  if (!stored?.refreshToken) return null;
-
   try {
+    // Body is empty — the httpOnly cookie carries the refresh token.
+    // Send '{}' so the Zod-validated refreshSchema receives an object.
     const tokens = await apiFetch<TokenPair>('/auth/refresh', {
       method: 'POST',
-      body: JSON.stringify({ refreshToken: stored.refreshToken }),
+      body: JSON.stringify({}),
     });
-    storeTokens(tokens);
+    rememberAccessToken(tokens.accessToken);
     return tokens;
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
@@ -118,33 +145,39 @@ export async function refreshTokens(): Promise<TokenPair | null> {
 }
 
 export async function logout(): Promise<void> {
-  const stored = getStoredTokens();
-  if (stored?.refreshToken) {
-    await apiFetch('/auth/logout', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken: stored.refreshToken }),
-    }).catch(() => {
-      /* ignore logout failure */
-    });
-  }
+  // Body is empty — the httpOnly cookie carries the refresh token.
+  await apiFetch('/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  }).catch(() => {
+    /* ignore logout failure — we still clear local state */
+  });
   clearTokens();
 }
 
-export async function getAccessToken(): Promise<string | null> {
-  const stored = getStoredTokens();
-  if (!stored) return null;
-
-  if (!isTokenExpired(stored.accessToken)) {
-    return stored.accessToken;
+/**
+ * Returns a usable access token, refreshing via cookie if needed.
+ *
+ * Use this from any component that needs the bearer token (uploads,
+ * websockets, etc). On a fresh page load the in-memory cache is empty;
+ * if the session cookie is present, attempt a refresh.
+ */
+export async function ensureAccessToken(): Promise<string | null> {
+  if (accessTokenCache && !isTokenExpired(accessTokenCache)) {
+    return accessTokenCache;
   }
-
+  if (!hasSessionCookie()) return null;
   const refreshed = await refreshTokens();
   return refreshed?.accessToken ?? null;
 }
 
+// Kept as the previous async name for backward compat with existing
+// call sites (upload-zone, workspace, projector, use-chat).
+export const getAccessToken = ensureAccessToken;
+
 /** Wrapper for authenticated API calls — auto-attaches JWT and refreshes if expired. */
 export async function authFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = await getAccessToken();
+  const token = await ensureAccessToken();
   if (!token) throw new ApiError(401, 'Not authenticated');
   return apiFetch<T>(path, { ...options, accessToken: token });
 }
