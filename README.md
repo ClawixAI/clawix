@@ -123,9 +123,12 @@ Pluggable tools with approval workflows. Bundle built-in skills, create custom o
 
 ### Prerequisites
 
-- **Node.js 20+** and **pnpm 9+**
-- **Docker** (for agent containers, PostgreSQL, and Redis)
-- **Docker Desktop** (user-friendly platform for container management)
+- [Git](https://git-scm.com/)
+- [Node.js 20+](https://nodejs.org/)
+- [pnpm 9+](https://pnpm.io/installation) (`npm install -g pnpm`)
+- [Docker](https://docs.docker.com/get-docker/) (for agent containers, PostgreSQL, and Redis)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (user-friendly platform for container management)
+- [Docker Compose](https://docs.docker.com/compose/install/) (included in Docker Desktop)
 
 > **Self-hosting in production?** Skip ahead to [Production Deployment](#production-deployment-first-run) — the installer handles `.env` generation, image builds, and bootstrap for you. The steps below are for local development.
 
@@ -136,14 +139,7 @@ Pluggable tools with approval workflows. Bundle built-in skills, create custom o
 git clone https://github.com/ClawixAI/clawix.git
 cd clawix
 
-# 2. Prepare your environment file
-cp .env.example .env
-# Edit .env — set at least one AI provider key:
-#   ANTHROPIC_API_KEY, OPENAI_API_KEY, or ZAI_CODING_API_KEY
-# (The installer will guide you through all required values interactively
-#  if you prefer to skip manual editing)
-
-# 3. Run the interactive installer
+# 2. Run the interactive installer
 pnpm run install:clawix
 ```
 
