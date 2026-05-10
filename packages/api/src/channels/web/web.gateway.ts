@@ -3,6 +3,7 @@ import { HttpAdapterHost } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { createLogger } from '@clawix/shared';
 
@@ -42,10 +43,21 @@ export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     const server = this.httpAdapterHost.httpAdapter.getHttpServer();
-    this.wss = new WebSocketServer({ server, path: '/ws/chat' });
+    // noServer mode: we manually route only matching paths so that other
+    // WebSocketServers (e.g. /ws/notifications) can coexist on the same
+    // HTTP server without one tearing down the other's upgrade.
+    this.wss = new WebSocketServer({ noServer: true });
 
     this.wss.on('connection', (socket: WebSocket, req: IncomingMessage) => {
       this.handleConnection(socket, req);
+    });
+
+    server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      if (url.pathname !== '/ws/chat') return;
+      this.wss?.handleUpgrade(req, socket, head, (ws) => {
+        this.wss?.emit('connection', ws, req);
+      });
     });
 
     logger.info('WebSocket server listening on /ws/chat');

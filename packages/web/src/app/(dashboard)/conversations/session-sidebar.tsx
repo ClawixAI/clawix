@@ -280,8 +280,8 @@ export function SessionSidebar({
                             onSelect(session.id);
                           }}
                           className={cn(
-                            'mx-2 flex w-[calc(100%-16px)] cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50',
-                            selectedId === session.id && 'bg-muted',
+                            'mx-2 flex w-[calc(100%-16px)] cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-all duration-150 hover:translate-x-0.5 hover:bg-primary/5',
+                            selectedId === session.id && 'bg-primary/10 text-foreground',
                             !session.isActive && 'opacity-60',
                           )}
                         >

@@ -55,6 +55,30 @@ export class UserRepository {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
+  /**
+   * Lightweight prefix search by name or email for in-app autocomplete
+   * (e.g. group invite picker). Capped at `limit` rows; returns only
+   * the minimum fields needed to render a suggestion.
+   */
+  async searchByNameOrEmail(
+    query: string,
+    limit: number,
+  ): Promise<readonly { id: string; name: string | null; email: string }[]> {
+    const trimmed = query.trim();
+    if (trimmed.length === 0) return [];
+    return this.prisma.user.findMany({
+      where: {
+        OR: [
+          { email: { contains: trimmed, mode: 'insensitive' } },
+          { name: { contains: trimmed, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, name: true, email: true },
+      orderBy: { email: 'asc' },
+      take: limit,
+    });
+  }
+
   async findByTelegramId(telegramId: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { telegramId } });
   }

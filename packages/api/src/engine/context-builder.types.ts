@@ -1,4 +1,5 @@
 import type { ChatMessage, InboundMessage } from '@clawix/shared';
+import type { SkillStalenessMap } from './skill-loader.types.js';
 
 /** The bare minimum of Session needed by ContextBuilder for prompt caching. */
 export interface SessionCacheRef {
@@ -73,3 +74,9 @@ export const DAILY_NOTES_DAYS = 3;
 
 /** Maximum characters per individual memory item before truncation. */
 export const MEMORY_ITEM_MAX_CHARS = 500;
+
+/** Result of building messages for an agent run. */
+export interface ContextBuildResult {
+  readonly messages: readonly ChatMessage[];
+  readonly stalenessMap: SkillStalenessMap;
+}

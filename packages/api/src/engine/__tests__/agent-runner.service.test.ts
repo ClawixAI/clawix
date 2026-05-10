@@ -45,6 +45,20 @@ vi.mock('../tools/web/index.js', () => ({
   registerWebTools: vi.fn(),
 }));
 
+vi.mock('../tools/browser/tools/index.js', () => ({
+  registerBrowserTools: vi.fn(),
+}));
+
+vi.mock('../tools/browser/vision-config-resolver.js', () => ({
+  resolveVisionConfig: vi.fn().mockResolvedValue({
+    available: true,
+    capable: false,
+    providerLabel: 'test-provider',
+    modelLabel: 'test-model',
+    call: vi.fn().mockResolvedValue('vision description'),
+  }),
+}));
+
 vi.mock('../context-builder.service.js', () => ({
   ContextBuilderService: vi.fn(),
 }));
@@ -88,6 +102,7 @@ import { registerBuiltinTools } from '../tools/index.js';
 import { createSpawnTool } from '../tools/spawn.js';
 import type { ContextBuilderService } from '../context-builder.service.js';
 import type { SearchProviderRegistry } from '../tools/web/search-provider.js';
+import type { AgentRunRegistry } from '../agent-run-registry.service.js';
 
 // ------------------------------------------------------------------ //
 //  Test fixtures                                                      //
@@ -183,6 +198,8 @@ const mockPolicy = {
   maxScheduledTasks: 5,
   minCronIntervalSecs: 300,
   maxTokensPerCronRun: null,
+  allowBrowserCdp: false,
+  maxConcurrentBrowserSessions: 2,
   isActive: true,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -296,10 +313,13 @@ function buildMocks() {
   const mockContextBuilder: {
     buildMessages: ReturnType<typeof vi.fn>;
   } = {
-    buildMessages: vi.fn().mockResolvedValue([
-      { role: 'system' as const, content: 'enriched system prompt' },
-      { role: 'user' as const, content: '[Runtime Context]\n...\n\nHello!' },
-    ]),
+    buildMessages: vi.fn().mockResolvedValue({
+      messages: [
+        { role: 'system' as const, content: 'enriched system prompt' },
+        { role: 'user' as const, content: '[Runtime Context]\n...\n\nHello!' },
+      ],
+      stalenessMap: new Map(),
+    }),
   };
 
   const mockWorkspaceSeeder: {
@@ -349,6 +369,26 @@ function buildMocks() {
     }),
   };
 
+  const mockPrisma: {
+    agentRun: { updateMany: ReturnType<typeof vi.fn> };
+  } = {
+    agentRun: {
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
+  };
+
+  const mockAgentRunRegistry: {
+    register: ReturnType<typeof vi.fn>;
+    unregister: ReturnType<typeof vi.fn>;
+    abort: ReturnType<typeof vi.fn>;
+    abortAllForUser: ReturnType<typeof vi.fn>;
+  } = {
+    register: vi.fn(),
+    unregister: vi.fn(),
+    abort: vi.fn(),
+    abortAllForUser: vi.fn(),
+  };
+
   return {
     mockSessionManager,
     mockContainerRunner,
@@ -367,6 +407,8 @@ function buildMocks() {
     mockCronGuardService,
     mockProviderConfig,
     mockSystemSettings,
+    mockPrisma,
+    mockAgentRunRegistry,
   };
 }
 
@@ -405,7 +447,7 @@ describe('AgentRunnerService', () => {
       mocks.mockContextBuilder as unknown as ContextBuilderService,
       {} as unknown as SearchProviderRegistry,
       { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
-      {} as unknown as import('../../prisma/prisma.service.js').PrismaService,
+      mocks.mockPrisma as unknown as import('../../prisma/prisma.service.js').PrismaService,
       {
         findVisibleToUser: vi.fn().mockResolvedValue([]),
       } as unknown as import('../../db/memory-item.repository.js').MemoryItemRepository,
@@ -423,6 +465,10 @@ describe('AgentRunnerService', () => {
       } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
       mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
       { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
+      { releaseIfActive: vi.fn().mockResolvedValue(undefined) } as any,
+      { getActive: vi.fn().mockReturnValue(null) } as any,
+      { read: vi.fn().mockReturnValue(2), warm: vi.fn().mockResolvedValue(undefined) } as any,
+      mocks.mockAgentRunRegistry as unknown as AgentRunRegistry,
     );
   });
 
@@ -658,11 +704,13 @@ describe('AgentRunnerService', () => {
   it('updates AgentRun to completed status on success', async () => {
     await service.run(defaultOptions);
 
-    expect(mocks.mockAgentRunRepo.update).toHaveBeenCalledWith(
-      'run-1',
+    expect(mocks.mockPrisma.agentRun.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        status: 'completed',
-        output: 'Hello back!',
+        where: { id: 'run-1', status: 'running' },
+        data: expect.objectContaining({
+          status: 'completed',
+          output: 'Hello back!',
+        }),
       }),
     );
   });
@@ -998,6 +1046,88 @@ describe('AgentRunnerService', () => {
     expect(loopRunConfig['onEvent']).toBe(onEvent);
     expect(result.streamingUsed).toBe(true);
   });
+
+  // ---------------------------------------------------------------- //
+  //  Cancellation tests                                               //
+  // ---------------------------------------------------------------- //
+
+  describe('cancellation', () => {
+    it('registers a controller in the registry after AgentRun creation', async () => {
+      await service.run(defaultOptions);
+
+      expect(mocks.mockAgentRunRegistry.register).toHaveBeenCalledWith(
+        'run-1',
+        expect.any(AbortController),
+      );
+      expect(mocks.mockAgentRunRegistry.unregister).toHaveBeenCalledWith('run-1');
+    });
+
+    it('cancel signal fired before loop runs returns cancelled status', async () => {
+      const controller = new AbortController();
+      controller.abort('user_stop');
+
+      mockLoopInstance.run.mockResolvedValue({
+        ...mockLoopResult,
+        content: null,
+      });
+
+      const result = await service.run({ ...defaultOptions, abortSignal: controller.signal });
+
+      expect(result.status).toBe('cancelled');
+    });
+
+    it('records token usage on cancel (per spec D6)', async () => {
+      const controller = new AbortController();
+      controller.abort('user_stop');
+
+      mockLoopInstance.run.mockResolvedValue({
+        ...mockLoopResult,
+        content: null,
+      });
+
+      await service.run({ ...defaultOptions, abortSignal: controller.signal });
+
+      expect(mocks.mockTokenCounter.recordAggregateUsage).toHaveBeenCalled();
+    });
+
+    it('passes abortSignal to loop.run', async () => {
+      await service.run(defaultOptions);
+
+      expect(mockLoopInstance.run).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+      );
+    });
+
+    it('cancel-during-loop: catch branch returns cancelled and does not write failed', async () => {
+      const controller = new AbortController();
+
+      // Simulate the stop endpoint: abort mid-loop, then the loop throws
+      mockLoopInstance.run.mockImplementation(
+        async (_msgs: unknown, _opts: { abortSignal?: AbortSignal }) => {
+          // Trigger user stop mid-loop
+          controller.abort('user_stop');
+          // Yield a tick so AbortSignal.any merges the parent abort
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          // Loop throws on abort (as the real loop would)
+          const err = new Error('AbortError');
+          err.name = 'AbortError';
+          throw err;
+        },
+      );
+
+      const result = await service.run({ ...defaultOptions, abortSignal: controller.signal });
+
+      expect(result.status).toBe('cancelled');
+      // Catch branch must NOT call agentRunRepo.update with status='failed'
+      expect(mocks.mockAgentRunRepo.update).not.toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ status: 'failed' }),
+      );
+      // recordAggregateUsage is still called on cancel (spec D6)
+      expect(mocks.mockTokenCounter.recordAggregateUsage).toHaveBeenCalled();
+    });
+  });
 });
 
 // ------------------------------------------------------------------ //
@@ -1032,7 +1162,7 @@ describe('AgentRunnerService — with messageStore', () => {
       mocks.mockContextBuilder as unknown as ContextBuilderService,
       {} as unknown as SearchProviderRegistry,
       { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
-      {} as unknown as import('../../prisma/prisma.service.js').PrismaService,
+      mocks.mockPrisma as unknown as import('../../prisma/prisma.service.js').PrismaService,
       {
         findVisibleToUser: vi.fn().mockResolvedValue([]),
       } as unknown as import('../../db/memory-item.repository.js').MemoryItemRepository,
@@ -1050,6 +1180,10 @@ describe('AgentRunnerService — with messageStore', () => {
       } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
       mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
       { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
+      { releaseIfActive: vi.fn().mockResolvedValue(undefined) } as any,
+      { getActive: vi.fn().mockReturnValue(null) } as any,
+      { read: vi.fn().mockReturnValue(2), warm: vi.fn().mockResolvedValue(undefined) } as any,
+      mocks.mockAgentRunRegistry as unknown as AgentRunRegistry,
     );
   });
 
@@ -1112,7 +1246,7 @@ describe('AgentRunnerService — recovery integration', () => {
       mocks.mockContextBuilder as unknown as ContextBuilderService,
       {} as unknown as SearchProviderRegistry,
       { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
-      {} as unknown as import('../../prisma/prisma.service.js').PrismaService,
+      mocks.mockPrisma as unknown as import('../../prisma/prisma.service.js').PrismaService,
       {
         findVisibleToUser: vi.fn().mockResolvedValue([]),
       } as unknown as import('../../db/memory-item.repository.js').MemoryItemRepository,
@@ -1130,6 +1264,10 @@ describe('AgentRunnerService — recovery integration', () => {
       } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
       mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
       { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
+      { releaseIfActive: vi.fn().mockResolvedValue(undefined) } as any,
+      { getActive: vi.fn().mockReturnValue(null) } as any,
+      { read: vi.fn().mockReturnValue(2), warm: vi.fn().mockResolvedValue(undefined) } as any,
+      mocks.mockAgentRunRegistry as unknown as AgentRunRegistry,
     );
   });
 

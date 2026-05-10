@@ -31,6 +31,13 @@ export class TokensController {
     return this.tokensService.getUserAgentBreakdown(targetUserId);
   }
 
+  @Get('per-user/:userId/models')
+  getUserModelBreakdown(@Param('userId') userId: string, @Req() req: AuthRequest) {
+    const { user } = req;
+    const targetUserId = user.role === 'admin' ? userId : user.sub;
+    return this.tokensService.getUserModelBreakdown(targetUserId);
+  }
+
   @Get('usage-over-time')
   getUsageOverTime(
     @Req() req: AuthRequest,

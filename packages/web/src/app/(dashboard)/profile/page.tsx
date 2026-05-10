@@ -30,9 +30,9 @@ export default function ProfilePage() {
   // Profile form
   const [name, setName] = useState('');
   const [telegramId, setTelegramId] = useState('');
-  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramConfigured, setTelegramConfigured] = useState(false);
   const [whatsappJid, setWhatsappJid] = useState('');
-  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
+  const [whatsappConfigured, setWhatsappConfigured] = useState(false);
 
   // Password form
   const [currentPassword, setCurrentPassword] = useState('');
@@ -45,21 +45,17 @@ export default function ProfilePage() {
     try {
       const [data, channels] = await Promise.all([
         authFetch<Profile>('/api/v1/me'),
-        authFetch<{ data: { type: string; isActive: boolean }[] }>('/api/v1/channels').catch(
-          () => ({ data: [] }),
-        ),
+        // Channel-id fields appear once the channel has been created in the
+        // org, regardless of whether it's currently active.
+        authFetch<{ data: { type: string }[] }>('/api/v1/channels').catch(() => ({ data: [] })),
       ]);
       setProfile(data);
       setName(data.name);
       setTelegramId(data.telegramId ?? '');
       setWhatsappJid(data.whatsappJid ?? '');
       const channelList = Array.isArray(channels.data) ? channels.data : [];
-      setTelegramEnabled(
-        channelList.some((ch) => ch.type.toLowerCase() === 'telegram' && ch.isActive),
-      );
-      setWhatsappEnabled(
-        channelList.some((ch) => ch.type.toLowerCase() === 'whatsapp' && ch.isActive),
-      );
+      setTelegramConfigured(channelList.some((ch) => ch.type.toLowerCase() === 'telegram'));
+      setWhatsappConfigured(channelList.some((ch) => ch.type.toLowerCase() === 'whatsapp'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile');
     } finally {
@@ -133,8 +129,13 @@ export default function ProfilePage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Profile</h1>
+      <div className="border-b border-border/60 pb-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground/70">
+            account
+          </span>
+        </div>
         <p className="text-sm text-muted-foreground">Manage your account settings.</p>
       </div>
 
@@ -206,7 +207,7 @@ export default function ProfilePage() {
               required
             />
           </div>
-          {telegramEnabled && (
+          {telegramConfigured && (
             <div className="flex flex-col gap-2">
               <Label htmlFor="profile-telegram">Telegram ID</Label>
               <Input
@@ -224,7 +225,7 @@ export default function ProfilePage() {
               </p>
             </div>
           )}
-          {whatsappEnabled && (
+          {whatsappConfigured && (
             <div className="flex flex-col gap-2">
               <Label htmlFor="profile-whatsapp">WhatsApp JID</Label>
               <Input

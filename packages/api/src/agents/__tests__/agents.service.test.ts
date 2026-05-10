@@ -59,8 +59,17 @@ function makeService(opts: {
   } as unknown as UserAgentRepository;
 
   const prisma = {} as unknown as PrismaService;
+  const notifications = {
+    create: vi.fn().mockResolvedValue(undefined),
+  } as unknown as import('../../notifications/notifications.fanout.js').NotificationFanoutService;
 
-  const service = new AgentsService(agentDefRepo, agentRunRepo, userAgentRepo, prisma);
+  const service = new AgentsService(
+    agentDefRepo,
+    agentRunRepo,
+    userAgentRepo,
+    prisma,
+    notifications,
+  );
   return { service, agentDefRepo, agentRunRepo, userAgentRepo };
 }
 

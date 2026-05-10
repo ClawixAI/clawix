@@ -103,7 +103,10 @@ describe('ReasoningLoop', () => {
     expect(result.content).toBe('Found the answer.');
     expect(result.iterations).toBe(2);
     expect(result.totalUsage).toEqual(makeUsage(30, 20));
-    expect(searchTool.execute).toHaveBeenCalledWith({ query: 'test' });
+    expect(searchTool.execute).toHaveBeenCalledWith(
+      { query: 'test' },
+      expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
+    );
     expect(result.hitMaxIterations).toBe(false);
   });
 
@@ -608,5 +611,44 @@ describe('ReasoningLoop', () => {
       'start:assistant_chunk',
       'end:assistant_chunk',
     ]);
+  });
+
+  it('forwards abortSignal into tool registry execute calls', async () => {
+    const seenSignals: AbortSignal[] = [];
+    const captureTool = {
+      name: 'capture',
+      description: '',
+      parameters: { type: 'object', properties: {} },
+      execute: vi.fn(
+        async (_params: Record<string, unknown>, ctx?: { abortSignal?: AbortSignal }) => {
+          if (ctx?.abortSignal) seenSignals.push(ctx.abortSignal);
+          return { output: 'ok', isError: false };
+        },
+      ),
+    };
+
+    const registry = new ToolRegistry();
+    registry.register(captureTool);
+
+    const provider = makeMockProvider([
+      createLLMResponse({
+        content: '',
+        toolCalls: [{ id: 'tc1', name: 'capture', arguments: {} }],
+        finishReason: 'tool_use',
+        usage: makeUsage(0, 0),
+      }),
+      createLLMResponse({
+        content: 'done',
+        toolCalls: [],
+        finishReason: 'stop',
+        usage: makeUsage(0, 0),
+      }),
+    ]);
+
+    const loop = new ReasoningLoop(provider, registry, mockCompressor, providerInfo);
+    await loop.run([{ role: 'user', content: 'go' }]);
+
+    expect(seenSignals).toHaveLength(1);
+    expect(seenSignals[0]).toBeInstanceOf(AbortSignal);
   });
 });

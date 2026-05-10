@@ -144,8 +144,13 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        <div className="border-b border-border/60 pb-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+            <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground/70">
+              overview
+            </span>
+          </div>
           <p className="text-sm text-muted-foreground">
             Here&apos;s an overview of your AI orchestration platform.
           </p>
@@ -160,8 +165,13 @@ export default function DashboardPage() {
   return (
     <VantaBackground effect="topology" className="min-h-[calc(100vh-3.5rem)] p-6">
       <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+        <div className="border-b border-border/60 pb-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+            <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground/70">
+              overview
+            </span>
+          </div>
           <p className="text-sm text-muted-foreground">
             Here&apos;s an overview of your AI orchestration platform.
           </p>

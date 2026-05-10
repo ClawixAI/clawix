@@ -45,6 +45,12 @@ interface SubmitOptions {
    * recovered tasks run unbounded (acceptable — they're orphans).
    */
   readonly budgetTracker?: BudgetTracker;
+  /**
+   * Optional parent abort signal. When fired, the sub-agent's run is
+   * cancelled (its own effectiveSignal will trip via AbortSignal.any).
+   * In-memory only — the recovery path (orphan runs) has no parent signal.
+   */
+  readonly abortSignal?: AbortSignal;
 }
 
 interface QueueItem {

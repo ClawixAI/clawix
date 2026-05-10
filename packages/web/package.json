@@ -38,6 +38,7 @@
     "recharts": "2.15.4",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.0.0",
     "three": "^0.183.2",
     "vanta": "^0.5.24"

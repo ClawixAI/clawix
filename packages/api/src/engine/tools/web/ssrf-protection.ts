@@ -21,13 +21,70 @@ export interface ValidatedUrl {
   readonly protocol: string;
 }
 
+// ------------------------------------------------------------------ //
+//  Scheme denylist                                                     //
+// ------------------------------------------------------------------ //
+
+/**
+ * Schemes that are unconditionally blocked regardless of host.
+ * These could expose local filesystem content, browser internals,
+ * or allow script injection.
+ */
+const DENIED_SCHEMES = new Set(['file', 'chrome', 'chrome-extension', 'javascript', 'data']);
+
+// ------------------------------------------------------------------ //
+//  Internal allowlist                                                  //
+// ------------------------------------------------------------------ //
+
+interface AllowEntry {
+  host: string;
+  port: number | null;
+}
+
+/**
+ * Parse the BROWSER_INTERNAL_ALLOWLIST environment variable.
+ *
+ * Format: comma-separated list of `host` or `host:port` entries.
+ * Example: "admin.internal,grafana.internal:3000"
+ */
+function parseAllowlist(): readonly AllowEntry[] {
+  const raw = process.env['BROWSER_INTERNAL_ALLOWLIST'] ?? '';
+  if (!raw.trim()) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const colonIdx = entry.indexOf(':');
+      if (colonIdx === -1) return { host: entry.toLowerCase(), port: null };
+      const host = entry.slice(0, colonIdx).toLowerCase();
+      const port = Number(entry.slice(colonIdx + 1));
+      return { host, port: Number.isFinite(port) ? port : null };
+    });
+}
+
+/**
+ * Return true when hostname:port matches an entry in BROWSER_INTERNAL_ALLOWLIST.
+ *
+ * Matching is exact-host (case-insensitive), port-aware, no wildcards.
+ * A port-less allowlist entry matches any port on that host.
+ */
+function isAllowlisted(hostname: string, port: number): boolean {
+  const entries = parseAllowlist();
+  const lowerHost = hostname.toLowerCase();
+  return entries.some((e) => e.host === lowerHost && (e.port === null || e.port === port));
+}
+
 /**
  * Validate a URL for SSRF safety.
  *
- * 1. Rejects non-http/https schemes.
- * 2. Resolves hostname to IP via DNS.
- * 3. Checks resolved IP against blocked ranges.
- * 4. Returns resolved IP for use in the actual request (prevents DNS rebinding).
+ * 1. Rejects denied schemes (file, chrome, chrome-extension, javascript, data).
+ * 2. Allows about:blank; rejects all other about: URLs.
+ * 3. Rejects non-http/https schemes.
+ * 4. Resolves hostname to IP via DNS.
+ * 5. Short-circuits private-IP check when host:port is in BROWSER_INTERNAL_ALLOWLIST.
+ * 6. Checks resolved IP against blocked ranges.
+ * 7. Returns resolved IP for use in the actual request (prevents DNS rebinding).
  *
  * @throws Error if the URL is invalid, uses a blocked scheme, or resolves to a blocked IP.
  */
@@ -40,6 +97,29 @@ export async function validateUrl(url: string): Promise<ValidatedUrl> {
     throw new Error(`Invalid URL: ${url}`);
   }
 
+  const scheme = parsed.protocol.replace(/:$/, '').toLowerCase();
+
+  // Step 2: Apply scheme denylist before any other check.
+  if (DENIED_SCHEMES.has(scheme)) {
+    throw new Error(`scheme blocked: ${scheme}: URLs are not allowed`);
+  }
+
+  // Step 3: Handle about: — only about:blank is permitted.
+  if (scheme === 'about') {
+    if (url !== 'about:blank') {
+      throw new Error(`scheme blocked: about: URLs other than about:blank are not allowed`);
+    }
+    // about:blank is a no-op sentinel — return a synthetic ValidatedUrl.
+    return {
+      hostname: '',
+      resolvedIp: '',
+      port: 0,
+      pathname: 'blank',
+      protocol: 'about:',
+    };
+  }
+
+  // Step 4: Only http/https from here on.
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error(`Blocked scheme "${parsed.protocol}" — only http: and https: are allowed`);
   }
@@ -48,17 +128,32 @@ export async function validateUrl(url: string): Promise<ValidatedUrl> {
     throw new Error('URL has no hostname');
   }
 
-  // Step 2: Resolve hostname to IP
+  // Step 5: Resolve hostname to IP
   const { address, family } = await dns.promises.lookup(parsed.hostname);
 
-  // Step 3: Check resolved IP against blocked ranges
+  const defaultPort = parsed.protocol === 'https:' ? 443 : 80;
+  const port = parsed.port ? Number(parsed.port) : defaultPort;
+
+  // Step 6: Short-circuit private-IP check when host:port is explicitly allowlisted.
+  if (isAllowlisted(parsed.hostname, port)) {
+    logger.debug(
+      { url, resolvedIp: address, port },
+      'SSRF allowlist: bypassing private-IP check for allowlisted host',
+    );
+    return {
+      hostname: parsed.hostname,
+      resolvedIp: address,
+      port,
+      pathname: parsed.pathname + parsed.search,
+      protocol: parsed.protocol,
+    };
+  }
+
+  // Step 7: Check resolved IP against blocked ranges
   if (isBlockedIp(address, family)) {
     logger.warn({ url, resolvedIp: address }, 'SSRF blocked: resolved to private/reserved IP');
     throw new Error(`URL resolves to blocked IP range (${address})`);
   }
-
-  const defaultPort = parsed.protocol === 'https:' ? 443 : 80;
-  const port = parsed.port ? Number(parsed.port) : defaultPort;
 
   return {
     hostname: parsed.hostname,

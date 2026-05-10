@@ -50,7 +50,12 @@ export function createSaveMemoryTool(prisma: PrismaService, userId: string): Too
     name: 'save_memory',
     description:
       'Save or update a personal memory item. Provide content (text) and optional tags. ' +
-      'To update an existing memory, provide its memoryId.',
+      'When using structured tags, include exactly one `domain:<x>` tag (e.g. `domain:hr`) — ' +
+      "this places the item in the kanban column of the same name on the user's `/memory` page. " +
+      '`daily:YYYY-MM-DD` tags are exempt from the domain rule (used for the daily-notes flow). ' +
+      'To update an existing memory, provide its memoryId. ' +
+      'To share a memory with the whole organization, use the `share_memory` tool with ' +
+      "targetType:'org' (admins only).",
     parameters: {
       type: 'object',
       properties: {
@@ -61,7 +66,10 @@ export function createSaveMemoryTool(prisma: PrismaService, userId: string): Too
         tags: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Optional tags for categorization (max 10 tags, each max 50 chars).',
+          description:
+            'Optional tags. Conventions: exactly one `domain:<x>` tag when storing structured ' +
+            'memory; `daily:YYYY-MM-DD` for the daily-notes flow (exempt from domain rule). ' +
+            'Max 10 tags, each max 50 chars.',
         },
         memoryId: {
           type: 'string',
@@ -89,6 +97,20 @@ export function createSaveMemoryTool(prisma: PrismaService, userId: string): Too
 
       if (tags.length > MAX_TAGS || tags.some((t) => t.length > MAX_TAG_LENGTH)) {
         return err('Too many tags (max 10) or tag too long (max 50 chars).');
+      }
+
+      // --- domain: tag rule (custom-memory feature) ---
+      // If any non-daily tag is present, exactly one `domain:<x>` tag is required.
+      // Daily-only items are exempt (they belong to the per-user daily-notes flow).
+      const nonDailyTags = tags.filter((t) => !t.startsWith('daily:'));
+      if (nonDailyTags.length > 0) {
+        const domainTags = tags.filter((t) => t.startsWith('domain:'));
+        if (domainTags.length !== 1) {
+          return err(
+            "When using non-daily tags, include exactly one 'domain:<x>' tag " +
+              '(e.g. domain:hr, domain:engineering).',
+          );
+        }
       }
 
       // --- Update path ---
@@ -155,8 +177,19 @@ export function createSearchMemoryTool(memoryItemRepo: MemoryItemRepository, use
   return {
     name: 'search_memory',
     description:
-      'Search your memories and shared memories by text query and/or tags. ' +
-      'Returns matching memory items with content, tags, and ownership info.',
+      'Search memory items by text query, tags, and/or scope. Returns matching ' +
+      'items with content, tags, and an `isOwned` flag.\n\n' +
+      'Scope:\n' +
+      '- "visible" (default) — your own items + items shared with you via ' +
+      '`MemoryShare` (group or org). **Use this for "list my memory", "what ' +
+      'memories do I have", or any general lookup** — the user almost always ' +
+      'wants to see everything they can access, not just what they own.\n' +
+      '- "mine" — only items you OWN (excludes any shared/group/org items). ' +
+      'Use this only when the user explicitly asks for "items I created" or ' +
+      '"memory I own".\n\n' +
+      'For specific lookups ("what\'s the leave policy?", "what framework am I using?") ' +
+      'add a `query` to filter by content. Calling with no filters returns the 20 most ' +
+      'recent visible items, which is what you want for a generic "list my memory" ask.',
     parameters: {
       type: 'object',
       properties: {
@@ -166,20 +199,27 @@ export function createSearchMemoryTool(memoryItemRepo: MemoryItemRepository, use
           items: { type: 'string' },
           description: 'Filter by tags (all specified tags must be present).',
         },
+        scope: {
+          type: 'string',
+          enum: ['mine', 'visible'],
+          description: "'mine' = only items you own. 'visible' (default) = own + shared + public.",
+        },
       },
     },
 
     async execute(params: Record<string, unknown>): Promise<ToolResult> {
       const query = params['query'] as string | undefined;
       const tags = params['tags'] as string[] | undefined;
+      const rawScope = params['scope'] as string | undefined;
+      const scope: 'mine' | 'visible' = rawScope === 'mine' ? 'mine' : 'visible';
 
-      if (!query && (!tags || tags.length === 0)) {
-        return err('At least one of query or tags must be provided.');
-      }
-
+      // No-args is allowed: returns the 20 most recent visible items so a generic
+      // "list my memory" intent works without the agent having to invent a query.
+      // The 20-row cap bounds the response.
       const items = await memoryItemRepo.search(userId, {
         query,
         tags,
+        scope,
         maxResults: 20,
       });
 
@@ -302,6 +342,21 @@ export function createShareMemoryTool(prisma: PrismaService, userId: string): To
 
       if (item.ownerId !== userId) {
         return err('You can only share your own memories.');
+      }
+
+      // --- Admin gate for org-wide shares ---
+      // Mirror MemoryService.create/update: only admin can flip the
+      // MemoryShare(targetType=ORG) row ON. Without this check the agent
+      // tool was a back-door around the dashboard's admin-only "Share with
+      // organization" toggle.
+      if (targetType === 'org') {
+        const me = (await prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        })) as { readonly role: string } | null;
+        if (me?.role !== 'admin') {
+          return err('Only admins can share memory with the organization.');
+        }
       }
 
       // --- Group membership check ---

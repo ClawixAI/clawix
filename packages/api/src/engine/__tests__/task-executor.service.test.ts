@@ -241,6 +241,28 @@ describe('TaskExecutorService', () => {
       deferred2.resolve(makeRunResult('run-2'));
     });
 
+    it('forwards abortSignal from SubmitOptions into agentRunner.run', async () => {
+      const controller = new AbortController();
+
+      service.submit('run-signal', {
+        agentDefinitionId: 'agent-def-1',
+        input: 'Hello!',
+        userId: 'user-1',
+        sessionId: 'sess-1',
+        abortSignal: controller.signal,
+      });
+
+      await Promise.resolve();
+
+      expect(mockAgentRunner.run).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentRunId: 'run-signal',
+          isSubAgent: true,
+          abortSignal: controller.signal,
+        }),
+      );
+    });
+
     it('rejects and fails AgentRun when queue is full (MAX_PENDING_AGENTS)', async () => {
       // Fill concurrency (2 active)
       const deferred1 = createDeferred<RunResult>();

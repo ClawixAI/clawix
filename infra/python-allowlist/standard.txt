@@ -1,0 +1,11 @@
+# Standard tier — curated extras beyond the pre-baked set.
+# Format: one PEP-503-normalized package name per line, alphabetically sorted.
+# Transitives must also be listed.
+
+charset-normalizer
+polars
+pyarrow
+pytz
+six
+typing-extensions
+tzdata

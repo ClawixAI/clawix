@@ -32,20 +32,20 @@ const builtinCommands: SlashItem[] = [
 
 const suggestions = [
   {
-    title: 'Analyze market trends',
-    description: 'for AI orchestration platforms',
+    title: 'Draft a launch announcement',
+    description: 'for next quarter’s product release',
   },
   {
-    title: 'Review pull request',
-    description: 'with security-focused analysis',
+    title: 'Brainstorm campaign ideas',
+    description: 'targeting SMB customers on LinkedIn',
   },
   {
-    title: 'Create a deployment plan',
-    description: 'for Docker Compose setup',
+    title: 'Summarize this month’s pipeline',
+    description: 'with top deals and risks called out',
   },
   {
-    title: 'Explain container isolation',
-    description: 'in multi-agent systems',
+    title: 'Write a customer follow-up email',
+    description: 'after a discovery call',
   },
 ];
 
@@ -65,9 +65,9 @@ function SuggestionCard({
   return (
     <button
       onClick={onClick}
-      className="flex cursor-pointer flex-col items-start justify-center rounded-lg border border-border p-4 text-left transition-colors hover:bg-muted/50"
+      className="group flex cursor-pointer flex-col items-start justify-center rounded-lg border border-l-[3px] border-l-primary/50 p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.02] hover:border-primary/40 hover:bg-primary/10 hover:shadow-[0_8px_24px_-8px_rgba(217,119,6,0.35)]"
     >
-      <span className="text-sm font-semibold">{title}</span>
+      <span className="text-sm font-semibold tracking-tight">{title}</span>
       <span className="text-sm text-muted-foreground">{description}</span>
     </button>
   );

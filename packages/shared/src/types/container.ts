@@ -37,6 +37,12 @@ export interface ExecOptions {
   readonly stdin?: string;
   readonly workdir?: string;
   readonly timeout?: number;
+  /**
+   * Optional signal to abort the in-flight `docker exec`. When fired,
+   * the child receives SIGTERM and exec() resolves with `{ exitCode: -1, ... }`
+   * (does not throw).
+   */
+  readonly signal?: AbortSignal;
 }
 
 /** Result of executing a command inside a container. */

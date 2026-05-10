@@ -68,6 +68,13 @@ export interface StartOptions {
   readonly skillMounts?: {
     readonly builtinHostPath: string;
   };
+  /**
+   * Override the default Docker network for this container.
+   * Defaults to 'none' (fully isolated) when not specified.
+   * Use a named Docker network (e.g. 'clawix-internal') when the container
+   * needs to reach a sidecar service such as the PyPI proxy.
+   */
+  readonly network?: string;
 }
 
 // ------------------------------------------------------------------ //
@@ -142,6 +149,7 @@ export class ContainerRunner implements IContainerRunner {
       validatedMounts,
       workspaceHostPath: options.workspaceHostPath,
       skillMounts: options.skillMounts,
+      network: options.network,
     });
 
     logger.info(
@@ -182,7 +190,7 @@ export class ContainerRunner implements IContainerRunner {
     command: readonly string[],
     options: ExecOptions = {},
   ): Promise<ExecResult> {
-    const { stdin, workdir, timeout: rawTimeout } = options;
+    const { stdin, workdir, timeout: rawTimeout, signal } = options;
 
     const timeoutMs = Math.min(rawTimeout ?? DEFAULT_EXEC_TIMEOUT_MS, MAX_EXEC_TIMEOUT_MS);
 
@@ -201,10 +209,10 @@ export class ContainerRunner implements IContainerRunner {
     logger.debug({ containerId, command, workdir }, 'Executing command in container');
 
     if (stdin !== undefined) {
-      return this.execWithStdin(args, stdin);
+      return this.execWithStdin(args, stdin, signal);
     }
 
-    return this.execWithTimeout(args, timeoutMs);
+    return this.execWithTimeout(args, timeoutMs, signal);
   }
 
   // ---------------------------------------------------------------- //
@@ -252,15 +260,32 @@ export class ContainerRunner implements IContainerRunner {
   /**
    * Run `docker exec` with a timeout using the promisified execFile.
    * Returns exitCode 124 if the timeout fires before the command completes.
+   * Returns exitCode -1 if the AbortSignal fires before the command completes.
    */
-  private async execWithTimeout(args: string[], timeoutMs: number): Promise<ExecResult> {
+  private async execWithTimeout(
+    args: string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<ExecResult> {
     try {
-      const { stdout, stderr } = await execFileAsync('docker', args, { timeout: timeoutMs });
+      const { stdout, stderr } = await execFileAsync('docker', args, {
+        timeout: timeoutMs,
+        ...(signal !== undefined ? { signal } : {}),
+      });
       return { exitCode: 0, stdout, stderr };
     } catch (err: unknown) {
       // execFile rejects with an error that may carry .code (process exit code)
       // or .killed / signal for timeout scenarios.
       if (isExecError(err)) {
+        // AbortSignal fired (pre-aborted or mid-flight)
+        if (err.code === 'ABORT_ERR') {
+          return {
+            exitCode: -1,
+            stdout: err.stdout ?? '',
+            stderr: err.stderr ?? 'exec aborted',
+          };
+        }
+
         if (err.killed === true || err.signal === 'SIGTERM') {
           return {
             exitCode: 124,
@@ -285,10 +310,16 @@ export class ContainerRunner implements IContainerRunner {
   /**
    * Run `docker exec -i` via spawn to support piping stdin.
    * Collects stdout/stderr buffers, writes stdin, and resolves on 'close'.
+   * When `signal` fires, the spawned child is killed and resolves with exitCode -1.
    */
-  private execWithStdin(args: string[], stdinData: string): Promise<ExecResult> {
+  private execWithStdin(
+    args: string[],
+    stdinData: string,
+    signal?: AbortSignal,
+  ): Promise<ExecResult> {
     return new Promise((resolve) => {
-      const proc = spawn('docker', args);
+      const spawnOptions = signal !== undefined ? { signal } : {};
+      const proc = spawn('docker', args, spawnOptions);
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
 
@@ -301,6 +332,16 @@ export class ContainerRunner implements IContainerRunner {
       });
 
       proc.on('close', (code: number | null) => {
+        // The close handler is the sole resolver for the abort case so that
+        // buffered stdout/stderr collected before the kill is preserved.
+        if (signal?.aborted === true) {
+          resolve({
+            exitCode: -1,
+            stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+            stderr: Buffer.concat(stderrChunks).toString('utf8') || 'exec aborted',
+          });
+          return;
+        }
         resolve({
           exitCode: code ?? 1,
           stdout: Buffer.concat(stdoutChunks).toString('utf8'),
@@ -308,8 +349,19 @@ export class ContainerRunner implements IContainerRunner {
         });
       });
 
-      proc.on('error', (err: Error) => {
-        resolve({ exitCode: 1, stdout: '', stderr: err.message });
+      proc.on('error', (err: NodeJS.ErrnoException) => {
+        // Abort-driven errors (ABORT_ERR) must NOT resolve here: the close
+        // handler fires next and is the sole resolver for the abort case,
+        // preserving buffered stdout/stderr collected before the kill.
+        if (err.code === 'ABORT_ERR') {
+          return;
+        }
+        // Genuine spawn errors only (ENOENT, EACCES, etc.).
+        resolve({
+          exitCode: 1,
+          stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+          stderr: Buffer.concat(stderrChunks).toString('utf8') + (err.message ?? String(err)),
+        });
       });
 
       proc.stdin.write(stdinData);
@@ -343,6 +395,8 @@ interface DockerRunArgsParams {
   readonly validatedMounts: readonly ValidatedMount[];
   readonly workspaceHostPath?: string;
   readonly skillMounts?: StartOptions['skillMounts'];
+  /** Docker network to attach the container to. Defaults to 'none'. */
+  readonly network?: string;
 }
 
 /**
@@ -361,7 +415,7 @@ export function buildDockerRunArgs(params: DockerRunArgsParams): string[] {
     '--user',
     '1000:1000',
     '--network',
-    'none',
+    params.network ?? 'none',
     '--cpus',
     containerConfig.cpuLimit,
     '--memory',

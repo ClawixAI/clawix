@@ -23,7 +23,7 @@ describe('MemoryItemRepository', () => {
   });
 
   describe('findVisibleToUser', () => {
-    it('should query with OR conditions for private, group-shared, and org-shared items', async () => {
+    it('queries with OR for private, group-shared, and org-shared items', async () => {
       mockPrisma.groupMember.findMany.mockResolvedValue([{ groupId: 'group-1', userId: 'user-1' }]);
       mockPrisma.memoryItem.findMany.mockResolvedValue([mockMemoryItem]);
 
@@ -83,6 +83,106 @@ describe('MemoryItemRepository', () => {
       const result = await repo.findVisibleToUser('user-1');
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('create', () => {
+    it('inserts a row with ownerId, content, tags', async () => {
+      mockPrisma.memoryItem.create.mockResolvedValue(mockMemoryItem);
+
+      const result = await repo.create({
+        ownerId: 'user-1',
+        content: { text: 'hello' },
+        tags: ['domain:hr', 'public'],
+      });
+
+      expect(mockPrisma.memoryItem.create).toHaveBeenCalledWith({
+        data: {
+          ownerId: 'user-1',
+          content: { text: 'hello' },
+          tags: ['domain:hr', 'public'],
+        },
+      });
+      expect(result).toEqual(mockMemoryItem);
+    });
+
+    it('defaults tags to [] when not provided', async () => {
+      mockPrisma.memoryItem.create.mockResolvedValue(mockMemoryItem);
+
+      await repo.create({ ownerId: 'user-1', content: 'plain text' });
+
+      expect(mockPrisma.memoryItem.create).toHaveBeenCalledWith({
+        data: { ownerId: 'user-1', content: 'plain text', tags: [] },
+      });
+    });
+  });
+
+  describe('update', () => {
+    it('patches content and tags', async () => {
+      mockPrisma.memoryItem.update.mockResolvedValue({ ...mockMemoryItem, tags: ['domain:hr'] });
+
+      await repo.update('mem-1', { content: 'new', tags: ['domain:hr'] });
+
+      expect(mockPrisma.memoryItem.update).toHaveBeenCalledWith({
+        where: { id: 'mem-1' },
+        data: { content: 'new', tags: ['domain:hr'] },
+      });
+    });
+
+    it('omits undefined fields from the patch', async () => {
+      mockPrisma.memoryItem.update.mockResolvedValue(mockMemoryItem);
+
+      await repo.update('mem-1', { tags: ['domain:hr'] });
+
+      expect(mockPrisma.memoryItem.update).toHaveBeenCalledWith({
+        where: { id: 'mem-1' },
+        data: { tags: ['domain:hr'] },
+      });
+    });
+  });
+
+  describe('delete', () => {
+    it('deletes by id', async () => {
+      mockPrisma.memoryItem.delete.mockResolvedValue(mockMemoryItem);
+
+      await repo.delete('mem-1');
+
+      expect(mockPrisma.memoryItem.delete).toHaveBeenCalledWith({
+        where: { id: 'mem-1' },
+      });
+    });
+  });
+
+  describe('findById', () => {
+    it('returns the row when found', async () => {
+      mockPrisma.memoryItem.findUnique.mockResolvedValue(mockMemoryItem);
+
+      const result = await repo.findById('mem-1');
+
+      expect(mockPrisma.memoryItem.findUnique).toHaveBeenCalledWith({ where: { id: 'mem-1' } });
+      expect(result).toEqual(mockMemoryItem);
+    });
+
+    it('returns null when not found (does not throw)', async () => {
+      mockPrisma.memoryItem.findUnique.mockResolvedValue(null);
+
+      const result = await repo.findById('missing');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('listOwnedByUser', () => {
+    it('returns rows owned by the user, newest first', async () => {
+      mockPrisma.memoryItem.findMany.mockResolvedValue([mockMemoryItem]);
+
+      const result = await repo.listOwnedByUser('user-1');
+
+      expect(mockPrisma.memoryItem.findMany).toHaveBeenCalledWith({
+        where: { ownerId: 'user-1' },
+        orderBy: { updatedAt: 'desc' },
+      });
+      expect(result).toEqual([mockMemoryItem]);
     });
   });
 

@@ -19,7 +19,8 @@ describe('ChatController', () => {
   });
 
   function createController(): ChatController {
-    return new ChatController(mockSessionRepo as never, mockPrisma as never);
+    const mockRegistry = { abortAllForUser: vi.fn() };
+    return new ChatController(mockSessionRepo as never, mockPrisma as never, mockRegistry as never);
   }
 
   describe('GET /api/v1/chat/sessions', () => {
@@ -81,6 +82,26 @@ describe('ChatController', () => {
         undefined,
         false,
       );
+    });
+  });
+
+  describe('POST /api/v1/chat/agent-runs/stop', () => {
+    it('calls registry.abortAllForUser and returns the stopped count', async () => {
+      const mockRegistry = {
+        abortAllForUser: vi.fn().mockResolvedValue({ stopped: 3 }),
+      };
+      const controller = new ChatController(
+        mockSessionRepo as never,
+        mockPrisma as never,
+        mockRegistry as never,
+      );
+
+      const result = await controller.stopRunningAgentRuns({
+        user: { sub: 'user-42' } as never,
+      });
+
+      expect(mockRegistry.abortAllForUser).toHaveBeenCalledWith('user-42');
+      expect(result).toEqual({ success: true, stopped: 3 });
     });
   });
 

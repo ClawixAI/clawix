@@ -7,7 +7,7 @@
 import { createLogger } from '@clawix/shared';
 
 import type { IContainerRunner } from '../container-runner.js';
-import type { Tool, ToolResult } from '../tool.js';
+import type { Tool, ToolExecuteContext, ToolResult } from '../tool.js';
 
 const logger = createLogger('engine:tools:shell');
 
@@ -169,7 +169,7 @@ export function createShellTool(containerId: string, containerRunner: IContainer
       required: ['command'],
     },
 
-    async execute(params: Record<string, unknown>): Promise<ToolResult> {
+    async execute(params: Record<string, unknown>, ctx?: ToolExecuteContext): Promise<ToolResult> {
       const command = params['command'] as string;
       const workdir = typeof params['workdir'] === 'string' ? params['workdir'] : DEFAULT_WORKDIR;
       const timeoutSec =
@@ -187,6 +187,7 @@ export function createShellTool(containerId: string, containerRunner: IContainer
       const result = await containerRunner.exec(containerId, ['sh', '-c', command], {
         workdir,
         timeout: timeoutSec * 1000,
+        ...(ctx?.abortSignal ? { signal: ctx.abortSignal } : {}),
       });
 
       if (result.exitCode !== 0) {

@@ -64,12 +64,13 @@ export function buildCorsOptions() {
   return {
     origin: origins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Request-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Request-ID', 'If-Match'],
     exposedHeaders: [
       'X-Request-ID',
       'X-RateLimit-Limit',
       'X-RateLimit-Remaining',
       'X-RateLimit-Reset',
+      'ETag',
     ],
     credentials: true,
     maxAge: 86_400, // preflight cache 24h (Chrome caps at 2h, Firefox at 24h)

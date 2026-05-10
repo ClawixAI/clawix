@@ -14,9 +14,11 @@ import { SystemSettingsService } from '../system-settings/system-settings.servic
 import { SessionRepository } from '../db/session.repository.js';
 import type {
   ContextBuildParams,
+  ContextBuildResult,
   SystemPromptArgs,
   WorkerSummary,
 } from './context-builder.types.js';
+import type { SkillStalenessMap } from './skill-loader.types.js';
 import {
   MEMORY_FILE_TOKEN_BUDGET,
   DAILY_NOTES_TOKEN_BUDGET,
@@ -49,16 +51,15 @@ export class ContextBuilderService {
   /**
    * Build the complete message array for an LLM call.
    */
-  async buildMessages(params: ContextBuildParams): Promise<readonly ChatMessage[]> {
+  async buildMessages(params: ContextBuildParams): Promise<ContextBuildResult> {
     const { agentDef, history, input, userId, isSubAgent, isScheduledTask } = params;
     const channel = params.channel ?? 'internal';
     const chatId = params.chatId ?? 'system';
     const userName = params.userName ?? 'System';
 
-    // chatId format for cron firings is 'cron:<taskId>' (set by CronTaskProcessorService)
     const taskId = isScheduledTask && chatId.startsWith('cron:') ? chatId.slice(5) : undefined;
 
-    const systemPrompt = await this.buildSystemPrompt({
+    const { systemPrompt, stalenessMap } = await this.buildSystemPromptWithStaleness({
       agentDef,
       userId,
       workspacePath: params.workspacePath,
@@ -79,17 +80,27 @@ export class ContextBuilderService {
     const systemMessage: ChatMessage = { role: 'system', content: systemPrompt };
     const userMessage: ChatMessage = { role: 'user', content: userContent };
 
-    return [systemMessage, ...history, userMessage];
+    return {
+      messages: [systemMessage, ...history, userMessage],
+      stalenessMap,
+    };
   }
 
-  private async buildSystemPrompt(args: SystemPromptArgs): Promise<string> {
+  private async buildSystemPromptWithStaleness(
+    args: SystemPromptArgs,
+  ): Promise<{ systemPrompt: string; stalenessMap: SkillStalenessMap }> {
     if (args.session !== undefined) {
       if (args.session.cachedSystemPrompt !== null) {
-        return args.session.cachedSystemPrompt;
+        const customDir = args.workspacePath ? path.join(args.workspacePath, 'skills') : '';
+        let stalenessMap: SkillStalenessMap = new Map();
+        if (customDir) {
+          ({ stalenessMap } = await this.skillLoader.buildSkillsSummary(customDir));
+        }
+        return { systemPrompt: args.session.cachedSystemPrompt, stalenessMap };
       }
-      const rendered = await this.renderSystemPrompt(args);
+      const rendered = await this.renderSystemPromptWithStaleness(args);
       try {
-        await this.sessionRepo.setCachedSystemPrompt(args.session.id, rendered);
+        await this.sessionRepo.setCachedSystemPrompt(args.session.id, rendered.systemPrompt);
       } catch (err) {
         logger.warn(
           { sessionId: args.session.id, err },
@@ -98,21 +109,21 @@ export class ContextBuilderService {
       }
       return rendered;
     }
-    return this.renderSystemPrompt(args);
+    return this.renderSystemPromptWithStaleness(args);
   }
 
-  private async renderSystemPrompt(args: SystemPromptArgs): Promise<string> {
+  private async renderSystemPromptWithStaleness(
+    args: SystemPromptArgs,
+  ): Promise<{ systemPrompt: string; stalenessMap: SkillStalenessMap }> {
     const { agentDef, userId, workspacePath, isSubAgent, isScheduledTask, workers, taskId } = args;
     const sections: string[] = [];
+    let stalenessMap: SkillStalenessMap = new Map();
 
     if (isSubAgent) {
-      // Sub-agent: focused framing, no bootstrap files
       sections.push(this.buildSubAgentIdentitySection(agentDef));
     } else {
-      // 1. Agent identity
       sections.push(this.buildIdentitySection(agentDef));
 
-      // 2. Bootstrap files (only for primary agents with a workspace)
       if (workspacePath) {
         const bootstrapSections = await this.bootstrapFileService.loadBootstrapFiles(workspacePath);
         for (const section of bootstrapSections) {
@@ -121,48 +132,58 @@ export class ContextBuilderService {
       }
     }
 
-    // 3. Workspace awareness (only when workspace is mounted)
     if (workspacePath) {
       sections.push(this.buildWorkspaceSection());
     }
 
-    // 4. Agent-defined system prompt
     sections.push(agentDef.systemPrompt);
 
-    // 5. Operating principles — baseline discipline that applies to all agents.
-    // Sub-agents only get the Tool Use paragraph; Memory and Skills are
-    // primary-only because sub-agents rarely save memory and skill access is
-    // gated below.
     sections.push(this.buildOperatingPrinciplesSection(Boolean(isSubAgent)));
 
-    // 6. Available sub-agents (primary agents only)
     if (!isSubAgent && workers && workers.length > 0) {
       sections.push(this.buildWorkersSection(workers));
     }
 
-    // 6. Skills summary (primary agents only — sub-agents are focused on a single
-    // task and don't need the full skill index, which would waste prompt tokens.)
     if (!isSubAgent) {
       const customDir = workspacePath ? path.join(workspacePath, 'skills') : '';
-      const skillsSummary = await this.skillLoader.buildSkillsSummary(customDir);
+      const { xml: skillsSummary, stalenessMap: skillsMap } =
+        await this.skillLoader.buildSkillsSummary(customDir);
+      stalenessMap = skillsMap;
       if (skillsSummary) {
         sections.push(
           '# Skills\n\n' +
             'Skills are NOT agents — do NOT use the spawn tool for skills.\n' +
             'To use a skill: call read_file on its SKILL.md location, then follow the instructions inside.\n' +
             'To create new skills: write them under /workspace/skills/ (writable, lives inside your workspace). /skills/builtin/ is read-only.\n\n' +
-            skillsSummary,
+            skillsSummary +
+            '\n\n## Skills Maintenance\n\n' +
+            'Skills are living documents — they decay as tools, APIs, and best practices change.\n' +
+            'When you use a skill and find it outdated, incomplete, or wrong during use, patch it\n' +
+            'with edit_file or write_file. Do not wait to be asked.\n\n' +
+            'CRITICAL: When a user corrects your output after you used a skill — whether about\n' +
+            'format, style, completeness, approach, or accuracy — that correction is a skill\n' +
+            'signal, not just a one-time fix. Ask the user: "Would you like me to update the\n' +
+            'skill to incorporate this preference?" If they agree, patch the skill so you get it\n' +
+            'right next time. For example, if a skill produces single-source results and the user\n' +
+            'wants multi-source, offer to update the skill to require multiple sources.\n\n' +
+            'After completing a complex task (5+ tool calls), fixing a tricky error, or discovering\n' +
+            'a non-trivial workflow, consider saving the approach as a new skill so you can reuse it.\n\n' +
+            'Preference order — prefer the earliest action that fits:\n' +
+            '1. PATCH a currently-loaded skill that you just used and found wanting\n' +
+            '2. PATCH an existing workspace skill that covers the topic\n' +
+            '3. CREATE a new skill only when no existing skill covers what you learned\n\n' +
+            'When patching, preserve the YAML frontmatter (--- blocks) and focus on updating\n' +
+            'the body content. For new skills, include proper frontmatter with name and description.\n' +
+            'Use the skill-creator skill as a template.',
         );
       }
     }
 
-    // 7. Execution Context (when running as a scheduled task)
     const executionSection = this.buildExecutionContextSection(Boolean(isScheduledTask), taskId);
     if (executionSection) {
       sections.push(executionSection);
     }
 
-    // 8. Cron/scheduling guidance (only if policy allows)
     if (!isSubAgent) {
       const cronSection = await this.buildCronSection(userId);
       if (cronSection) {
@@ -170,13 +191,12 @@ export class ContextBuilderService {
       }
     }
 
-    // 9. Memory (optional)
     const memorySection = await this.buildMemorySection(userId, workspacePath);
     if (memorySection) {
       sections.push(memorySection);
     }
 
-    return sections.join('\n\n---\n\n');
+    return { systemPrompt: sections.join('\n\n---\n\n'), stalenessMap };
   }
 
   private buildOperatingPrinciplesSection(isSubAgent: boolean): string {

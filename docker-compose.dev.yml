@@ -15,6 +15,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - clawix-internal
 
   redis:
     image: redis:7-alpine
@@ -29,6 +31,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - clawix-internal
 
   api-server:
     image: node:22-slim
@@ -74,6 +78,8 @@ services:
       SKILLS_BUILTIN_HOST_DIR: ${CLAWIX_HOST_SKILLS_DIR:-${PWD}/skills/builtin}
       SKILLS_CUSTOM_DIR: /app/skills/custom
       SKILLS_CUSTOM_HOST_DIR: ${CLAWIX_HOST_SKILLS_DIR:-${PWD}/skills/custom}
+      # Public memory lives under the persistent /data bind mount so it
+      # survives `docker compose down` and image rebuilds.
     command: >
       sh -c "apt-get update && apt-get install -y --no-install-recommends docker.io && rm -rf /var/lib/apt/lists/* &&
              corepack enable &&
@@ -97,6 +103,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - clawix-internal
+      - clawix-browser-egress
 
   web-server:
     image: node:22-slim
@@ -133,6 +142,61 @@ services:
              pnpm install --frozen-lockfile &&
              pnpm --filter @clawix/shared build &&
              pnpm --filter @clawix/web dev"
+    networks:
+      - clawix-internal
+
+  clawix-pypi-proxy:
+    build:
+      context: ./infra/docker/pypi-proxy
+    container_name: clawix-pypi-proxy
+    restart: unless-stopped
+    environment:
+      ALLOWLIST_FILE: /etc/clawix/python-allowlist.txt
+    volumes:
+      - clawix-pypi-cache:/home/devpi/server
+      - ./infra/python-allowlist/extended.txt:/etc/clawix/python-allowlist.txt:ro
+    networks:
+      - clawix-internal
+      - clawix-python-net-egress
+    healthcheck:
+      test: ['CMD', 'curl', '-fsSL', 'http://localhost:3141/+api']
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  clawix-browser:
+    image: ghcr.io/browserless/chromium:latest
+    container_name: clawix-browser
+    restart: unless-stopped
+    user: '1000:1000'
+    # Note: read_only: true breaks Chromium 1217+ — its crashpad handler
+    # subprocess loses argv when the rootfs is read-only, causing
+    # `chrome_crashpad_handler: --database is required` and aborting launch.
+    # Other isolation (non-root user, cap_drop, no-new-privileges, internal
+    # egress network, resource limits) still applies.
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN]
+    security_opt:
+      - no-new-privileges
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 200
+    shm_size: 256m
+    environment:
+      MAX_CONCURRENT_SESSIONS: '${BROWSER_SIDECAR_MAX_SESSIONS:-25}'
+      TOKEN: '${BROWSER_AUTH_TOKEN}'
+      # Disable Browserless' built-in queue; we queue at the API layer.
+      QUEUED: '0'
+      HEALTHCHECK: 'true'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O - "http://127.0.0.1:3000/active?token=$$TOKEN"']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - clawix-browser-egress
+      - clawix-browser-net
 
 volumes:
   postgres_data:
@@ -143,3 +207,27 @@ volumes:
   web_node_modules:
   web_pkg_node_modules:
   shared_web_pkg_node_modules:
+  clawix-pypi-cache:
+
+networks:
+  # `name:` pins the actual Docker network name, bypassing Compose's
+  # `<project>_<network>` prefix. The API spawns sibling containers via the
+  # host docker socket and attaches them by these exact names — without
+  # pinning, attach fails with "network not found".
+  clawix-internal:
+    name: clawix-internal
+    driver: bridge
+  clawix-browser-egress:
+    name: clawix-browser-egress
+    driver: bridge
+    internal: true # blocks traffic from this network to the host/internet
+  clawix-browser-net:
+    name: clawix-browser-net
+    driver: bridge
+    # External default: this network reaches the public internet by default.
+    # RFC1918 blocking is enforced by the deploy environment's firewall rules
+    # or a sidecar egress proxy. See docs/specs/2026-05-06-web-fetch-and-browser-tools-design.md §Egress.
+  clawix-python-net-egress:
+    name: clawix-python-net-egress
+    driver: bridge
+    internal: false

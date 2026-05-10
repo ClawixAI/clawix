@@ -16,3 +16,5 @@ export { TokenUsageRepository } from './token-usage.repository.js';
 export { MemoryItemRepository } from './memory-item.repository.js';
 export { SystemSettingsRepository } from './system-settings.repository.js';
 export { GroupRepository } from './group.repository.js';
+export { GroupInviteRepository } from './group-invite.repository.js';
+export { NotificationRepository } from './notification.repository.js';

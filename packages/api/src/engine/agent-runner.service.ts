@@ -2,13 +2,14 @@
  * AgentRunnerService — top-level NestJS orchestrator that runs a single agent
  * end-to-end, wiring together all Phase 3A-3E components.
  *
- * Lifecycle (21 steps):
+ * Lifecycle (22 steps):
  *  1.  Load AgentDefinition, verify isActive
  *  2.  Load user to get policyId
  *  3.  Check budget
  *  4.  Check provider allowed
  *  5.  Resolve MessageStore — session path: get/create Session + SessionMessageStore; cron path: use caller-supplied store (no Session).
  *  6.  Create AgentRun (or reuse existing via agentRunId) with status 'running'
+ *  6b. Register localController in AgentRunRegistry; build effectiveSignal via AbortSignal.any
  *  7.  Load message history
  *  8.  Build initial messages (system + history + user)
  *  9.  Save user message to session
@@ -17,16 +18,28 @@
  *  12. Start container
  *  13. Create ToolRegistry + registerBuiltinTools + register spawn tool
  *  14. Create ReasoningLoop
- *  15. Run loop
+ *  15. Run loop (with effectiveSignal so parent cancellations propagate)
  *  16. Save loop-generated messages (assistant + tool responses)
  *  17. Consolidate session memory via MemoryConsolidationService
  *  18. Record token usage via recordAggregateUsage
  *  19. Update AgentRun to completed
  *  20. Return RunResult
  *
+ * Cancellation: AgentRun is registered with AgentRunRegistry after step 6.
+ *   On user-cancel (signal aborted with reason 'user_stop'), the run returns
+ *   early with status='cancelled' from either the post-loop branch or the
+ *   catch block, recording any partial token usage (spec D6). The registry's
+ *   abortAllForUser() writes 'cancelled' to the DB row directly; the run's
+ *   own update is conditional on status='running' to avoid clobbering it.
+ *   Sub-agents inherit cancellation only when the parent signal's reason is
+ *   'user_stop' — other parent abort reasons (e.g. timeout) do not trigger
+ *   the cancelled-status path and fall through to normal error handling.
+ *
  * Error handling: try/finally around steps 10–19.
- *   finally: always stops container.
- *   catch:   updates AgentRun to failed before re-throwing.
+ *   finally: always stops container and unregisters from AgentRunRegistry.
+ *   catch:   if user cancelled (reason='user_stop'), returns early with
+ *            status='cancelled' and records partial token usage. Otherwise
+ *            updates AgentRun to failed before re-throwing.
  */
 
 import * as fs from 'fs';
@@ -70,11 +83,35 @@ import { ContextBuilderService } from './context-builder.service.js';
 import { WorkspaceSeederService } from './workspace-seeder.service.js';
 import { SearchProviderRegistry } from './tools/web/search-provider.js';
 import { registerWebTools } from './tools/web/index.js';
+import { BrowserSessionManager } from './tools/browser/browser-session-manager.js';
+import { BrowserProviderRegistry } from './tools/browser/browser-provider-registry.js';
+import { BrowserQuotaCache } from './tools/browser/browser-quota-cache.service.js';
+import { registerBrowserTools } from './tools/browser/tools/index.js';
+import { resolveVisionConfig } from './tools/browser/vision-config-resolver.js';
+import type { RunContext } from './tools/browser/tools/browser-navigate.js';
 import { resolveWorkspacePaths } from './workspace-resolver.js';
 import type { TaskExecutorService } from './task-executor.service.js';
 import { SystemSettingsService } from '../system-settings/system-settings.service.js';
+import { AgentRunRegistry } from './agent-run-registry.service.js';
+import { PythonContainerPoolService } from './python-container-pool.service.js';
+import { PythonProxyHealthService } from './python-proxy-health.service.js';
+import { PythonConcurrencyLimiter } from './tools/python/concurrency-limiter.js';
+import { InstallMutex } from './tools/python/install-mutex.js';
+import { createPythonRunTool } from './tools/python/python-run.js';
+import { createPythonRunNetTool } from './tools/python/python-run-net.js';
 
 const logger = createLogger('engine:agent-runner');
+
+/**
+ * Returns true when the signal was aborted by a user-initiated stop.
+ *
+ * 'user_stop' is the sole discriminator for the cancelled-status path (spec D6).
+ * Non-user-stop abort reasons (e.g. parent timeout) fall through to normal
+ * error handling so the run is recorded as 'failed', not 'cancelled'.
+ */
+function isCancelled(signal: AbortSignal): boolean {
+  return signal.aborted && signal.reason === 'user_stop';
+}
 
 // ------------------------------------------------------------------ //
 //  AgentRunnerService                                                 //
@@ -115,6 +152,14 @@ export class AgentRunnerService {
     private readonly taskRunMessageRepo: TaskRunMessageRepository,
     private readonly systemSettingsService: SystemSettingsService,
     private readonly compressor: CompressorService,
+    private readonly browserSessionManager: BrowserSessionManager,
+    private readonly browserProviderRegistry: BrowserProviderRegistry,
+    private readonly browserQuotaCache: BrowserQuotaCache,
+    private readonly agentRunRegistry: AgentRunRegistry,
+    private readonly pythonPool: PythonContainerPoolService,
+    private readonly pythonProxyHealth: PythonProxyHealthService,
+    private readonly pythonLimiter: PythonConcurrencyLimiter,
+    private readonly pythonInstallMutex: InstallMutex,
   ) {}
 
   /** Lazy accessor to break circular dependency with TaskExecutorService. */
@@ -220,6 +265,27 @@ export class AgentRunnerService {
 
     logger.info({ agentRunId: agentRun.id, sessionId: session?.id ?? null }, 'AgentRun created');
 
+    // Build the cancellation controller and an effective abort signal.
+    //
+    // localController is registered in the registry so the stop endpoint can
+    // abort it directly. effectiveSignal merges localController.signal with any
+    // caller-supplied parent signal (e.g. sub-agent inheriting parent cancel)
+    // using AbortSignal.any — this avoids a listener leak that would occur with
+    // addEventListener when the local controller aborts before the parent does.
+    //
+    // Cancellation discriminator: we only enter the 'cancelled' status path when
+    // effectiveSignal.reason === 'user_stop'. This is intentional:
+    //  - Stop endpoint calls registry.abort(runId, 'user_stop')
+    //  - Sub-agents inherit cancellation only when the parent's reason is 'user_stop'
+    //  - Non-user-stop parent reasons (e.g. a parent timeout) do NOT trigger the
+    //    cancelled-status path; they fall through to normal error handling (failed).
+    const localController = new AbortController();
+    const signals: AbortSignal[] = [localController.signal];
+    if (options.abortSignal) signals.push(options.abortSignal);
+    const effectiveSignal = signals.length > 1 ? AbortSignal.any(signals) : localController.signal;
+
+    this.agentRunRegistry.register(agentRun.id, localController);
+
     // ── Steps 7–19: Execution block (container + loop) ─────────────
     let containerId: string | null = null;
     // Pool is only meaningful when a session exists to key the warm container.
@@ -242,7 +308,7 @@ export class AgentRunnerService {
             description: w.description,
           }));
 
-      const initialMessages = await this.contextBuilder.buildMessages({
+      const { messages: initialMessages, stalenessMap } = await this.contextBuilder.buildMessages({
         agentDef,
         history,
         input,
@@ -419,6 +485,79 @@ export class AgentRunnerService {
         settings.defaultTimezone,
       );
 
+      // Step 13b: Wire browser tools (gated by BrowserProviderRegistry.getActive())
+      await this.browserQuotaCache.warm(userId);
+      const resolvedApiKey = resolved.apiKey;
+      const resolvedApiBaseUrl = agentDef.apiBaseUrl ?? resolved.apiBaseUrl ?? undefined;
+      const visionConfig = await resolveVisionConfig(
+        {
+          findAgentById: (id) => this.agentDefRepo.findById(id),
+          resolveProvider: (name) => this.providerConfig.resolveProvider(name),
+        },
+        {
+          agentDef,
+          resolvedApiKey,
+          resolvedApiBaseUrl,
+          policy,
+          budgetTracker,
+        },
+      );
+      const getRunContext = (): RunContext => ({
+        runId: agentRun.id,
+        userId,
+        activeModel: agentDef.model,
+        toolConfig: (agentDef.toolConfig ?? {}) as RunContext['toolConfig'],
+        policy: { allowBrowserCdp: policy.allowBrowserCdp },
+        vision: visionConfig,
+      });
+      registerBrowserTools(
+        registry,
+        this.browserProviderRegistry,
+        this.browserSessionManager,
+        getRunContext,
+      );
+
+      // Step 13c: Wire python tools (gated by policy.allowPython / allowPythonNet)
+      const pythonPolicy = {
+        allowPython: policy.allowPython,
+        allowPythonNet: policy.allowPythonNet,
+        pythonPackageAllowlist: policy.pythonPackageAllowlist,
+        maxPythonMemoryMb: policy.maxPythonMemoryMb,
+        maxPythonTimeoutSecs: policy.maxPythonTimeoutSecs,
+        maxPythonCpuCores: policy.maxPythonCpuCores,
+        maxConcurrentPythonRuns: policy.maxConcurrentPythonRuns,
+      };
+
+      if (policy.allowPython && workspacePaths !== undefined && session !== null) {
+        registry.register(
+          createPythonRunTool({
+            sessionId: session.id,
+            userId,
+            workspaceHostPath: workspacePaths.hostPath,
+            policy: pythonPolicy,
+            pool: this.pythonPool,
+            runner: this.containerRunner,
+            proxyHealth: this.pythonProxyHealth,
+            limiter: this.pythonLimiter,
+            installMutex: this.pythonInstallMutex,
+          }),
+        );
+      }
+
+      if (policy.allowPythonNet && workspacePaths !== undefined) {
+        registry.register(
+          createPythonRunNetTool({
+            userId,
+            workspaceHostPath: workspacePaths.hostPath,
+            policy: pythonPolicy,
+            runner: this.containerRunner,
+            proxyHealth: this.pythonProxyHealth,
+            limiter: this.pythonLimiter,
+            installMutex: this.pythonInstallMutex,
+          }),
+        );
+      }
+
       // Step 14: Create ReasoningLoop
       const loop = new ReasoningLoop(provider, registry, this.compressor, {
         provider: agentDef.provider,
@@ -442,7 +581,37 @@ export class AgentRunnerService {
         ...(budgetTracker ? { budgetTracker } : {}),
         timeoutMs,
         ...(streamingUsed && options.onEvent ? { onEvent: options.onEvent } : {}),
+        abortSignal: effectiveSignal,
+        stalenessMap,
       });
+
+      // Detect user cancellation — abort endpoint already wrote status='cancelled'.
+      // Record any token usage that accumulated before the abort (spec D6),
+      // then return early without overwriting the DB status.
+      if (isCancelled(effectiveSignal)) {
+        await this.tokenCounter.recordAggregateUsage({
+          usage: loopResult.totalUsage,
+          agentRunId: agentRun.id,
+          userId,
+          providerName: agentDef.provider,
+          model: agentDef.model,
+        });
+        logger.info({ agentRunId: agentRun.id }, 'Agent run cancelled by user');
+        return {
+          agentRunId: agentRun.id,
+          sessionId: session?.id ?? null,
+          output: null,
+          status: 'cancelled',
+          streamingUsed,
+          tokenUsage: {
+            inputTokens: loopResult.totalUsage.inputTokens,
+            outputTokens: loopResult.totalUsage.outputTokens,
+            totalTokens: loopResult.totalUsage.totalTokens,
+            model: agentDef.model,
+            estimatedCostUsd: 0,
+          },
+        };
+      }
 
       // Step 16: Save loop-generated messages (skip for sub-agents — they don't own the session)
       let responseMessageId: string | undefined;
@@ -510,11 +679,14 @@ export class AgentRunnerService {
           : (loopResult.content ?? '');
 
       const finalOutput = transcriptOutput + contextWarning + timeoutSuffix || null;
-      await this.agentRunRepo.update(agentRun.id, {
-        status: runStatus,
-        output: finalOutput ?? '',
-        completedAt: new Date(),
-        ...(loopResult.hitTimeout ? { error: 'Agent run timed out' } : {}),
+      await this.prisma.agentRun.updateMany({
+        where: { id: agentRun.id, status: 'running' },
+        data: {
+          status: runStatus,
+          output: finalOutput ?? '',
+          completedAt: new Date(),
+          ...(loopResult.hitTimeout ? { error: 'Agent run timed out' } : {}),
+        },
       });
 
       logger.info(
@@ -541,6 +713,43 @@ export class AgentRunnerService {
         ...(loopResult.hitTimeout ? { error: 'Agent run timed out' } : {}),
       };
     } catch (err: unknown) {
+      // Check for user cancellation first — the stop endpoint already wrote
+      // status='cancelled', so we must not overwrite with 'failed'.
+      if (isCancelled(effectiveSignal)) {
+        // Spec D6: record what was actually consumed, even on cancel.
+        // loopResult is unavailable here (loop threw), so we record zero usage.
+        // Any usage captured on internal mutator paths before the throw has
+        // already been flushed; this call ensures the pipeline is always invoked.
+        await this.tokenCounter
+          .recordAggregateUsage({
+            usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+            agentRunId: agentRun.id,
+            userId,
+            providerName: agentDef.provider,
+            model: agentDef.model,
+          })
+          .catch((e) => logger.warn({ err: e }, 'recordAggregateUsage on cancel failed'));
+        logger.info({ agentRunId: agentRun.id }, 'Agent run cancelled mid-flight');
+        return {
+          agentRunId: agentRun.id,
+          sessionId: session?.id ?? null,
+          output: null,
+          status: 'cancelled',
+          // streamingUsed is declared inside try and is not accessible from catch.
+          // We conservatively report false here; the caller only uses this flag
+          // to decide whether to close a streaming channel, which is a no-op when
+          // the run was cancelled before any streaming output was produced.
+          streamingUsed: false,
+          tokenUsage: {
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            model: agentDef.model,
+            estimatedCostUsd: 0,
+          },
+        };
+      }
+
       const message = err instanceof Error ? err.message : String(err);
       logger.error({ agentRunId: agentRun.id, error: message }, 'Agent run failed');
 
@@ -563,6 +772,10 @@ export class AgentRunnerService {
       } else if (usePool) {
         this.containerPool.release(session!.id);
       }
+      await this.browserSessionManager.releaseIfActive(agentRun.id).catch((err) => {
+        logger.warn({ runId: agentRun.id, err }, 'browser session cleanup failed');
+      });
+      this.agentRunRegistry.unregister(agentRun.id);
     }
   }
 

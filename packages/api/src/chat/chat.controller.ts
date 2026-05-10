@@ -15,6 +15,7 @@ import { Prisma } from '../generated/prisma/client.js';
 import { SessionRepository } from '../db/session.repository.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { JwtPayload } from '../auth/auth.types.js';
+import { AgentRunRegistry } from '../engine/agent-run-registry.service.js';
 
 @ApiTags('chat')
 @Controller('api/v1/chat')
@@ -22,6 +23,7 @@ export class ChatController {
   constructor(
     private readonly sessionRepo: SessionRepository,
     private readonly prisma: PrismaService,
+    private readonly agentRunRegistry: AgentRunRegistry,
   ) {}
 
   @Get('channel')
@@ -149,18 +151,8 @@ export class ChatController {
 
   @Post('agent-runs/stop')
   async stopRunningAgentRuns(@Req() req: { user: JwtPayload }) {
-    const result = await this.prisma.agentRun.updateMany({
-      where: {
-        status: 'running',
-        session: { userId: req.user.sub },
-      },
-      data: {
-        status: 'failed',
-        error: 'Stopped by user',
-        completedAt: new Date(),
-      },
-    });
-    return { success: true, stopped: result.count };
+    const { stopped } = await this.agentRunRegistry.abortAllForUser(req.user.sub);
+    return { success: true, stopped };
   }
 
   @Post('sessions/:id/deactivate')

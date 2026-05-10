@@ -12,6 +12,7 @@ import { AgentDefinitionRepository } from '../db/agent-definition.repository.js'
 import { AgentRunRepository } from '../db/agent-run.repository.js';
 import { UserAgentRepository } from '../db/user-agent.repository.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { NotificationFanoutService } from '../notifications/notifications.fanout.js';
 
 @Injectable()
 export class AgentsService {
@@ -20,6 +21,7 @@ export class AgentsService {
     private readonly agentRunRepo: AgentRunRepository,
     private readonly userAgentRepo: UserAgentRepository,
     private readonly prisma: PrismaService,
+    private readonly notifications: NotificationFanoutService,
   ) {}
 
   async listAgents(
@@ -144,15 +146,37 @@ export class AgentsService {
     const primaryUserAgent = await this.userAgentRepo.findByUserId(input.userId);
     const workspacePath = primaryUserAgent?.workspacePath ?? `users/${input.userId}/workspace`;
 
-    return this.userAgentRepo.create({
+    const created = await this.userAgentRepo.create({
       userId: input.userId,
       agentDefinitionId: input.agentDefinitionId,
       workspacePath,
     });
+    await this.notifyAgentAssigned(input.userId, input.agentDefinitionId);
+    return created;
   }
 
   async updateUserAgent(id: string, input: { readonly agentDefinitionId: string }) {
-    return this.userAgentRepo.update(id, { agentDefinitionId: input.agentDefinitionId });
+    const updated = await this.userAgentRepo.update(id, {
+      agentDefinitionId: input.agentDefinitionId,
+    });
+    await this.notifyAgentAssigned(updated.userId, input.agentDefinitionId);
+    return updated;
+  }
+
+  private async notifyAgentAssigned(userId: string, agentDefinitionId: string): Promise<void> {
+    // Best-effort: pull the agent's name for a friendlier notification body.
+    let agentName: string | null = null;
+    try {
+      const agent = await this.agentDefRepo.findById(agentDefinitionId);
+      agentName = agent?.name ?? null;
+    } catch {
+      // Repo throws if not found; we'd rather notify with the id than crash.
+    }
+    await this.notifications.create({
+      recipientId: userId,
+      type: 'PRIMARY_AGENT_ASSIGNED',
+      payload: { agentDefinitionId, agentName },
+    });
   }
 
   async deleteUserAgent(id: string) {

@@ -91,6 +91,21 @@ export class TokensService {
     }));
   }
 
+  /** Per-user model breakdown for the current month — drives the pie chart. */
+  async getUserModelBreakdown(userId: string) {
+    const { startOfMonth, endOfMonth } = this.getMonthRange();
+    const rows = await this.tokenUsageRepo.sumByUserGroupedByModel(
+      userId,
+      startOfMonth,
+      endOfMonth,
+    );
+    return rows.map((r) => ({
+      model: r.model,
+      totalTokens: r.totalTokens,
+      totalEstimatedCostUsd: r.totalCostUsd,
+    }));
+  }
+
   async getUserAgentBreakdown(userId: string) {
     const { startOfMonth, endOfMonth } = this.getMonthRange();
     const agentUsages = await this.tokenUsageRepo.sumByUserGroupedByAgent(

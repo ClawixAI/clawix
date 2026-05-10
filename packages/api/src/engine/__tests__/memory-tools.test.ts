@@ -84,12 +84,12 @@ function buildMockPrisma() {
 describe('save_memory tool', () => {
   const userId = 'user-1';
 
-  it('creates a new memory with content and tags', async () => {
+  it('creates a new memory with content and tags (single domain: tag is OK)', async () => {
     const created = {
       id: 'mem-1',
       ownerId: userId,
       content: { text: 'hello' },
-      tags: ['greeting'],
+      tags: ['domain:greeting'],
     };
     const prisma = makePrisma({
       userFindUnique: vi.fn().mockResolvedValue({ id: userId, policy: { maxMemoryItems: 100 } }),
@@ -98,7 +98,7 @@ describe('save_memory tool', () => {
     });
 
     const tool = createSaveMemoryTool(prisma, userId);
-    const result = await tool.execute({ content: 'hello', tags: ['greeting'] });
+    const result = await tool.execute({ content: 'hello', tags: ['domain:greeting'] });
 
     expect(result.isError).toBe(false);
     const parsed = JSON.parse(result.output);
@@ -166,18 +166,80 @@ describe('save_memory tool', () => {
 
   it('updates an existing memory owned by user', async () => {
     const existing = { id: 'mem-1', ownerId: userId, content: { text: 'old' }, tags: [] };
-    const updated = { ...existing, content: { text: 'new' }, tags: ['updated'] };
+    const updated = { ...existing, content: { text: 'new' }, tags: ['domain:notes'] };
     const prisma = makePrisma({
       memoryItemFindUnique: vi.fn().mockResolvedValue(existing),
       memoryItemUpdate: vi.fn().mockResolvedValue(updated),
     });
 
     const tool = createSaveMemoryTool(prisma, userId);
-    const result = await tool.execute({ memoryId: 'mem-1', content: 'new', tags: ['updated'] });
+    const result = await tool.execute({
+      memoryId: 'mem-1',
+      content: 'new',
+      tags: ['domain:notes'],
+    });
 
     expect(result.isError).toBe(false);
     const parsed = JSON.parse(result.output);
     expect(parsed.action).toBe('updated');
+  });
+
+  // ---- domain: tag rule (custom-memory feature) ----
+
+  it('accepts daily-only tags without requiring a domain: tag', async () => {
+    const created = { id: 'mem-d', ownerId: userId, content: { text: 'today' }, tags: [] };
+    const prisma = makePrisma({
+      userFindUnique: vi.fn().mockResolvedValue({ id: userId, policy: { maxMemoryItems: 100 } }),
+      memoryItemCount: vi.fn().mockResolvedValue(0),
+      memoryItemCreate: vi.fn().mockResolvedValue(created),
+    });
+
+    const tool = createSaveMemoryTool(prisma, userId);
+    const result = await tool.execute({ content: 'today', tags: ['daily:2026-05-10'] });
+
+    expect(result.isError).toBe(false);
+  });
+
+  it('rejects non-daily tags without exactly one domain: tag', async () => {
+    const prisma = makePrisma({});
+    const tool = createSaveMemoryTool(prisma, userId);
+
+    const r1 = await tool.execute({ content: 'x', tags: ['urgent'] });
+    expect(r1.isError).toBe(true);
+    expect(r1.output).toContain('domain:');
+
+    const r2 = await tool.execute({
+      content: 'x',
+      tags: ['domain:hr', 'domain:engineering'],
+    });
+    expect(r2.isError).toBe(true);
+    expect(r2.output).toContain('domain:');
+  });
+
+  // The literal `public` tag is no longer special — org-wide sharing now
+  // goes through the existing share_memory(targetType=org) path, matching
+  // the original Phase-1 plan. save_memory accepts `public` as a regular
+  // tag with no admin gate.
+  it('accepts the literal `public` tag as a regular non-special tag', async () => {
+    const created = {
+      id: 'mem-p',
+      ownerId: userId,
+      content: { text: 'just a tag' },
+      tags: ['domain:hr', 'public'],
+    };
+    const prisma = makePrisma({
+      userFindUnique: vi.fn().mockResolvedValue({ id: userId, policy: { maxMemoryItems: 100 } }),
+      memoryItemCount: vi.fn().mockResolvedValue(0),
+      memoryItemCreate: vi.fn().mockResolvedValue(created),
+    });
+
+    const tool = createSaveMemoryTool(prisma, userId);
+    const result = await tool.execute({
+      content: 'just a tag',
+      tags: ['domain:hr', 'public'],
+    });
+
+    expect(result.isError).toBe(false);
   });
 
   it('rejects update for non-existent memoryId', async () => {
@@ -203,7 +265,7 @@ describe('save_memory tool', () => {
     const tool = createSaveMemoryTool(prisma, userId);
     await tool.execute({
       content: { key: 'preferred_language', value: 'TypeScript' },
-      tags: ['preference'],
+      tags: ['domain:preference'],
     });
 
     expect(
@@ -300,16 +362,30 @@ describe('search_memory tool', () => {
     expect(result.output).toContain('No memories found');
   });
 
-  it('rejects when neither query nor tags provided', async () => {
-    const repo = makeMemoryRepo([]);
+  it('no-arg call returns recent visible memories (20-row cap)', async () => {
+    const items = [
+      {
+        id: 'mem-recent',
+        ownerId: userId,
+        content: { text: 'recent note' },
+        tags: ['domain:notes'],
+        createdAt: new Date(),
+      },
+    ];
+    const repo = makeMemoryRepo(items);
     const tool = createSearchMemoryTool(repo as MemoryItemRepository, userId);
     const result = await tool.execute({});
 
-    expect(result.isError).toBe(true);
-    expect(result.output).toContain('At least one of query or tags');
+    expect(result.isError).toBe(false);
+    expect(repo.search).toHaveBeenCalledWith(userId, {
+      query: undefined,
+      tags: undefined,
+      scope: 'visible',
+      maxResults: 20,
+    });
   });
 
-  it('passes tags to repository search method correctly', async () => {
+  it('passes tags to repository search method correctly (default scope "visible")', async () => {
     const repo = makeMemoryRepo([]);
     const tool = createSearchMemoryTool(repo as MemoryItemRepository, userId);
     await tool.execute({ tags: ['important', 'work'] });
@@ -317,6 +393,49 @@ describe('search_memory tool', () => {
     expect(repo.search).toHaveBeenCalledWith(userId, {
       query: undefined,
       tags: ['important', 'work'],
+      scope: 'visible',
+      maxResults: 20,
+    });
+  });
+
+  it('scope:"mine" forwards to repo and allows query/tags to be omitted', async () => {
+    const items = [
+      {
+        id: 'mem-mine',
+        ownerId: userId,
+        content: { text: 'private note' },
+        tags: ['domain:notes'],
+        createdAt: new Date(),
+      },
+    ];
+    const repo = makeMemoryRepo(items);
+    const tool = createSearchMemoryTool(repo as MemoryItemRepository, userId);
+
+    const result = await tool.execute({ scope: 'mine' });
+
+    expect(result.isError).toBe(false);
+    expect(repo.search).toHaveBeenCalledWith(userId, {
+      query: undefined,
+      tags: undefined,
+      scope: 'mine',
+      maxResults: 20,
+    });
+    const parsed = JSON.parse(result.output);
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0].isOwned).toBe(true);
+  });
+
+  it('scope:"visible" with no query/tags returns recent items (capped at 20)', async () => {
+    const repo = makeMemoryRepo([]);
+    const tool = createSearchMemoryTool(repo as MemoryItemRepository, userId);
+
+    const result = await tool.execute({ scope: 'visible' });
+
+    expect(result.isError).toBe(false);
+    expect(repo.search).toHaveBeenCalledWith(userId, {
+      query: undefined,
+      tags: undefined,
+      scope: 'visible',
       maxResults: 20,
     });
   });
@@ -408,7 +527,8 @@ describe('share_memory tool', () => {
     expect(parsed.groupId).toBe('g-1');
   });
 
-  it('shares memory to org', async () => {
+  it('shares memory to org when caller is admin', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ role: 'admin' });
     mockPrisma.memoryItem.findUnique.mockResolvedValue({ id: 'mem-1', ownerId: 'user-1' });
     mockPrisma.memoryShare.findFirst.mockResolvedValue(null);
     mockPrisma.memoryShare.create.mockResolvedValue({ id: 'share-2' });
@@ -422,7 +542,19 @@ describe('share_memory tool', () => {
     expect(parsed.targetType).toBe('org');
   });
 
+  it('rejects org-share when caller is not admin', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ role: 'developer' });
+    mockPrisma.memoryItem.findUnique.mockResolvedValue({ id: 'mem-1', ownerId: 'user-1' });
+
+    const result = await tool.execute({ memoryId: 'mem-1', targetType: 'org' });
+
+    expect(result.isError).toBe(true);
+    expect(result.output).toMatch(/admin/i);
+    expect(mockPrisma.memoryShare.create).not.toHaveBeenCalled();
+  });
+
   it('returns existing shareId for idempotent share', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ role: 'admin' });
     mockPrisma.memoryItem.findUnique.mockResolvedValue({ id: 'mem-1', ownerId: 'user-1' });
     mockPrisma.memoryShare.findFirst.mockResolvedValue({ id: 'share-existing' });
 
@@ -471,6 +603,7 @@ describe('share_memory tool', () => {
   });
 
   it('creates audit log entry for share', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ role: 'admin' });
     mockPrisma.memoryItem.findUnique.mockResolvedValue({ id: 'mem-1', ownerId: 'user-1' });
     mockPrisma.memoryShare.findFirst.mockResolvedValue(null);
     mockPrisma.memoryShare.create.mockResolvedValue({ id: 'share-1' });

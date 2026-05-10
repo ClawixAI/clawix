@@ -38,6 +38,7 @@ pnpm --filter @clawix/shared run build
 if command -v docker >/dev/null 2>&1; then
   echo "Starting local infrastructure (Postgres, Redis, pgAdmin)..."
   docker build -t clawix-agent:latest -f infra/docker/agent/Dockerfile .
+  docker build -t clawix-python-runner:latest infra/docker/python-runner
   docker compose -f docker-compose.dev.yml up -d
 
   echo "Waiting for services to be healthy..."

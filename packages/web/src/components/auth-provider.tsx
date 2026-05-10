@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   type AuthUser,
   ensureAccessToken,
@@ -22,6 +23,8 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     // Fresh page load: in-memory access token is empty.
@@ -33,12 +36,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     void ensureAccessToken()
       .then((token) => {
-        if (token) setUser(parseJwtPayload(token));
+        if (token) {
+          setUser(parseJwtPayload(token));
+          return;
+        }
+        // Session cookie was present but refresh failed (cookie expired or
+        // server-side session invalidated). clearTokens has already wiped
+        // local state; clear any server cookie via authLogout and bounce
+        // to /login so the user isn't stranded on a 401-storm page.
+        if (pathname !== '/login') {
+          void authLogout().finally(() => {
+            router.replace('/login');
+          });
+        }
       })
       .finally(() => {
         setIsLoading(false);
       });
-  }, []);
+  }, [pathname, router]);
 
   const login = useCallback(async (email: string, password: string) => {
     const authUser = await authLogin(email, password);

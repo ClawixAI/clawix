@@ -113,7 +113,7 @@ async function main(): Promise<void> {
   // --- Policies ---
   await prisma.policy.upsert({
     where: { name: 'Standard' },
-    update: {},
+    update: { allowBrowserCdp: false, maxConcurrentBrowserSessions: 2 },
     create: {
       name: 'Standard',
       description: 'Basic access with limited quotas',
@@ -125,11 +125,13 @@ async function main(): Promise<void> {
       allowedProviders: [defaultProvider],
       cronEnabled: true,
       features: {},
+      allowBrowserCdp: false,
+      maxConcurrentBrowserSessions: 2,
     },
   });
   await prisma.policy.upsert({
     where: { name: 'Extended' },
-    update: {},
+    update: { allowBrowserCdp: false, maxConcurrentBrowserSessions: 5 },
     create: {
       name: 'Extended',
       description: 'Extended access with higher quotas',
@@ -141,11 +143,13 @@ async function main(): Promise<void> {
       allowedProviders: extendedProviders,
       cronEnabled: true,
       features: { swarmOrchestration: true },
+      allowBrowserCdp: false,
+      maxConcurrentBrowserSessions: 5,
     },
   });
   const unrestrictedPolicy = await prisma.policy.upsert({
     where: { name: 'Unrestricted' },
-    update: {},
+    update: { allowBrowserCdp: true, maxConcurrentBrowserSessions: 20 },
     create: {
       name: 'Unrestricted',
       description: 'Unlimited access for power users',
@@ -157,6 +161,8 @@ async function main(): Promise<void> {
       allowedProviders: providerSeeds.map((s) => s.provider),
       cronEnabled: true,
       features: { swarmOrchestration: true, heartbeat: true, customProviders: true },
+      allowBrowserCdp: true,
+      maxConcurrentBrowserSessions: 20,
     },
   });
   console.log('[bootstrap]   Policies: Standard, Extended, Unrestricted');

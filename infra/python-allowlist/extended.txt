@@ -1,0 +1,29 @@
+# Extended tier — superset of standard.txt.
+# Format: one PEP-503-normalized package name per line, alphabetically sorted.
+# Transitives must also be listed.
+
+charset-normalizer
+contourpy
+cycler
+et-xmlfile
+fonttools
+joblib
+kiwisolver
+lxml
+matplotlib
+openpyxl
+packaging
+pillow
+polars
+pyarrow
+pyparsing
+pytz
+scikit-learn
+scipy
+seaborn
+six
+threadpoolctl
+tqdm
+typing-extensions
+tzdata
+xlsxwriter

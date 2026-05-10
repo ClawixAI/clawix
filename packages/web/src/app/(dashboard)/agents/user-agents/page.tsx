@@ -26,6 +26,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ModelCombobox } from './model-combobox';
+import {
   Table,
   TableBody,
   TableCell,
@@ -42,6 +50,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { authFetch } from '@/lib/auth';
+import { cn } from '@/lib/utils';
 import { SuccessDialog } from '@/components/ui/success-dialog';
 import { useAuth } from '@/components/auth-provider';
 
@@ -131,40 +140,30 @@ function ProviderModelFields({
     <>
       <div className="flex flex-col gap-2">
         <Label htmlFor={`${idPrefix}-provider`}>Provider</Label>
-        <select
-          name="provider"
-          id={`${idPrefix}-provider`}
-          className="rounded-md border bg-background px-3 py-2 text-sm"
-          value={selectedProvider}
-          onChange={(e) => {
-            setSelectedProvider(e.target.value);
-          }}
-        >
-          {providers.map((p) => (
-            <option key={p.name} value={p.name}>
-              {p.displayName}
-            </option>
-          ))}
-        </select>
+        <Select value={selectedProvider} onValueChange={setSelectedProvider} name="provider">
+          <SelectTrigger id={`${idPrefix}-provider`} className="w-full">
+            <SelectValue placeholder="Select a provider" />
+          </SelectTrigger>
+          <SelectContent>
+            {providers.map((p) => (
+              <SelectItem key={p.name} value={p.name}>
+                {p.displayName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex flex-col gap-2">
         <Label htmlFor={`${idPrefix}-model`}>Model</Label>
-        <Input
+        <ModelCombobox
           id={`${idPrefix}-model`}
           name="model"
-          list={`${idPrefix}-model-suggestions`}
-          placeholder={currentProvider?.defaultModel || 'model-name'}
+          models={models}
           defaultValue={defaultModel ?? currentProvider?.defaultModel ?? ''}
+          placeholder={currentProvider?.defaultModel || 'model-name'}
           required
         />
-        {models.length > 0 && (
-          <datalist id={`${idPrefix}-model-suggestions`}>
-            {models.map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-        )}
         <p className="text-xs text-muted-foreground">
           Type any model name. Predefined models appear as suggestions.
         </p>
@@ -184,6 +183,7 @@ function CreateAgentDialog({
   onSubmit,
   title = 'Create Agent',
   description = 'Define a new AI agent with its model, prompt, and skills.',
+  allowRoleSelect = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -191,9 +191,18 @@ function CreateAgentDialog({
   onSubmit: (form: FormData) => void;
   title?: string;
   description?: string;
+  /**
+   * When true, expose a Primary / Sub-agent toggle on the create form.
+   * Defaults to false; the Sub-Agent dialog keeps its hard-coded `worker`
+   * role. Only used on the admin "Create Public Agent" dialog where both
+   * role kinds are legitimate. The role is fixed once the agent exists —
+   * the edit dialog never offers this control.
+   */
+  allowRoleSelect?: boolean;
 }) {
   const providers = useProviders();
   const [streamingEnabled, setStreamingEnabled] = useState(false);
+  const [isPrimary, setIsPrimary] = useState(allowRoleSelect);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -239,8 +248,36 @@ function CreateAgentDialog({
             />
           </div>
 
-          {/* Role is always worker for user-created agents; primary is system-only */}
-          <input type="hidden" name="role" value="worker" />
+          {allowRoleSelect ? (
+            <div
+              className={cn(
+                'flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors',
+                isPrimary
+                  ? 'border-amber-500/50 bg-amber-500/10 ring-1 ring-amber-500/30'
+                  : 'border-input',
+              )}
+            >
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="create-isPrimary" className="text-base">
+                    Primary agent
+                  </Label>
+                  <Badge variant={isPrimary ? 'default' : 'secondary'} className="text-[10px]">
+                    {isPrimary ? 'PRIMARY' : 'SUB-AGENT'}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Primary agents are user-facing entry points. Off creates a worker (sub-agent) —
+                  invokable by primaries via tool calls.
+                </p>
+              </div>
+              <Switch id="create-isPrimary" checked={isPrimary} onCheckedChange={setIsPrimary} />
+              <input type="hidden" name="role" value={isPrimary ? 'primary' : 'worker'} />
+            </div>
+          ) : (
+            // Sub-agent dialog: role is fixed to worker.
+            <input type="hidden" name="role" value="worker" />
+          )}
 
           <ProviderModelFields providers={providers} idPrefix="create" />
 
@@ -457,12 +494,15 @@ function OfficialAgentsTable({
   saving,
   onEdit,
   onToggleActive,
+  boundAgentIds,
 }: {
   agents: AgentDefinition[];
   isAdmin: boolean;
   saving: boolean;
   onEdit: (agent: AgentDefinition) => void;
   onToggleActive: (agent: AgentDefinition) => void;
+  /** AgentDefinition.id values bound to the current user via UserAgent. */
+  boundAgentIds: ReadonlySet<string>;
 }) {
   if (agents.length === 0) {
     return (
@@ -487,7 +527,7 @@ function OfficialAgentsTable({
         </TableHeader>
         <TableBody>
           {agents.map((agent) => (
-            <TableRow key={agent.id}>
+            <TableRow key={agent.id} className="transition-colors hover:bg-primary/5">
               <TableCell className="font-medium">
                 <div className="flex items-center gap-2">
                   <Bot className="size-4" />
@@ -507,7 +547,15 @@ function OfficialAgentsTable({
               </TableCell>
               <TableCell>
                 {agent.role === 'primary' ? (
-                  <span className="text-muted-foreground text-sm">Always on</span>
+                  boundAgentIds.has(agent.id) ? (
+                    <Badge className="border-emerald-500/40 bg-emerald-500/15 text-emerald-400">
+                      Active
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      Inactive
+                    </Badge>
+                  )
                 ) : (
                   <Switch
                     checked={agent.isActive}
@@ -596,7 +644,7 @@ function SubAgentsTable({
         </TableHeader>
         <TableBody>
           {agents.map((agent) => (
-            <TableRow key={agent.id}>
+            <TableRow key={agent.id} className="transition-colors hover:bg-primary/5">
               <TableCell className="font-medium">
                 <div className="flex items-center gap-2">
                   <Bot className="size-4" />
@@ -696,7 +744,7 @@ function UserSubAgentsSection({
       defaultOpen={defaultOpen}
       className="group/user rounded-lg border bg-background/30 backdrop-blur-sm"
     >
-      <CollapsibleTrigger className="flex w-full items-center gap-2 p-4 text-left hover:bg-muted/50">
+      <CollapsibleTrigger className="flex w-full items-center gap-2 p-4 text-left transition-colors hover:bg-primary/5">
         <ChevronRight className="size-4 shrink-0 transition-transform duration-200 group-data-[state=open]/user:rotate-90" />
         <div className="flex-1">
           <h3 className="font-semibold">{userName}</h3>
@@ -1013,7 +1061,7 @@ function RecentRuns() {
             {runs.map((run) => (
               <TableRow
                 key={run.id}
-                className="cursor-pointer hover:bg-muted/50"
+                className="cursor-pointer transition-colors hover:bg-primary/5"
                 onClick={() => {
                   setSelectedRunId(run.id);
                 }}
@@ -1161,6 +1209,7 @@ function ViewAgentDialog({
 export default function UserAgentsPage() {
   const { user } = useAuth();
   const [officialAgents, setOfficialAgents] = useState<AgentDefinition[]>([]);
+  const [boundAgentIds, setBoundAgentIds] = useState<ReadonlySet<string>>(new Set());
   const [mySubAgents, setMySubAgents] = useState<AgentDefinition[]>([]);
   const [otherUsersSubAgents, setOtherUsersSubAgents] = useState<
     Map<string, { user: { name: string; email: string }; agents: AgentDefinition[] }>
@@ -1182,10 +1231,14 @@ export default function UserAgentsPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch<PaginatedAgents>(
-        '/api/v1/agents?limit=100&includeCreatedBy=true',
-      );
-      const all = Array.isArray(res.data) ? res.data : [];
+      const [agentsRes, userAgentsRes] = await Promise.all([
+        authFetch<PaginatedAgents>('/api/v1/agents?limit=100&includeCreatedBy=true'),
+        // Endpoint returns the array directly, not wrapped in { data }.
+        authFetch<{ agentDefinitionId: string }[]>('/api/v1/agents/user-agents').catch(() => []),
+      ]);
+      const all = Array.isArray(agentsRes.data) ? agentsRes.data : [];
+      const bindings = Array.isArray(userAgentsRes) ? userAgentsRes : [];
+      setBoundAgentIds(new Set(bindings.map((b) => b.agentDefinitionId)));
 
       // Official agents (primary first, then workers)
       setOfficialAgents(
@@ -1346,9 +1399,14 @@ export default function UserAgentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between border-b border-border/60 pb-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Agents</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
+            <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground/70">
+              orchestration
+            </span>
+          </div>
           <p className="text-sm text-muted-foreground">
             {isAdmin
               ? "Manage official agents and monitor all users' sub-agents."
@@ -1391,6 +1449,7 @@ export default function UserAgentsPage() {
               saving={saving}
               onEdit={setEditAgent}
               onToggleActive={handleToggleActive}
+              boundAgentIds={boundAgentIds}
             />
           </div>
 
@@ -1476,7 +1535,8 @@ export default function UserAgentsPage() {
         saving={saving}
         onSubmit={handleCreateOfficial}
         title="Create Public Agent"
-        description="Create a new public agent available to all users."
+        description="Create a new public agent — primary (entry point) or sub-agent — available to all users."
+        allowRoleSelect
       />
 
       {/* Create Sub-Agent Dialog */}

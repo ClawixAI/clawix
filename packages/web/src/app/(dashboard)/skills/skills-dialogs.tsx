@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -68,7 +71,7 @@ export function CreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="flex max-h-[90vh] flex-col">
         <DialogHeader>
           <DialogTitle>Create skill</DialogTitle>
           <DialogDescription>
@@ -76,7 +79,7 @@ export function CreateDialog({
             workspace.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
           <Input placeholder="skill-name" value={name} onChange={(e) => setName(e.target.value)} />
           <Textarea
             placeholder="What does this skill do, and when should the agent use it?"
@@ -139,7 +142,7 @@ export function EditDialog({
 
   return (
     <Dialog open={target !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="!w-[60vw] !max-w-none">
+      <DialogContent className="flex max-h-[90vh] !w-[60vw] flex-col !max-w-none">
         <DialogHeader>
           <DialogTitle>Edit {target.dirName}/SKILL.md</DialogTitle>
           <DialogDescription>
@@ -150,7 +153,7 @@ export function EditDialog({
         <Textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          className="min-h-[60vh] font-mono text-sm"
+          className="min-h-0 flex-1 resize-none overflow-auto font-mono text-sm"
         />
         {err && <p className="text-sm text-destructive">{err}</p>}
         <DialogFooter>
@@ -227,6 +230,60 @@ export function RenameDialog({
             {saving ? <Loader2 className="mr-1 size-4 animate-spin" /> : null}
             Rename
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Read-only preview that renders the SKILL.md as markdown. Opens when the
+ * user clicks a skill card. Built-in skills show a "BUILTIN" badge; custom
+ * skills can jump from here straight into Edit via the footer button.
+ */
+export function PreviewDialog({
+  target,
+  onClose,
+  onEdit,
+}: {
+  target: { dirName: string; name: string; source: 'builtin' | 'custom'; content: string } | null;
+  onClose: () => void;
+  onEdit?: () => void;
+}) {
+  if (!target) return null;
+  return (
+    <Dialog open={target !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex max-h-[90vh] !w-[60vw] flex-col !max-w-none">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span>{target.name}</span>
+            <Badge
+              variant="outline"
+              className={
+                target.source === 'builtin'
+                  ? 'border-sky-500/40 bg-sky-500/15 text-sky-400'
+                  : 'border-primary/40 bg-primary/15 text-primary'
+              }
+            >
+              {target.source}
+            </Badge>
+          </DialogTitle>
+          <DialogDescription>
+            <code className="rounded bg-foreground/5 px-1 font-mono text-xs">
+              /skills/{target.dirName}/SKILL.md
+            </code>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="prose prose-sm dark:prose-invert min-h-0 max-w-none flex-1 overflow-auto rounded-md border bg-muted/20 p-4 prose-headings:font-semibold prose-headings:tracking-tight prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-pre:overflow-x-auto prose-pre:rounded-md prose-pre:bg-muted prose-pre:p-3 prose-pre:text-xs prose-code:rounded prose-code:bg-foreground/5 prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:font-mono prose-code:before:content-none prose-code:after:content-none [&_pre_code]:bg-transparent">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{target.content}</ReactMarkdown>
+        </div>
+        <DialogFooter>
+          {onEdit ? (
+            <Button variant="outline" onClick={onEdit}>
+              Edit
+            </Button>
+          ) : null}
+          <Button onClick={onClose}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

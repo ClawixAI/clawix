@@ -66,6 +66,12 @@ export interface RunOptions {
    * other cases the callback is dropped. See `RunResult.streamingUsed`.
    */
   readonly onEvent?: (event: ReasoningEvent) => void | Promise<void>;
+  /**
+   * Optional external abort signal. When fired, the run cancels: the
+   * reasoning loop exits, in-flight tools abort, sub-agents cascade,
+   * and the AgentRun row is left in 'cancelled' state.
+   */
+  readonly abortSignal?: AbortSignal;
 }
 
 /** Result returned after an agent run completes (or fails). */

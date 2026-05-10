@@ -1,6 +1,7 @@
 import type { ChatMessage, GenerationSettings, LLMUsage } from '@clawix/shared';
 
 import type { BudgetTracker } from './budget-tracker.js';
+import type { SkillStalenessMap } from './skill-loader.types.js';
 
 /**
  * Streaming event emitted from the reasoning loop. Consumed by channel
@@ -50,6 +51,8 @@ export interface ReasoningLoopConfig {
   readonly timeoutMs?: number;
   /** External abort signal — loop checks this before each iteration. */
   readonly abortSignal?: AbortSignal;
+  /** Staleness map from skill loader — carried for downstream consumption. */
+  readonly stalenessMap?: SkillStalenessMap;
 }
 
 /** Result of a completed reasoning loop. */

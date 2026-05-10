@@ -14,6 +14,7 @@ import { createLogger } from '@clawix/shared';
 import type { Tool, ToolResult } from '../../tool.js';
 import { validateUrl } from './ssrf-protection.js';
 import { extractContent } from './content-extractor.js';
+import { extractPdf } from './pdf-extractor.js';
 
 const logger = createLogger('engine:tools:web:fetch');
 
@@ -22,6 +23,18 @@ const FETCH_TIMEOUT_MS = 30_000;
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_REDIRECTS = 5;
 const USER_AGENT = 'Clawix/1.0';
+
+/** True when the URL or Content-Type indicates a PDF. */
+function isPdfResponse(url: string, contentType: string): boolean {
+  const type = (contentType.split(';')[0] ?? contentType).trim().toLowerCase();
+  if (type === 'application/pdf') return true;
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    return pathname.endsWith('.pdf');
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Create a web_fetch tool that fetches URLs with SSRF protection and content extraction.
@@ -101,13 +114,18 @@ export function createWebFetchTool(): Tool {
             };
           }
 
-          // Step 4: Read body with streaming size enforcement, racing
-          // each chunk read against the same abort signal.
-          const body = await readBodyWithLimit(response, MAX_RESPONSE_BYTES, controller.signal);
+          // Step 4: Read body as raw bytes with streaming size enforcement.
+          const bytes = await readBodyBytes(response, MAX_RESPONSE_BYTES, controller.signal);
 
-          // Step 5: Extract content based on content type
+          // Step 5: Extract content based on whether this is a PDF.
+          // Capture byteLength before extractPdf — pdfjs-dist transfers (detaches)
+          // the underlying ArrayBuffer, which zeros out bytes.byteLength after the call.
           const contentType = response.headers.get('content-type') ?? 'text/plain';
-          const extracted = extractContent(body, contentType, maxChars);
+          const isPdf = isPdfResponse(url, contentType);
+          const contentLength = bytes.byteLength;
+          const extracted = isPdf
+            ? await extractPdf(bytes, maxChars)
+            : extractContent(bytesToText(bytes), contentType, maxChars);
 
           // Step 6: Format output
           const titleLine = extracted.title
@@ -119,7 +137,8 @@ export function createWebFetchTool(): Tool {
             {
               url,
               contentType,
-              contentLength: body.length,
+              isPdf,
+              contentLength,
               extractedLength: extracted.content.length,
             },
             'web_fetch completed',
@@ -140,23 +159,21 @@ export function createWebFetchTool(): Tool {
 }
 
 /**
- * Read response body as text, aborting if size exceeds limit.
+ * Read response body as raw bytes, aborting if size exceeds limit.
  *
- * Uses the response body stream to enforce size at the byte level,
- * preventing memory exhaustion from large responses.
+ * Returns a Uint8Array so the caller can decide whether to decode as text
+ * (HTML/JSON/plain) or pass through as binary (PDF).
  */
-async function readBodyWithLimit(
+async function readBodyBytes(
   response: Awaited<ReturnType<typeof undiciFetch>>,
   maxBytes: number,
   signal: AbortSignal,
-): Promise<string> {
-  // If Content-Length is known and exceeds limit, fail fast
+): Promise<Uint8Array> {
   const contentLength = response.headers.get('content-length');
   if (contentLength && Number(contentLength) > maxBytes) {
     throw new Error(`Response too large: ${contentLength} bytes exceeds ${maxBytes} byte limit`);
   }
 
-  // Stream the body and enforce byte limit
   const body = response.body as ReadableStream<Uint8Array> | null;
   if (!body) {
     throw new Error('Response body is not readable');
@@ -164,8 +181,6 @@ async function readBodyWithLimit(
 
   const reader = body.getReader();
 
-  // Race each reader.read() against the abort signal so a server that sends
-  // headers fast and then stalls the body cannot pin the loop indefinitely.
   let abortHandler: (() => void) | undefined;
   const abortPromise = new Promise<never>((_, reject) => {
     if (signal.aborted) {
@@ -175,12 +190,13 @@ async function readBodyWithLimit(
     abortHandler = () => reject(new Error('Body read aborted'));
     signal.addEventListener('abort', abortHandler);
   });
-  // Prevent unhandled rejection warnings when the read finishes first.
   abortPromise.catch(() => {});
 
   try {
     const chunks: Uint8Array[] = [];
     let totalBytes = 0;
+    // Race each reader.read() against the abort signal so a server that sends
+    // headers fast and then stalls the body cannot pin the loop indefinitely.
     let readResult = await Promise.race([reader.read(), abortPromise]);
 
     while (!readResult.done) {
@@ -190,15 +206,18 @@ async function readBodyWithLimit(
         await reader.cancel();
         throw new Error(`Response too large: exceeded ${maxBytes} byte limit`);
       }
-
       chunks.push(chunk);
       readResult = await Promise.race([reader.read(), abortPromise]);
     }
 
-    const decoder = new TextDecoder();
-    return (
-      chunks.map((chunk) => decoder.decode(chunk, { stream: true })).join('') + decoder.decode()
-    );
+    // Concatenate chunks into a single Uint8Array.
+    const out = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return out;
   } finally {
     if (abortHandler) {
       signal.removeEventListener('abort', abortHandler);
@@ -207,4 +226,9 @@ async function readBodyWithLimit(
     // unblocks the read() race while the stream is still open.
     reader.cancel().catch(() => {});
   }
+}
+
+/** Decode a Uint8Array as UTF-8 text. */
+function bytesToText(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes);
 }

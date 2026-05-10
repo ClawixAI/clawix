@@ -344,3 +344,97 @@ describe('ContainerRunner.stop()', () => {
     expect(hasRm).toBe(true);
   });
 });
+
+// ------------------------------------------------------------------ //
+//  exec with AbortSignal                                              //
+// ------------------------------------------------------------------ //
+
+describe('exec with AbortSignal', () => {
+  it('rejects with abort error when signal is already aborted', async () => {
+    // Make the mock honor the signal: if signal is provided and aborted,
+    // throw an ABORT_ERR-shaped error.
+    mockExecFileAsync.mockImplementation((_cmd, _args, options?: { signal?: AbortSignal }) => {
+      if (options?.signal?.aborted) {
+        const err = new Error('aborted') as NodeJS.ErrnoException;
+        err.code = 'ABORT_ERR';
+        return Promise.reject(err);
+      }
+      return Promise.resolve({ stdout: '', stderr: '' });
+    });
+
+    const runner = new ContainerRunner();
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runner.exec('container-1', ['sleep', '30'], {
+      signal: controller.signal,
+    });
+
+    expect(result.exitCode).toBe(-1);
+    expect(result.stderr).toMatch(/abort/i);
+  });
+
+  it('passes signal option to execFile', async () => {
+    let seenSignal: AbortSignal | undefined;
+    mockExecFileAsync.mockImplementation((_cmd, _args, options?: { signal?: AbortSignal }) => {
+      seenSignal = options?.signal;
+      return Promise.resolve({ stdout: 'ok', stderr: '' });
+    });
+
+    const runner = new ContainerRunner();
+    const controller = new AbortController();
+
+    await runner.exec('container-1', ['echo', 'hi'], { signal: controller.signal });
+
+    expect(seenSignal).toBe(controller.signal);
+  });
+
+  it('preserves buffered stdout when stdin path is aborted mid-flight', async () => {
+    // Build a minimal EventEmitter-like child process stub that:
+    // 1. Emits buffered data on stdout before the abort error arrives
+    // 2. Emits error(ABORT_ERR) followed by close(null, 'SIGTERM')
+    const { EventEmitter } = await import('events');
+
+    const fakeChild = {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      stdin: { write: vi.fn(), end: vi.fn() },
+      on: vi.fn(),
+    };
+
+    // Collect event listeners registered via proc.on(...)
+    const listeners: Record<string, ((...args: unknown[]) => void)[]> = {};
+    (fakeChild.on as ReturnType<typeof vi.fn>).mockImplementation(
+      (event: string, cb: (...args: unknown[]) => void) => {
+        listeners[event] ??= [];
+        listeners[event]!.push(cb);
+      },
+    );
+
+    mockSpawn.mockReturnValue(fakeChild);
+
+    const runner = new ContainerRunner();
+    const controller = new AbortController();
+
+    // Kick off exec — uses spawn path because stdin is provided
+    const execPromise = runner.exec('container-1', ['cat'], {
+      stdin: 'input data',
+      signal: controller.signal,
+    });
+
+    // Simulate stdout arriving before abort
+    fakeChild.stdout.emit('data', Buffer.from('partial output'));
+
+    // Simulate the abort sequence: error(ABORT_ERR) then close(null, SIGTERM)
+    controller.abort();
+    const abortErr = Object.assign(new Error('aborted'), { code: 'ABORT_ERR' });
+    for (const cb of listeners['error'] ?? []) cb(abortErr);
+    for (const cb of listeners['close'] ?? []) cb(null, 'SIGTERM');
+
+    const result = await execPromise;
+
+    expect(result.exitCode).toBe(-1);
+    expect(result.stdout).toBe('partial output');
+    expect(result.stderr).toMatch(/exec aborted|aborted/i);
+  });
+});

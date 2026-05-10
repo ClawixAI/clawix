@@ -1,22 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, Bot, Copy, Loader2 } from 'lucide-react';
+import { ArrowDown, Bot, Check, Copy, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import { toast } from 'sonner';
 import { formatToolBubble } from '@clawix/shared';
 import type { BubbleState, ToolProgressMode } from '@clawix/shared';
 import { Button } from '@/components/ui/button';
+import { copyToClipboard } from '@/lib/clipboard';
 import type { ChatMessage } from './use-chat';
-
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-function handleCopy(content: string) {
-  void navigator.clipboard.writeText(content);
-}
 
 function formatDateLabel(iso: string): string {
   const d = new Date(iso);
@@ -91,18 +85,37 @@ function AgentMessage({ content, createdAt }: { content: string; createdAt: stri
       </div>
       <div className="flex items-center gap-2 pl-10">
         <span className="text-[10px] text-muted-foreground">{formatTime(createdAt)}</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          onClick={() => {
-            handleCopy(content);
-          }}
-        >
-          <Copy className="size-3.5 text-muted-foreground" />
-        </Button>
+        <CopyButton content={content} />
       </div>
     </div>
+  );
+}
+
+function CopyButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="size-7"
+      aria-label={copied ? 'Copied' : 'Copy message'}
+      onClick={() => {
+        void copyToClipboard(content).then((ok) => {
+          if (ok) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } else {
+            toast.error('Could not copy to clipboard');
+          }
+        });
+      }}
+    >
+      {copied ? (
+        <Check className="size-3.5 text-emerald-500" />
+      ) : (
+        <Copy className="size-3.5 text-muted-foreground" />
+      )}
+    </Button>
   );
 }
 

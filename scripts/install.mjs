@@ -65,12 +65,60 @@ function upsertEnvLine(content, key, value) {
   return content.replace(/\s*$/, '') + `\n${key}=${safe}\n`;
 }
 
+/**
+ * Merge keys from .env.example into existing .env without overwriting any
+ * values the user has already set. Returns true if anything was added.
+ */
+function mergeMissingKeysFromExample(envContent, examplePath) {
+  if (!existsSync(examplePath)) return { content: envContent, added: [] };
+  const example = readFileSync(examplePath, 'utf8');
+  const added = [];
+  let merged = envContent;
+  for (const line of example.split(/\r?\n/)) {
+    const m = /^\s*([A-Z][A-Z0-9_]*)=(.*)$/.exec(line);
+    if (!m) continue;
+    const key = m[1];
+    const value = m[2];
+    const presentPattern = new RegExp(`^\\s*${key}=`, 'm');
+    if (!presentPattern.test(merged)) {
+      merged = upsertEnvLine(merged, key, value);
+      added.push(key);
+    }
+  }
+  return { content: merged, added };
+}
+
 async function waitForHealth(url, timeoutSeconds) {
   const start = Date.now();
   while (Date.now() - start < timeoutSeconds * 1000) {
     try {
       const res = await fetch(url);
       if (res.ok) return true;
+    } catch {
+      // not up yet
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return false;
+}
+
+async function waitForBrowserHealth(composeFile, serviceName, timeoutSeconds) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutSeconds * 1000) {
+    try {
+      // `docker compose ps --format json` returns either a single object (newer) or
+      // newline-delimited objects (older). Handle both.
+      const out = execSync(`docker compose -f "${composeFile}" ps --format json ${serviceName}`, {
+        cwd: ROOT,
+        encoding: 'utf8',
+      });
+      const lines = out.trim().split(/\r?\n/).filter(Boolean);
+      for (const line of lines) {
+        const obj = JSON.parse(line);
+        if (obj.Service === serviceName || obj.Name?.includes(serviceName)) {
+          if (obj.Health === 'healthy') return true;
+        }
+      }
     } catch {
       // not up yet
     }
@@ -494,6 +542,48 @@ async function main() {
     ok(`.env written (permissions 600)`);
   }
 
+  // Always: merge any new keys from .env.example into the existing .env.
+  // Pre-existing values are preserved; only missing keys are appended with
+  // the .env.example default. Safe to run on every install.
+  {
+    const current = readFileSync(ENV_FILE, 'utf8');
+    const { content: merged, added } = mergeMissingKeysFromExample(current, ENV_EXAMPLE);
+    if (added.length > 0) {
+      writeFileSync(ENV_FILE, merged, { mode: 0o600 });
+      ok(`.env updated with ${added.length} new key(s) from .env.example: ${added.join(', ')}`);
+    }
+  }
+
+  // Always: ensure BROWSER_AUTH_TOKEN is a real value, not the placeholder.
+  {
+    const current = readFileSync(ENV_FILE, 'utf8');
+    let updated = current;
+    if (
+      !/^\s*BROWSER_AUTH_TOKEN=/m.test(updated) ||
+      /BROWSER_AUTH_TOKEN=please-generate-a-32-byte-secret/.test(updated) ||
+      /^\s*BROWSER_AUTH_TOKEN=\s*$/m.test(updated)
+    ) {
+      updated = upsertEnvLine(updated, 'BROWSER_AUTH_TOKEN', secret(32));
+      writeFileSync(ENV_FILE, updated, { mode: 0o600 });
+      ok('BROWSER_AUTH_TOKEN generated');
+    }
+  }
+
+  // Always: ensure PYTHON_PROXY_AUTH_TOKEN is a real value, not the placeholder.
+  {
+    const current = readFileSync(ENV_FILE, 'utf8');
+    let updated = current;
+    if (
+      !/^\s*PYTHON_PROXY_AUTH_TOKEN=/m.test(updated) ||
+      /PYTHON_PROXY_AUTH_TOKEN=please-generate-a-32-byte-secret/.test(updated) ||
+      /^\s*PYTHON_PROXY_AUTH_TOKEN=\s*$/m.test(updated)
+    ) {
+      updated = upsertEnvLine(updated, 'PYTHON_PROXY_AUTH_TOKEN', secret(32));
+      writeFileSync(ENV_FILE, updated, { mode: 0o600 });
+      ok('PYTHON_PROXY_AUTH_TOKEN generated');
+    }
+  }
+
   step('Installing dependencies');
   runVisible('pnpm install');
   ok('pnpm install done');
@@ -510,6 +600,10 @@ async function main() {
   runVisible('docker build -t clawix-agent:latest -f infra/docker/agent/Dockerfile .');
   ok('clawix-agent:latest built');
 
+  step('Building python-runner Docker image');
+  runVisible('docker build -t clawix-python-runner:latest infra/docker/python-runner');
+  ok('clawix-python-runner:latest built');
+
   step(`Starting stack (${deployMode})`);
   const upArgs =
     deployMode === 'production' ? 'up -d --build --remove-orphans' : 'up -d --remove-orphans';
@@ -525,6 +619,19 @@ async function main() {
     process.exit(1);
   }
   ok('API is healthy');
+
+  step('Waiting for clawix-browser /health (browser tools sidecar)');
+  info('If this never becomes healthy, browser tools will be disabled but the API still works.');
+  const browserHealthy = await waitForBrowserHealth(composeFile, 'clawix-browser', 60);
+  if (browserHealthy) {
+    ok('Browser sidecar is healthy — agents will have browser_* tools available');
+  } else {
+    warn('Browser sidecar did not become healthy in 60s.');
+    info(
+      `The API will run with browser tools disabled. Check: docker compose -f "${composeFile}" logs clawix-browser`,
+    );
+    info('Browser tools can be enabled later by fixing the sidecar and restarting the API.');
+  }
 
   console.log(`\n${bold(green('=== Installation complete ==='))}\n`);
   const finalApi = answers?.apiUrl ?? 'http://localhost:3001';

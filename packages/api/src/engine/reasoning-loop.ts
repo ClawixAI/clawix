@@ -9,6 +9,7 @@ import { classifyError, LoopAbortedError } from './error-classifier.js';
 import { ToolLoopGuard } from './tool-loop-guard.js';
 import { wireRecoveryMetrics, toolLoopAbortedTotal } from './recovery-metrics.js';
 import { CompressorService } from './compressor.js';
+import { SKILL_STALENESS_THRESHOLD_DAYS } from './skill-loader.types.js';
 
 const logger = createLogger('engine:reasoning-loop');
 
@@ -125,6 +126,8 @@ export class ReasoningLoop {
     };
 
     const toolLoopGuard = new ToolLoopGuard();
+    const stalenessMap = config?.stalenessMap;
+    const injectedSkills = new Set<string>();
 
     try {
       while (iterations < maxIterations) {
@@ -272,7 +275,9 @@ export class ReasoningLoop {
             });
           }
 
-          const result = await this.toolRegistry.execute(toolCall.name, toolCall.arguments);
+          const result = await this.toolRegistry.execute(toolCall.name, toolCall.arguments, {
+            abortSignal: abortController.signal,
+          });
           try {
             toolLoopGuard.record(toolCall.name, toolCall.arguments, result.isError);
           } catch (loopErr) {
@@ -287,6 +292,32 @@ export class ReasoningLoop {
             content: result.output,
             toolCallId: toolCall.id,
           });
+
+          if (
+            !result.isError &&
+            stalenessMap &&
+            stalenessMap.size > 0 &&
+            toolCall.name === 'read_file'
+          ) {
+            const filePath = String(toolCall.arguments['path'] ?? '');
+            if (!injectedSkills.has(filePath)) {
+              const entry = stalenessMap.get(filePath);
+              if (entry) {
+                injectedSkills.add(filePath);
+                const stalenessHint = entry.stale
+                  ? ` (not updated in ${SKILL_STALENESS_THRESHOLD_DAYS}+ days)`
+                  : '';
+                messages.push({
+                  role: 'system',
+                  content:
+                    `You just loaded skill "${entry.name}"${stalenessHint}. ` +
+                    `After completing the current task using this skill, reflect: ` +
+                    `did the skill accurately guide you? If anything was wrong, missing, ` +
+                    `or outdated, patch it with edit_file before moving on.`,
+                });
+              }
+            }
+          }
         }
       }
     } finally {

@@ -1,7 +1,13 @@
 import { createLogger } from '@clawix/shared';
 import type { ToolDefinition } from '@clawix/shared';
 
-import { toToolDefinition, type ParamSchema, type Tool, type ToolResult } from './tool.js';
+import {
+  toToolDefinition,
+  type ParamSchema,
+  type Tool,
+  type ToolResult,
+  type ToolExecuteContext,
+} from './tool.js';
 
 const logger = createLogger('engine:tool-registry');
 
@@ -234,7 +240,11 @@ export class ToolRegistry {
    * Execute a tool: cast params, validate, run, and post-process output.
    * Returns a ToolResult with truncated output and error hints as needed.
    */
-  async execute(toolName: string, params: Readonly<Record<string, unknown>>): Promise<ToolResult> {
+  async execute(
+    toolName: string,
+    params: Readonly<Record<string, unknown>>,
+    ctx?: ToolExecuteContext,
+  ): Promise<ToolResult> {
     const tool = this.tools.get(toolName);
     if (!tool) {
       return { output: `Tool not found: ${toolName}`, isError: true };
@@ -254,7 +264,7 @@ export class ToolRegistry {
 
     try {
       const safeParams = stripUnknownKeys(castedParams, tool.parameters);
-      const result = await tool.execute(safeParams);
+      const result = await tool.execute(safeParams, ctx);
       const output = this.truncate(result.output);
 
       if (result.isError) {

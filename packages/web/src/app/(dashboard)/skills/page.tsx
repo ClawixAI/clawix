@@ -8,7 +8,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { authFetch } from '@/lib/auth';
 import type { SkillReadResult } from '@clawix/shared';
 import { BuiltinCard, CustomCard, type Skill, dirNameFromPath } from './skills-cards';
-import { CreateDialog, EditDialog, RenameDialog, DeleteDialog } from './skills-dialogs';
+import {
+  CreateDialog,
+  DeleteDialog,
+  EditDialog,
+  PreviewDialog,
+  RenameDialog,
+} from './skills-dialogs';
 
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -19,6 +25,12 @@ export default function SkillsPage() {
   const [editTarget, setEditTarget] = useState<{ dirName: string; content: string } | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ dirName: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ dirName: string; name: string } | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<{
+    dirName: string;
+    name: string;
+    source: 'builtin' | 'custom';
+    content: string;
+  } | null>(null);
 
   const fetchSkills = useCallback(async () => {
     setLoading(true);
@@ -52,6 +64,23 @@ export default function SkillsPage() {
     }
   };
 
+  const handlePreviewClick = async (skill: Skill) => {
+    const dirName = dirNameFromPath(skill.path);
+    try {
+      const res = await authFetch<{ success: boolean; data: SkillReadResult }>(
+        `/api/v1/skills/${dirName}`,
+      );
+      setPreviewTarget({
+        dirName,
+        name: skill.name,
+        source: skill.source,
+        content: res.data.content,
+      });
+    } catch {
+      setError('Failed to load skill content');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -62,12 +91,20 @@ export default function SkillsPage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Skills</h1>
+      <div className="border-b border-border/60 pb-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Skills</h1>
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground/70">
+            agent toolkit
+          </span>
+        </div>
         <p className="text-sm text-muted-foreground">
           Skills extend your agent&apos;s capabilities with specialized knowledge and workflows.
           Custom skills live inside your workspace under{' '}
-          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/skills/&lt;name&gt;</code>.
+          <code className="rounded bg-foreground/5 px-1 font-mono text-xs">
+            /skills/&lt;name&gt;
+          </code>
+          .
         </p>
       </div>
 
@@ -91,7 +128,11 @@ export default function SkillsPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {builtinSkills.map((skill) => (
-              <BuiltinCard key={skill.path} skill={skill} />
+              <BuiltinCard
+                key={skill.path}
+                skill={skill}
+                onPreview={() => void handlePreviewClick(skill)}
+              />
             ))}
           </div>
         )}
@@ -131,6 +172,7 @@ export default function SkillsPage() {
                   key={skill.path}
                   skill={skill}
                   dirName={dirName}
+                  onPreview={() => void handlePreviewClick(skill)}
                   onEdit={() => handleEditClick(skill)}
                   onRename={() => setRenameTarget({ dirName })}
                   onDelete={() => setDeleteTarget({ dirName, name: skill.name })}
@@ -172,6 +214,21 @@ export default function SkillsPage() {
           setDeleteTarget(null);
           void fetchSkills();
         }}
+      />
+      <PreviewDialog
+        target={previewTarget}
+        onClose={() => setPreviewTarget(null)}
+        onEdit={
+          previewTarget?.source === 'custom'
+            ? () => {
+                setEditTarget({
+                  dirName: previewTarget.dirName,
+                  content: previewTarget.content,
+                });
+                setPreviewTarget(null);
+              }
+            : undefined
+        }
       />
     </div>
   );

@@ -20,6 +20,9 @@ import { DbModule } from './db/index.js';
 import { EngineModule } from './engine/engine.module.js';
 import { HealthModule } from './health/index.js';
 import { AppExceptionFilter } from './filters/app-exception.filter.js';
+import { GroupsModule } from './groups/groups.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
+import { MemoryModule } from './memory/memory.module.js';
 import { MessagesModule } from './messages/index.js';
 import { ProfileModule } from './profile/index.js';
 import { PrismaModule } from './prisma/index.js';
@@ -55,6 +58,9 @@ import { WorkspaceModule } from './workspace/index.js';
     SkillsModule,
     ChannelsModule,
     ChatModule,
+    GroupsModule,
+    NotificationsModule,
+    MemoryModule,
     MessagesModule,
     TokensModule,
     AuditModule,

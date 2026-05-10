@@ -31,8 +31,17 @@ model Policy {
   maxScheduledTasks   Int      @default(5)
   minCronIntervalSecs Int      @default(300)
   maxTokensPerCronRun Int?
-  cronEnabled         Boolean  @default(false)
-  isActive            Boolean  @default(true)
+  cronEnabled                  Boolean  @default(false)
+  allowBrowserCdp              Boolean  @default(false)
+  maxConcurrentBrowserSessions Int      @default(2)
+  allowPython                  Boolean  @default(true)
+  allowPythonNet               Boolean  @default(false)
+  pythonPackageAllowlist       String[] @default([])
+  maxPythonMemoryMb            Int      @default(512)
+  maxPythonTimeoutSecs         Int      @default(60)
+  maxPythonCpuCores            Int      @default(1)
+  maxConcurrentPythonRuns      Int      @default(2)
+  isActive                     Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -71,6 +80,8 @@ model User {
   userAgents              UserAgent[]
   tasks                   Task[]
   createdAgentDefinitions AgentDefinition[] @relation("CreatedAgentDefinitions")
+  groupInvitesReceived    GroupInvite[]     @relation("GroupInviteInvitee")
+  groupInvitesSent        GroupInvite[]     @relation("GroupInviteInvitedBy")
 }
 
 // ============================================================================
@@ -94,6 +105,11 @@ model AgentDefinition {
   skillIds         String[] // references to Skill.id
   maxTokensPerRun  Int       @default(100000)
   containerConfig  Json      @default("{}")
+  /// Per-tool configuration overrides. Schema:
+  /// { modelOverrides?: { [toolName: string]: string } }
+  /// Used by browser_vision (and future tools) to pin a model that differs
+  /// from the agent's default.
+  toolConfig       Json      @default("{}")
   isActive         Boolean   @default(true)
   isOfficial       Boolean   @default(true)
   /// When true, intermediate model prose is streamed to the channel as
@@ -379,14 +395,22 @@ model TokenUsage {
 // ============================================================================
 
 model Group {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   name        String
   description String?
   createdById String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
+  // Soft-delete marker. Repositories filter `deletedAt IS NULL` on every
+  // read; deleteGroup sets it (and revokes the corresponding MemoryShare
+  // rows) so the group's identity survives for audit + future
+  // shared-workspace recovery.
+  deletedAt   DateTime?
 
   members GroupMember[]
   shares  MemoryShare[]
+  invites GroupInvite[]
+
+  @@index([deletedAt])
 }
 
 enum GroupMemberRole {
@@ -405,6 +429,31 @@ model GroupMember {
 
   @@id([groupId, userId])
   @@index([userId])
+}
+
+enum GroupInviteStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  REVOKED
+}
+
+model GroupInvite {
+  id          String            @id @default(cuid())
+  groupId     String
+  inviteeId   String
+  invitedById String
+  status      GroupInviteStatus @default(PENDING)
+  reviewedAt  DateTime?
+  createdAt   DateTime          @default(now())
+
+  group     Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  invitee   User  @relation("GroupInviteInvitee", fields: [inviteeId], references: [id], onDelete: Cascade)
+  invitedBy User  @relation("GroupInviteInvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([inviteeId, status])
+  @@index([groupId, status])
+  @@index([invitedById])
 }
 
 model MemoryItem {
@@ -447,6 +496,8 @@ enum NotificationType {
   MEMORY_SHARED
   MEMORY_REVOKED
   GROUP_INVITE
+  GROUP_INVITE_RESPONSE
+  PRIMARY_AGENT_ASSIGNED
 }
 
 model Notification {

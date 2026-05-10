@@ -47,6 +47,20 @@ export class SessionRepository {
     });
   }
 
+  /**
+   * Drop the cached system prompt on every active session so the next turn
+   * re-renders against fresh shared context (public memory, etc). Intended
+   * to be called when admin-curated context changes — without this, existing
+   * sessions keep their stale cached prompt and never see new cards.
+   */
+  async clearAllCachedSystemPrompts(): Promise<number> {
+    const result = await this.prisma.session.updateMany({
+      where: { cachedSystemPrompt: { not: null }, isActive: true },
+      data: { cachedSystemPrompt: null },
+    });
+    return result.count;
+  }
+
   async findAll(pagination: PaginationInput): Promise<PaginatedResponse<Session>> {
     const { skip, take } = buildPaginationArgs(pagination);
 

@@ -28,3 +28,25 @@ export const updateGroupMemberSchema = z.object({
 });
 
 export type UpdateGroupMemberInput = z.infer<typeof updateGroupMemberSchema>;
+
+// ----------------------------------------------------------------------------
+// Group invite workflow (self-service)
+// ----------------------------------------------------------------------------
+
+export const groupInviteStatusSchema = z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'REVOKED']);
+export type GroupInviteStatus = z.infer<typeof groupInviteStatusSchema>;
+
+export const inviteToGroupSchema = z
+  .object({
+    inviteeId: z.string().min(1).optional(),
+    email: z.string().email().optional(),
+  })
+  .refine((v) => !!v.inviteeId || !!v.email, {
+    message: 'Either inviteeId or email must be provided',
+  });
+export type InviteToGroupInput = z.infer<typeof inviteToGroupSchema>;
+
+export const groupInviteListQuerySchema = z.object({
+  scope: z.enum(['received', 'sent']).default('received'),
+});
+export type GroupInviteListQuery = z.infer<typeof groupInviteListQuerySchema>;

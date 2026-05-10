@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, Loader2 } from 'lucide-react';
 import anime from 'animejs';
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { EASING, DURATION } from '@/lib/anime';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useAuth } from '@/components/auth-provider';
 import { authFetch } from '@/lib/auth';
+import { cn } from '@/lib/utils';
 
 interface TokenSummary {
   budget: {
@@ -51,6 +54,25 @@ interface DailyUsage {
   totalTokens: number;
   totalEstimatedCostUsd: number;
 }
+
+interface ModelUsage {
+  model: string;
+  totalTokens: number;
+  totalEstimatedCostUsd: number;
+}
+
+// Slice colors — keep amber primary for the largest, then sky/emerald/violet
+// for fall-off, ending in muted neutrals so a 6+ slice chart still reads
+// without becoming a rainbow. Cycles if there are more models than colors.
+const PIE_COLORS = [
+  'hsl(39 100% 50%)', // amber primary
+  'hsl(199 89% 60%)', // sky
+  'hsl(160 75% 50%)', // emerald
+  'hsl(262 70% 65%)', // violet
+  'hsl(330 75% 65%)', // pink
+  'hsl(220 15% 55%)', // muted slate
+  'hsl(220 10% 35%)', // darker slate
+];
 
 function formatNumber(n: number): string {
   return n.toLocaleString();
@@ -112,9 +134,10 @@ function UsageLineChart({ data, maxValue }: { data: DailyUsage[]; maxValue: numb
     }
 
     if (areaRef.current) {
+      // The fill itself is a gradient — fade the whole element in.
       anime({
         targets: areaRef.current,
-        opacity: [0, 0.08],
+        opacity: [0, 1],
         duration: 300,
         delay: DURATION.chart,
         easing: EASING,
@@ -122,13 +145,28 @@ function UsageLineChart({ data, maxValue }: { data: DailyUsage[]; maxValue: numb
     }
   }, [data]);
 
+  const lastPoint = points[points.length - 1];
+
   return (
     <div className="w-full overflow-x-auto">
       <svg
         viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-        className="h-[280px] w-full"
+        className="h-[280px] w-full text-primary"
         preserveAspectRatio="xMidYMid meet"
       >
+        <defs>
+          {/* Gradient under the line — amber at the top fading into the page */}
+          <linearGradient id="usage-area-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="currentColor" stopOpacity="0.32" />
+            <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+          </linearGradient>
+          {/* Soft glow on the latest point */}
+          <radialGradient id="usage-pulse" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="currentColor" stopOpacity="0.5" />
+            <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+
         {/* Y-axis grid lines and labels */}
         {yTicks.map((tick) => {
           const y = paddingTop + drawHeight - (tick / maxValue) * drawHeight;
@@ -140,15 +178,15 @@ function UsageLineChart({ data, maxValue }: { data: DailyUsage[]; maxValue: numb
                 x2={chartWidth - paddingRight}
                 y2={y}
                 stroke="currentColor"
-                strokeOpacity={0.1}
-                strokeDasharray="4 4"
+                strokeOpacity={0.08}
               />
               <text
                 x={paddingLeft - 8}
                 y={y + 4}
                 textAnchor="end"
                 className="fill-muted-foreground"
-                fontSize={11}
+                fontFamily="ui-monospace, SFMono-Regular, monospace"
+                fontSize={10}
               >
                 {formatCompact(tick)}
               </text>
@@ -156,8 +194,8 @@ function UsageLineChart({ data, maxValue }: { data: DailyUsage[]; maxValue: numb
           );
         })}
 
-        {/* Area fill */}
-        <path ref={areaRef} d={areaPath} fill="currentColor" fillOpacity={0} />
+        {/* Gradient area fill */}
+        <path ref={areaRef} d={areaPath} fill="url(#usage-area-fill)" fillOpacity={0} />
 
         {/* Line */}
         <path
@@ -165,17 +203,34 @@ function UsageLineChart({ data, maxValue }: { data: DailyUsage[]; maxValue: numb
           d={linePath}
           fill="none"
           stroke="currentColor"
-          strokeOpacity={0.6}
+          strokeOpacity={0.85}
           strokeWidth={2}
           strokeLinejoin="round"
+          strokeLinecap="round"
         />
 
-        {/* Data points */}
-        {points.map((p) => (
-          <circle key={p.date} cx={p.x} cy={p.y} r={4} fill="currentColor" fillOpacity={0.8}>
+        {/* Data points — small subtle dots */}
+        {points.slice(0, -1).map((p) => (
+          <circle key={p.date} cx={p.x} cy={p.y} r={3} fill="currentColor" fillOpacity={0.6}>
             <title>{`${p.date}: ${formatNumber(p.totalTokens)} tokens`}</title>
           </circle>
         ))}
+        {/* Latest point gets a glow halo + larger dot for emphasis */}
+        {lastPoint ? (
+          <g>
+            <circle cx={lastPoint.x} cy={lastPoint.y} r={14} fill="url(#usage-pulse)" />
+            <circle
+              cx={lastPoint.x}
+              cy={lastPoint.y}
+              r={5}
+              fill="currentColor"
+              stroke="hsl(var(--background, 0 0% 5%))"
+              strokeWidth={1.5}
+            >
+              <title>{`${lastPoint.date}: ${formatNumber(lastPoint.totalTokens)} tokens`}</title>
+            </circle>
+          </g>
+        ) : null}
 
         {/* X-axis labels */}
         {points.map((p, i) => {
@@ -212,6 +267,172 @@ function UsageLineChart({ data, maxValue }: { data: DailyUsage[]; maxValue: numb
           Tokens
         </text>
       </svg>
+    </div>
+  );
+}
+
+/**
+ * Editorial stat tile: mono eyebrow, large tabular numeric, optional inline
+ * progress bar showing how the value compares to a target. Variants:
+ *   - tone="primary"  default amber accent
+ *   - tone="positive" sky/emerald (Remaining when ample)
+ *   - tone="critical" red wash + stripe (Utilization > 100%)
+ */
+function StatTile({
+  eyebrow,
+  value,
+  unit,
+  fillPct,
+  tone = 'primary',
+}: {
+  eyebrow: string;
+  value: string;
+  unit?: string;
+  /** 0–100 (or beyond). When provided, renders a thin progress bar. */
+  fillPct?: number | null;
+  tone?: 'primary' | 'positive' | 'critical' | 'neutral';
+}) {
+  const stripe =
+    tone === 'critical'
+      ? 'border-l-red-500/70'
+      : tone === 'positive'
+        ? 'border-l-sky-500/60'
+        : tone === 'neutral'
+          ? 'border-l-border'
+          : 'border-l-primary/70';
+
+  const fill =
+    tone === 'critical' ? 'bg-red-500' : tone === 'positive' ? 'bg-sky-500' : 'bg-primary';
+
+  const wash =
+    tone === 'critical' ? 'bg-red-500/5' : tone === 'positive' ? 'bg-sky-500/5' : 'bg-card';
+
+  const clamped = fillPct == null ? null : Math.min(100, Math.max(0, fillPct));
+  const overflow = fillPct != null && fillPct > 100;
+
+  return (
+    <div
+      className={cn(
+        'group relative flex flex-col gap-3 overflow-hidden rounded-lg border border-l-[3px] p-5 transition-colors',
+        stripe,
+        wash,
+      )}
+    >
+      <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/80">
+        {eyebrow}
+      </span>
+      <div className="flex items-baseline gap-2">
+        <span
+          className={cn(
+            'text-3xl font-semibold tabular-nums tracking-tight',
+            tone === 'critical' && 'text-red-400',
+          )}
+        >
+          {value}
+        </span>
+        {unit ? <span className="text-xs text-muted-foreground">{unit}</span> : null}
+      </div>
+      {clamped != null ? (
+        <div className="mt-auto flex flex-col gap-1.5">
+          <div className="relative h-1 w-full overflow-hidden rounded-full bg-foreground/5">
+            <div
+              className={cn('h-full rounded-full transition-[width] duration-500', fill)}
+              style={{ width: `${clamped}%` }}
+            />
+          </div>
+          {overflow ? (
+            <span className="font-mono text-[10px] uppercase tracking-wider text-red-400">
+              over budget · {fillPct?.toFixed(0)}%
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ModelUsagePieChart({ data }: { data: ModelUsage[] }) {
+  const total = data.reduce((acc, d) => acc + d.totalTokens, 0);
+  if (data.length === 0 || total === 0) {
+    return (
+      <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+        No model usage this month yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 items-center gap-6 md:grid-cols-2">
+      <div className="relative h-[260px] w-full">
+        {/* Center label — total + unit, sits inside the donut hole */}
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
+            Total
+          </span>
+          <span className="text-xl font-semibold tabular-nums tracking-tight">
+            {formatCompact(total)}
+          </span>
+          <span className="text-[10px] text-muted-foreground">tokens</span>
+        </div>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="totalTokens"
+              nameKey="model"
+              innerRadius={62}
+              outerRadius={98}
+              paddingAngle={2}
+              stroke="transparent"
+            >
+              {data.map((entry, i) => (
+                <Cell key={entry.model} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip
+              // Theme tokens (--popover / --border) hold full color values
+              // (oklch / hsl), not channel components, so we plug them in
+              // raw rather than wrapping them in another hsl().
+              contentStyle={{
+                background: 'var(--popover)',
+                color: 'var(--popover-foreground)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                fontSize: 12,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+              }}
+              itemStyle={{ color: 'var(--popover-foreground)' }}
+              labelStyle={{ color: 'var(--popover-foreground)', fontWeight: 600 }}
+              formatter={(value: number, _name, payload) => {
+                const pct = ((value / total) * 100).toFixed(1);
+                const item = payload?.payload as ModelUsage | undefined;
+                return [
+                  `${formatNumber(value)} tokens (${pct}%) · ${formatCost(item?.totalEstimatedCostUsd ?? 0)}`,
+                  item?.model ?? '',
+                ];
+              }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <ul className="flex flex-col gap-2 text-sm">
+        {data.map((d, i) => {
+          const pct = ((d.totalTokens / total) * 100).toFixed(1);
+          return (
+            <li key={d.model} className="flex items-center gap-2">
+              <span
+                className="inline-block size-3 shrink-0 rounded-sm"
+                style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
+              />
+              <span className="flex-1 truncate font-mono text-xs">{d.model}</span>
+              <span className="tabular-nums text-muted-foreground">
+                {formatNumber(d.totalTokens)}
+              </span>
+              <span className="w-12 tabular-nums text-right text-muted-foreground">{pct}%</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -288,29 +509,36 @@ function UserBreakdownRow({ user }: { user: UserUsage }) {
 }
 
 export default function TokenUsagePage() {
+  const { user } = useAuth();
   const [period, setPeriod] = useState('daily');
   const [summary, setSummary] = useState<TokenSummary | null>(null);
   const [userBreakdown, setUserBreakdown] = useState<UserUsage[]>([]);
   const [chartData, setChartData] = useState<DailyUsage[]>([]);
+  const [modelUsage, setModelUsage] = useState<ModelUsage[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [summaryRes, usersRes, chartRes] = await Promise.all([
+      const myId = user?.sub;
+      const [summaryRes, usersRes, chartRes, modelRes] = await Promise.all([
         authFetch<TokenSummary>('/api/v1/tokens/summary'),
         authFetch<UserUsage[]>('/api/v1/tokens/per-user'),
         authFetch<DailyUsage[]>(`/api/v1/tokens/usage-over-time?period=${period}`),
+        myId
+          ? authFetch<ModelUsage[]>(`/api/v1/tokens/per-user/${myId}/models`)
+          : Promise.resolve([] as ModelUsage[]),
       ]);
       setSummary(summaryRes);
       setUserBreakdown(Array.isArray(usersRes) ? usersRes : []);
       setChartData(Array.isArray(chartRes) ? chartRes : []);
+      setModelUsage(Array.isArray(modelRes) ? modelRes : []);
     } catch {
       // Data will remain empty
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, user?.sub]);
 
   useEffect(() => {
     void fetchData();
@@ -322,22 +550,40 @@ export default function TokenUsagePage() {
     budgetTokens !== null && budgetTokens !== undefined ? budgetTokens - usedTokens : null;
   const utilization = budgetTokens ? ((usedTokens / budgetTokens) * 100).toFixed(1) : null;
 
-  const stats = [
+  const utilPct =
+    budgetTokens != null && budgetTokens > 0 ? (usedTokens / budgetTokens) * 100 : null;
+  const stats: {
+    eyebrow: string;
+    value: string;
+    unit?: string;
+    fillPct?: number | null;
+    tone: 'primary' | 'positive' | 'critical' | 'neutral';
+  }[] = [
     {
-      title: 'Monthly Budget',
-      value: summary?.budget.unlimited ? 'Unlimited' : formatNumber(budgetTokens ?? 0),
-      subtitle: summary?.budget.unlimited ? '' : 'tokens',
+      eyebrow: 'Monthly Budget',
+      value: summary?.budget.unlimited ? '∞' : formatNumber(budgetTokens ?? 0),
+      unit: summary?.budget.unlimited ? 'unlimited' : 'tokens',
+      tone: summary?.budget.unlimited ? 'positive' : 'neutral',
     },
-    { title: 'Used', value: formatNumber(usedTokens), subtitle: 'tokens' },
     {
-      title: 'Remaining',
+      eyebrow: 'Used',
+      value: formatNumber(usedTokens),
+      unit: 'tokens',
+      fillPct: utilPct,
+      tone: utilPct != null && utilPct > 100 ? 'critical' : 'primary',
+    },
+    {
+      eyebrow: 'Remaining',
       value: remainingTokens !== null ? formatNumber(remainingTokens) : 'N/A',
-      subtitle: remainingTokens !== null ? 'tokens' : '',
+      unit: remainingTokens !== null ? 'tokens' : '',
+      tone: remainingTokens != null && remainingTokens < 0 ? 'critical' : 'positive',
     },
     {
-      title: 'Utilization',
+      eyebrow: 'Utilization',
       value: utilization ? `${utilization}%` : 'N/A',
-      subtitle: utilization ? 'of budget' : '',
+      unit: utilization ? 'of budget' : '',
+      fillPct: utilPct,
+      tone: utilPct != null && utilPct > 100 ? 'critical' : 'primary',
     },
   ];
 
@@ -347,8 +593,13 @@ export default function TokenUsagePage() {
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Token Usage</h1>
+        <div className="border-b border-border/60 pb-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight">Token Usage</h1>
+            <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground/70">
+              consumption
+            </span>
+          </div>
           <p className="text-sm text-muted-foreground">
             Monitor token consumption, costs, and budget utilization.
           </p>
@@ -362,27 +613,22 @@ export default function TokenUsagePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Token Usage</h1>
+      <div className="border-b border-border/60 pb-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Token Usage</h1>
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground/70">
+            consumption
+          </span>
+        </div>
         <p className="text-sm text-muted-foreground">
           Monitor token consumption, costs, and budget utilization.
         </p>
       </div>
 
-      {/* Budget stats */}
+      {/* Budget meter strip */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {stat.title}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold tabular-nums">{stat.value}</div>
-              {stat.subtitle && <p className="text-xs text-muted-foreground">{stat.subtitle}</p>}
-            </CardContent>
-          </Card>
+          <StatTile key={stat.eyebrow} {...stat} />
         ))}
       </div>
 
@@ -408,6 +654,19 @@ export default function TokenUsagePage() {
               ) : (
                 <UsageLineChart data={chartData} maxValue={maxDaily} />
               )}
+            </CardContent>
+          </Card>
+
+          {/* Per-model pie — caller's own usage */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Models This Month</CardTitle>
+              <CardDescription>
+                Token usage broken down by model across every agent you've used.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ModelUsagePieChart data={modelUsage} />
             </CardContent>
           </Card>
 

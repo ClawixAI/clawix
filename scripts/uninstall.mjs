@@ -169,6 +169,13 @@ async function main() {
     info(dim('Image not found or already removed'));
   }
 
+  step('Removing python-runner image');
+  if (runSilent('docker rmi clawix-python-runner:latest')) {
+    ok('clawix-python-runner:latest removed');
+  } else {
+    info(dim('Image not found or already removed'));
+  }
+
   step('Pruning dangling images');
   try {
     const pruned = run('docker image prune -f --filter "label=com.clawix=true"');

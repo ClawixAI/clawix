@@ -3,6 +3,8 @@
  *
  * Run: pnpm exec prisma db seed
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -12,6 +14,22 @@ import { encrypt } from '../src/common/crypto.js';
 import { encryptChannelConfig } from '../src/channels/channel-config-crypto.js';
 
 dotenv.config({ path: path.join(import.meta.dirname, '..', '..', '..', '.env') });
+
+function loadAllowlist(tier: 'standard' | 'extended' | 'unrestricted'): string[] {
+  const filePath = join(
+    import.meta.dirname,
+    '..',
+    '..',
+    '..',
+    'infra',
+    'python-allowlist',
+    `${tier}.txt`,
+  );
+  return readFileSync(filePath, 'utf8')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+}
 
 const connectionString = process.env['DATABASE_URL'];
 if (!connectionString) {
@@ -105,7 +123,15 @@ async function main(): Promise<void> {
   // --- Policies ---
   const standardPolicy = await prisma.policy.upsert({
     where: { name: 'Standard' },
-    update: {},
+    update: {
+      allowPython: true,
+      allowPythonNet: false,
+      pythonPackageAllowlist: loadAllowlist('standard'),
+      maxPythonMemoryMb: 512,
+      maxPythonTimeoutSecs: 60,
+      maxPythonCpuCores: 1,
+      maxConcurrentPythonRuns: 2,
+    },
     create: {
       name: 'Standard',
       description: 'Basic access with limited quotas',
@@ -117,13 +143,28 @@ async function main(): Promise<void> {
       allowedProviders: [defaultProvider],
       cronEnabled: true,
       features: {},
+      allowPython: true,
+      allowPythonNet: false,
+      pythonPackageAllowlist: loadAllowlist('standard'),
+      maxPythonMemoryMb: 512,
+      maxPythonTimeoutSecs: 60,
+      maxPythonCpuCores: 1,
+      maxConcurrentPythonRuns: 2,
     },
   });
   console.log(`  Policy: ${standardPolicy.name}`);
 
   const extendedPolicy = await prisma.policy.upsert({
     where: { name: 'Extended' },
-    update: {},
+    update: {
+      allowPython: true,
+      allowPythonNet: false,
+      pythonPackageAllowlist: loadAllowlist('extended'),
+      maxPythonMemoryMb: 2048,
+      maxPythonTimeoutSecs: 300,
+      maxPythonCpuCores: 2,
+      maxConcurrentPythonRuns: 3,
+    },
     create: {
       name: 'Extended',
       description: 'Extended access with higher quotas',
@@ -135,13 +176,28 @@ async function main(): Promise<void> {
       allowedProviders: extendedProviders,
       cronEnabled: true,
       features: { swarmOrchestration: true },
+      allowPython: true,
+      allowPythonNet: false,
+      pythonPackageAllowlist: loadAllowlist('extended'),
+      maxPythonMemoryMb: 2048,
+      maxPythonTimeoutSecs: 300,
+      maxPythonCpuCores: 2,
+      maxConcurrentPythonRuns: 3,
     },
   });
   console.log(`  Policy: ${extendedPolicy.name}`);
 
   const unrestrictedPolicy = await prisma.policy.upsert({
     where: { name: 'Unrestricted' },
-    update: {},
+    update: {
+      allowPython: true,
+      allowPythonNet: true,
+      pythonPackageAllowlist: loadAllowlist('unrestricted'),
+      maxPythonMemoryMb: 8192,
+      maxPythonTimeoutSecs: 600,
+      maxPythonCpuCores: 4,
+      maxConcurrentPythonRuns: 5,
+    },
     create: {
       name: 'Unrestricted',
       description: 'Unlimited access for power users',
@@ -153,6 +209,13 @@ async function main(): Promise<void> {
       allowedProviders: providerSeeds.map((s) => s.provider),
       cronEnabled: true,
       features: { swarmOrchestration: true, heartbeat: true, customProviders: true },
+      allowPython: true,
+      allowPythonNet: true,
+      pythonPackageAllowlist: loadAllowlist('unrestricted'),
+      maxPythonMemoryMb: 8192,
+      maxPythonTimeoutSecs: 600,
+      maxPythonCpuCores: 4,
+      maxConcurrentPythonRuns: 5,
     },
   });
   console.log(`  Policy: ${unrestrictedPolicy.name}`);

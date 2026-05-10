@@ -16,6 +16,8 @@ import { TokenUsageRepository } from './token-usage.repository.js';
 import { MemoryItemRepository } from './memory-item.repository.js';
 import { SystemSettingsRepository } from './system-settings.repository.js';
 import { GroupRepository } from './group.repository.js';
+import { GroupInviteRepository } from './group-invite.repository.js';
+import { NotificationRepository } from './notification.repository.js';
 
 const repositories = [
   PolicyRepository,
@@ -34,6 +36,8 @@ const repositories = [
   MemoryItemRepository,
   SystemSettingsRepository,
   GroupRepository,
+  GroupInviteRepository,
+  NotificationRepository,
 ];
 
 @Global()

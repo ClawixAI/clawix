@@ -158,8 +158,13 @@ export default function AuditLogsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Audit Logs</h1>
+      <div className="border-b border-border/60 pb-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Audit Logs</h1>
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground/70">
+            ledger
+          </span>
+        </div>
         <p className="text-sm text-muted-foreground">
           Immutable record of all actions and events in your workspace.
           {!isAdmin && ' Showing your actions only.'}

@@ -303,3 +303,65 @@ describe('spawn tool — parentAgentRunId', () => {
     );
   });
 });
+
+describe('spawn tool — abortSignal propagation', () => {
+  it('forwards parent abortSignal via submit options', async () => {
+    const agentDef = { id: 'def-123', name: 'summarizer', role: 'worker', isActive: true };
+    const agentDefRepo = makeAgentDefRepo({
+      findByName: vi.fn().mockResolvedValue(agentDef),
+    });
+    const agentRunRepo = makeAgentRunRepo(defaultRun);
+
+    let seenSignal: AbortSignal | undefined;
+    const fakeTaskExecutor = {
+      submit: vi.fn((_id: string, opts: { abortSignal?: AbortSignal }) => {
+        seenSignal = opts.abortSignal;
+      }),
+    };
+
+    const tool = createSpawnTool(
+      agentDefRepo as AgentDefinitionRepository,
+      agentRunRepo as AgentRunRepository,
+      fakeTaskExecutor,
+      'session-abc',
+      'parent-run-1',
+      'user-1',
+    );
+
+    const controller = new AbortController();
+    await tool.execute(
+      { agent_name: 'summarizer', prompt: 'do something' },
+      { abortSignal: controller.signal },
+    );
+
+    expect(seenSignal).toBe(controller.signal);
+  });
+
+  it('does not include abortSignal in submit options when ctx is absent', async () => {
+    const agentDef = { id: 'def-123', name: 'summarizer', role: 'worker', isActive: true };
+    const agentDefRepo = makeAgentDefRepo({
+      findByName: vi.fn().mockResolvedValue(agentDef),
+    });
+    const agentRunRepo = makeAgentRunRepo(defaultRun);
+
+    const submitArgs: { abortSignal?: AbortSignal }[] = [];
+    const fakeTaskExecutor = {
+      submit: vi.fn((_id: string, opts: { abortSignal?: AbortSignal }) => {
+        submitArgs.push(opts);
+      }),
+    };
+
+    const tool = createSpawnTool(
+      agentDefRepo as AgentDefinitionRepository,
+      agentRunRepo as AgentRunRepository,
+      fakeTaskExecutor,
+      'session-abc',
+      'parent-run-1',
+      'user-1',
+    );
+
+    await tool.execute({ agent_name: 'summarizer', prompt: 'do something' });
+
+    expect(submitArgs[0]).not.toHaveProperty('abortSignal');
+  });
+});

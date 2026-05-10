@@ -1,13 +1,24 @@
 import { Injectable } from '@nestjs/common';
 
-import type { MemoryItem } from '../generated/prisma/client.js';
+import type { MemoryItem, Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { extractText } from '../engine/memory-utils.js';
 
+interface CreateMemoryItemData {
+  readonly ownerId: string;
+  readonly content: unknown;
+  readonly tags?: readonly string[];
+}
+
+interface UpdateMemoryItemData {
+  readonly content?: unknown;
+  readonly tags?: readonly string[];
+}
+
 /**
- * Repository for querying MemoryItem records visible to a user.
+ * Repository for MemoryItem records.
  *
- * Visibility rules:
+ * Visibility rules for `findVisibleToUser` (matches the original Phase-1 plan):
  *  - Private: owned by the user
  *  - Group-shared: shared to a group the user belongs to (not revoked)
  *  - Org-shared: shared to the entire org (not revoked)
@@ -54,11 +65,96 @@ export class MemoryItemRepository {
   }
 
   /**
-   * Search visible memory items by text content and/or tags.
+   * Filter the given memoryItem ids down to those with an active
+   * `MemoryShare(targetType=ORG, isRevoked=false)` row. Used to derive
+   * the `isOrgShared` flag returned to the dashboard.
+   */
+  async findItemIdsWithOrgShare(itemIds: readonly string[]): Promise<readonly string[]> {
+    if (itemIds.length === 0) return [];
+    const rows = await this.prisma.memoryShare.findMany({
+      where: {
+        memoryItemId: { in: [...itemIds] },
+        targetType: 'ORG',
+        isRevoked: false,
+      },
+      select: { memoryItemId: true },
+    });
+    return rows.map((r) => r.memoryItemId);
+  }
+
+  /**
+   * Add an active `MemoryShare(ORG)` row for this memoryItem if one isn't
+   * already in place. Idempotent: revives a previously-revoked org share
+   * row instead of creating a duplicate.
+   */
+  async setOrgShare(memoryItemId: string, sharedBy: string): Promise<void> {
+    const existing = await this.prisma.memoryShare.findFirst({
+      where: { memoryItemId, targetType: 'ORG' },
+    });
+    if (existing) {
+      if (existing.isRevoked) {
+        await this.prisma.memoryShare.update({
+          where: { id: existing.id },
+          data: { isRevoked: false, revokedAt: null },
+        });
+      }
+      return;
+    }
+    await this.prisma.memoryShare.create({
+      data: { memoryItemId, sharedBy, targetType: 'ORG' },
+    });
+  }
+
+  /** Mark every active org-share row for this memoryItem as revoked. */
+  async revokeOrgShare(memoryItemId: string): Promise<void> {
+    await this.prisma.memoryShare.updateMany({
+      where: { memoryItemId, targetType: 'ORG', isRevoked: false },
+      data: { isRevoked: true, revokedAt: new Date() },
+    });
+  }
+
+  async create(data: CreateMemoryItemData): Promise<MemoryItem> {
+    return this.prisma.memoryItem.create({
+      data: {
+        ownerId: data.ownerId,
+        content: data.content as Prisma.InputJsonValue,
+        tags: [...(data.tags ?? [])],
+      },
+    });
+  }
+
+  async update(id: string, data: UpdateMemoryItemData): Promise<MemoryItem> {
+    const patch: Record<string, unknown> = {};
+    if (data.content !== undefined) patch['content'] = data.content;
+    if (data.tags !== undefined) patch['tags'] = [...data.tags];
+    return this.prisma.memoryItem.update({
+      where: { id },
+      data: patch as Prisma.MemoryItemUpdateInput,
+    });
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.prisma.memoryItem.delete({ where: { id } });
+  }
+
+  async findById(id: string): Promise<MemoryItem | null> {
+    return this.prisma.memoryItem.findUnique({ where: { id } });
+  }
+
+  async listOwnedByUser(userId: string): Promise<readonly MemoryItem[]> {
+    return this.prisma.memoryItem.findMany({
+      where: { ownerId: userId },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  /**
+   * Search memory items by text content and/or tags.
    *
-   * Two-pass approach: fetches all visible items via findVisibleToUser,
-   * then filters in-app by query (case-insensitive substring on content.text)
-   * and tags (AND — all specified tags must be present).
+   * Two-pass approach: fetches the candidate set (owned-only when scope='mine',
+   * full visible set otherwise), then filters in-app by query
+   * (case-insensitive substring on content.text) and tags (AND — all specified
+   * tags must be present).
    */
   async search(
     userId: string,
@@ -66,12 +162,16 @@ export class MemoryItemRepository {
       readonly query?: string;
       readonly tags?: readonly string[];
       readonly maxResults?: number;
+      readonly scope?: 'mine' | 'visible';
     },
   ): Promise<readonly MemoryItem[]> {
-    const allVisible = await this.findVisibleToUser(userId);
+    const candidates =
+      options.scope === 'mine'
+        ? await this.listOwnedByUser(userId)
+        : await this.findVisibleToUser(userId);
     const maxResults = options.maxResults ?? 20;
 
-    let filtered = allVisible as MemoryItem[];
+    let filtered = candidates as MemoryItem[];
 
     if (options.query) {
       const lowerQuery = options.query.toLowerCase();

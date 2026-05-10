@@ -12,6 +12,7 @@ import {
   Coins,
   CreditCard,
   FolderOpen,
+  Notebook,
   MonitorPlay,
   LogOut,
   MessageSquare,
@@ -43,6 +44,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
+import Image from 'next/image';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -80,7 +82,19 @@ const platformItems = [
   },
 ];
 
-const governanceItems = [
+interface NavItem {
+  readonly title: string;
+  readonly href: string;
+  readonly icon: typeof BookOpen;
+  readonly adminOnly?: boolean;
+}
+
+const communityItems: readonly NavItem[] = [
+  { title: 'Groups', href: '/governance/groups', icon: Users },
+  { title: 'Memory', href: '/memory', icon: Notebook },
+];
+
+const governanceItems: readonly NavItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: BookOpen },
   { title: 'Token Usage', href: '/governance/tokens', icon: Coins },
   { title: 'Audit Logs', href: '/governance/audit', icon: ScrollText },
@@ -120,16 +134,40 @@ export function AppSidebar() {
     return pathname.startsWith(href);
   };
 
+  // Shared nav-item polish: 2px left stripe that appears on hover/active +
+  // small horizontal slide so the cursor anchor matches the rest of the
+  // dashboard's lift-and-stripe vocabulary (Memory/Groups/Skills cards).
+  const navButtonClass =
+    'transition-[transform,background-color,box-shadow] duration-150 hover:translate-x-0.5 hover:shadow-[inset_2px_0_0_0_hsl(var(--sidebar-primary)/0.6)] data-[active=true]:shadow-[inset_2px_0_0_0_hsl(var(--sidebar-primary))]';
+
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="group-data-[collapsible=icon]:hidden">
+      <SidebarHeader className="border-b border-sidebar-border/40 group-data-[collapsible=icon]:hidden">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link href="/">
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold">Clawix</span>
-                  <span className="truncate text-xs">Enterprise AI Platform</span>
+              <Link href="/" className="group/brand">
+                <div className="flex size-8 items-center justify-center rounded-md transition-transform duration-200 group-hover/brand:scale-110">
+                  <Image
+                    src="/brand/clawix-logo.png"
+                    alt="Clawix"
+                    width={28}
+                    height={28}
+                    priority
+                    // Light mode: render the original (dark shield + chrome
+                    // claws on a light chip — both visible).
+                    // Dark mode: invert flips the dark interior to light and
+                    // the chrome highlights to dark, so the shape pops on
+                    // the dark chip while the original photographic detail
+                    // is preserved (no silhouette flattening).
+                    className="size-7 object-contain dark:invert"
+                  />
+                </div>
+                <div className="grid flex-1 text-left leading-tight">
+                  <span className="truncate text-sm font-semibold tracking-tight">Clawix</span>
+                  <span className="truncate font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    enterprise ai
+                  </span>
                 </div>
               </Link>
             </SidebarMenuButton>
@@ -139,11 +177,18 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+          <SidebarGroupLabel className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+            Workspace
+          </SidebarGroupLabel>
           <SidebarMenu>
             {platformItems.map((item) => (
               <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton asChild isActive={isActive(item.href)} tooltip={item.title}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={isActive(item.href)}
+                  tooltip={item.title}
+                  className={navButtonClass}
+                >
                   <Link href={item.href}>
                     <item.icon />
                     <span>{item.title}</span>
@@ -155,11 +200,18 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>Governance</SidebarGroupLabel>
+          <SidebarGroupLabel className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+            Community
+          </SidebarGroupLabel>
           <SidebarMenu>
-            {governanceItems.map((item) => (
+            {communityItems.map((item) => (
               <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton asChild isActive={isActive(item.href)} tooltip={item.title}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={isActive(item.href)}
+                  tooltip={item.title}
+                  className={navButtonClass}
+                >
                   <Link href={item.href}>
                     <item.icon />
                     <span>{item.title}</span>
@@ -167,6 +219,31 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
+          </SidebarMenu>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+            Governance
+          </SidebarGroupLabel>
+          <SidebarMenu>
+            {governanceItems
+              .filter((item) => !item.adminOnly || user?.role === 'admin')
+              .map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.href)}
+                    tooltip={item.title}
+                    className={navButtonClass}
+                  >
+                    <Link href={item.href}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
             <Collapsible
               defaultOpen={pathname.startsWith('/settings')}
               className="group/collapsible"
@@ -187,6 +264,7 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={pathname.startsWith('/settings')}
                       tooltip="Settings"
+                      className={navButtonClass}
                     >
                       <Settings2 />
                       <span>Settings</span>
@@ -202,7 +280,11 @@ export function AppSidebar() {
                         { title: 'Providers', href: '/settings/providers', icon: Bot },
                       ].map((item) => (
                         <SidebarMenuSubItem key={item.title}>
-                          <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={isActive(item.href)}
+                            className="transition-all duration-150 hover:translate-x-0.5"
+                          >
                             <Link href={item.href}>
                               <item.icon />
                               <span>{item.title}</span>

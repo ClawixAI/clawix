@@ -74,10 +74,16 @@ export {
   updateGroupSchema,
   addGroupMemberSchema,
   updateGroupMemberSchema,
+  groupInviteStatusSchema,
+  inviteToGroupSchema,
+  groupInviteListQuerySchema,
   type CreateGroupInput,
   type UpdateGroupInput,
   type AddGroupMemberInput,
   type UpdateGroupMemberInput,
+  type GroupInviteStatus,
+  type InviteToGroupInput,
+  type GroupInviteListQuery,
 } from './group.schema.js';
 
 export {
@@ -96,6 +102,18 @@ export {
 } from './workspace.schema.js';
 
 export {
+  memoryTagSchema,
+  createMemoryItemSchema,
+  updateMemoryItemSchema,
+  memoryListScopeSchema,
+  memoryListQuerySchema,
+  type CreateMemoryItemInput,
+  type UpdateMemoryItemInput,
+  type MemoryListScope,
+  type MemoryListQuery,
+} from './memory.schema.js';
+
+export {
   skillNameSchema,
   skillDescriptionSchema,
   skillContentSchema,
@@ -107,3 +125,21 @@ export {
   type UpdateSkillContentInput,
   type SkillReadResult,
 } from './skill.schema.js';
+
+export {
+  PUBLIC_MEMORY_DOMAIN_REGEX,
+  PUBLIC_MEMORY_SLUG_REGEX,
+  PUBLIC_MEMORY_TAG_REGEX,
+  createPublicMemoryCardSchema,
+  updatePublicMemoryCardSchema,
+  movePublicMemoryCardSchema,
+  renamePublicMemoryCardSchema,
+  createPublicMemoryDomainSchema,
+  renamePublicMemoryDomainSchema,
+  type CreatePublicMemoryCardInput,
+  type UpdatePublicMemoryCardInput,
+  type MovePublicMemoryCardInput,
+  type RenamePublicMemoryCardInput,
+  type CreatePublicMemoryDomainInput,
+  type RenamePublicMemoryDomainInput,
+} from './public-memory.schema.js';

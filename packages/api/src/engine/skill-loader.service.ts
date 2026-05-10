@@ -3,13 +3,19 @@ import * as path from 'path';
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '@clawix/shared';
 import { scanContextContent } from './prompt-injection-scanner.js';
-import type { SkillFrontmatter, SkillInfo } from './skill-loader.types.js';
+import type {
+  SkillFrontmatter,
+  SkillInfo,
+  SkillStalenessMap,
+  SkillStalenessEntry,
+} from './skill-loader.types.js';
 import {
   SKILL_NAME_PATTERN,
   MAX_SKILL_NAME_LENGTH,
   MAX_SKILL_DESCRIPTION_LENGTH,
   DEFAULT_MAX_SKILLS_PER_USER,
   MAX_SKILL_FILE_SIZE,
+  SKILL_STALENESS_THRESHOLD_DAYS,
 } from './skill-loader.types.js';
 
 export function parseFrontmatter(content: string): SkillFrontmatter | null {
@@ -110,10 +116,50 @@ export class SkillLoaderService {
     ];
   }
 
-  async buildSkillsSummary(customDir: string): Promise<string> {
+  /**
+   * Read the SKILL.md for a single skill. Looks in the user's custom dir
+   * first, then falls back to the global built-in dir. Returns null if
+   * neither has a SKILL.md with valid frontmatter — callers map this to
+   * a 404. Used by the dashboard preview modal where built-ins must be
+   * readable without a per-user workspace.
+   */
+  async readSkill(
+    customDir: string,
+    dirName: string,
+  ): Promise<{ name: string; description: string; content: string; mtime: Date } | null> {
+    const candidates = [
+      customDir ? path.join(customDir, dirName, 'SKILL.md') : null,
+      path.join(this.builtinDir, dirName, 'SKILL.md'),
+    ].filter((p): p is string => p !== null);
+
+    for (const skillMdPath of candidates) {
+      let stat: import('fs').Stats;
+      try {
+        stat = await fs.stat(skillMdPath);
+      } catch {
+        continue;
+      }
+      if (stat.size > MAX_SKILL_FILE_SIZE) continue;
+      let content: string;
+      try {
+        content = await fs.readFile(skillMdPath, 'utf-8');
+      } catch {
+        continue;
+      }
+      const fm = parseFrontmatter(content);
+      if (!fm) continue;
+      return { name: fm.name, description: fm.description, content, mtime: stat.mtime };
+    }
+    return null;
+  }
+
+  async buildSkillsSummary(
+    customDir: string,
+  ): Promise<{ readonly xml: string; readonly stalenessMap: SkillStalenessMap }> {
     const skills = await this.listSkills(customDir);
-    if (skills.length === 0) return '';
+    if (skills.length === 0) return { xml: '', stalenessMap: new Map() };
     const lines = ['<skills>'];
+    const stalenessEntries = new Map<string, SkillStalenessEntry>();
     for (const skill of skills) {
       const safeDescription = scanContextContent(
         skill.description,
@@ -124,10 +170,19 @@ export class SkillLoaderService {
       lines.push(`    <description>${escapeXml(safeDescription)}</description>`);
       lines.push(`    <location>${escapeXml(skill.path)}</location>`);
       lines.push(`    <source>${skill.source}</source>`);
+      if (skill.lastModified !== undefined) {
+        lines.push(`    <last-modified>${skill.lastModified}</last-modified>`);
+      }
+      if (skill.stale === true) {
+        lines.push('    <stale>true</stale>');
+      }
       lines.push('  </skill>');
+      if (skill.source === 'custom') {
+        stalenessEntries.set(skill.path, { name: skill.name, stale: skill.stale === true });
+      }
     }
     lines.push('</skills>');
-    return lines.join('\n');
+    return { xml: lines.join('\n'), stalenessMap: stalenessEntries };
   }
 
   private async scanDirectory(
@@ -182,6 +237,11 @@ export class SkillLoaderService {
         description: frontmatter.description,
         path: `${containerBasePath}/${entry.name}/SKILL.md`,
         source,
+        lastModified: source === 'custom' ? stat.mtime.toISOString().slice(0, 10) : undefined,
+        stale:
+          source === 'custom'
+            ? stat.mtime.getTime() < Date.now() - SKILL_STALENESS_THRESHOLD_DAYS * 86_400_000
+            : undefined,
       });
       if (limit !== undefined && results.length >= limit) {
         logger.warn({ limit }, 'Max skills per user reached');

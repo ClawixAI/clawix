@@ -28,8 +28,10 @@ export class GroupRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findById(id: string): Promise<GroupWithDetails> {
-    const group = await this.prisma.group.findUnique({
-      where: { id },
+    const group = await this.prisma.group.findFirst({
+      // Soft-deleted groups are invisible to every read path; the only way
+      // back is an admin restore (deferred).
+      where: { id, deletedAt: null },
       include: {
         members: {
           include: { user: { select: memberUserSelect } },
@@ -48,10 +50,12 @@ export class GroupRepository {
 
   async findAll(pagination: PaginationInput): Promise<PaginatedResponse<GroupWithDetails>> {
     const paginationArgs = buildPaginationArgs(pagination);
+    const where = { deletedAt: null };
 
     const [data, total] = await Promise.all([
       this.prisma.group.findMany({
         ...paginationArgs,
+        where,
         include: {
           _count: { select: { members: true } },
           members: {
@@ -62,7 +66,7 @@ export class GroupRepository {
         },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.group.count(),
+      this.prisma.group.count({ where }),
     ]);
 
     return buildPaginatedResponse(data, total, pagination);
@@ -109,14 +113,87 @@ export class GroupRepository {
     }
   }
 
+  /**
+   * Soft-delete: stamps `deletedAt` so listings hide the group, and atomically
+   * revokes every active `MemoryShare(targetType=GROUP, groupId)` row so
+   * members lose visibility immediately. The group identity, members,
+   * invites, and audit references all survive — recovery / shared-workspace
+   * features can lean on them later.
+   *
+   * Both timestamps are set to the same `now` so `restore()` can identify
+   * exactly which share rows it needs to un-revoke (the ones whose
+   * revokedAt equals the group's deletedAt).
+   */
   async delete(id: string): Promise<Group> {
     try {
-      return await this.prisma.group.delete({
-        where: { id },
+      const now = new Date();
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.memoryShare.updateMany({
+          where: { groupId: id, isRevoked: false },
+          data: { isRevoked: true, revokedAt: now },
+        });
+        return tx.group.update({
+          where: { id },
+          data: { deletedAt: now },
+        });
       });
     } catch (error) {
       handlePrismaError(error, 'Group');
     }
+  }
+
+  /**
+   * Inverse of `delete()`. Clears the group's `deletedAt` and un-revokes
+   * exactly the share rows that the matching delete revoked (matched by
+   * `revokedAt = group.deletedAt`). Shares that were already revoked
+   * before the delete keep their revoked state.
+   */
+  async restore(id: string): Promise<Group> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.group.findUnique({
+          where: { id },
+          select: { deletedAt: true },
+        });
+        if (!existing) throw new NotFoundError('Group', id);
+        if (existing.deletedAt) {
+          await tx.memoryShare.updateMany({
+            where: { groupId: id, isRevoked: true, revokedAt: existing.deletedAt },
+            data: { isRevoked: false, revokedAt: null },
+          });
+        }
+        return tx.group.update({
+          where: { id },
+          data: { deletedAt: null },
+        });
+      });
+    } catch (error) {
+      handlePrismaError(error, 'Group');
+    }
+  }
+
+  /** Admin-only listing of soft-deleted groups, newest first. */
+  async findDeleted(pagination: PaginationInput): Promise<PaginatedResponse<GroupWithDetails>> {
+    const paginationArgs = buildPaginationArgs(pagination);
+    const where = { deletedAt: { not: null } };
+
+    const [data, total] = await Promise.all([
+      this.prisma.group.findMany({
+        ...paginationArgs,
+        where,
+        include: {
+          members: {
+            include: { user: { select: memberUserSelect } },
+            orderBy: { joinedAt: 'asc' },
+          },
+          _count: { select: { members: true } },
+        },
+        orderBy: { deletedAt: 'desc' },
+      }),
+      this.prisma.group.count({ where }),
+    ]);
+
+    return buildPaginatedResponse(data, total, pagination);
   }
 
   async listMembers(groupId: string): Promise<GroupMemberWithUser[]> {
@@ -160,5 +237,26 @@ export class GroupRepository {
     } catch (error) {
       handlePrismaError(error, 'GroupMember');
     }
+  }
+
+  async listMembershipsForUser(userId: string) {
+    return this.prisma.groupMember.findMany({
+      // Hide memberships whose group has been soft-deleted. The membership
+      // row itself stays so audit history can still resolve the join.
+      where: { userId, group: { deletedAt: null } },
+      include: {
+        group: {
+          include: { _count: { select: { members: true } } },
+        },
+      },
+      orderBy: { joinedAt: 'asc' },
+    });
+  }
+
+  async isOwner(groupId: string, userId: string): Promise<boolean> {
+    const membership = await this.prisma.groupMember.findUnique({
+      where: { groupId_userId: { groupId, userId } },
+    });
+    return membership?.role === 'OWNER';
   }
 }

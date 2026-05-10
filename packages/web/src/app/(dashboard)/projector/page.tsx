@@ -165,8 +165,13 @@ export default function ProjectorPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Projector</h1>
+      <div className="border-b border-border/60 pb-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">Projector</h1>
+          <span className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground/70">
+            workbench
+          </span>
+        </div>
         <p className="text-sm text-muted-foreground">Micro-tools built by your agent</p>
       </div>
 
@@ -194,13 +199,13 @@ export default function ProjectorPage() {
             <button
               key={item.name}
               className={cn(
-                'flex cursor-pointer items-center gap-2 rounded-lg border bg-card px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
-                activeItem === item.name && 'ring-2 ring-primary bg-accent text-accent-foreground',
+                'group flex cursor-pointer items-center gap-2 rounded-lg border border-l-[3px] border-l-primary/50 bg-card px-4 py-3 text-left text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.02] hover:border-primary/40 hover:border-l-primary hover:bg-primary/10 hover:shadow-[0_8px_24px_-8px_rgba(217,119,6,0.4)]',
+                activeItem === item.name && 'border-l-primary bg-primary/15 ring-1 ring-primary/40',
               )}
               onClick={() => void openItem(item.name)}
             >
-              <MonitorPlay className="size-4 shrink-0 text-muted-foreground" />
-              {item.name}
+              <MonitorPlay className="size-4 shrink-0 text-primary/70 transition-transform duration-200 group-hover:scale-110" />
+              <span className="truncate">{item.name}</span>
             </button>
           ))}
         </div>

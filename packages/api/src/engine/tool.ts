@@ -26,12 +26,18 @@ export interface ParamSchema {
   readonly required?: readonly string[];
 }
 
+/** Per-call execution context passed by the registry. */
+export interface ToolExecuteContext {
+  /** Signal that fires when the run is cancelled (user stop or timeout). */
+  readonly abortSignal?: AbortSignal;
+}
+
 /** Interface every tool must implement. */
 export interface Tool {
   readonly name: string;
   readonly description: string;
   readonly parameters: ParamSchema;
-  execute(params: Record<string, unknown>): Promise<ToolResult>;
+  execute(params: Record<string, unknown>, ctx?: ToolExecuteContext): Promise<ToolResult>;
 }
 
 /** Convert a Tool to the ToolDefinition format expected by LLM providers. */

@@ -321,4 +321,31 @@ export class TokenUsageRepository {
       totalCostUsd: row._sum.estimatedCostUsd ?? 0,
     }));
   }
+
+  /** Per-user variant of sumByModel — drives the user's "models used" pie chart. */
+  async sumByUserGroupedByModel(
+    userId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<readonly TokenUsageByModel[]> {
+    const results = await this.prisma.tokenUsage.groupBy({
+      by: ['model'],
+      where: {
+        userId,
+        createdAt: { gte: startDate, lte: endDate },
+      },
+      _sum: {
+        totalTokens: true,
+        estimatedCostUsd: true,
+      },
+    });
+
+    return results
+      .map((row) => ({
+        model: row.model,
+        totalTokens: row._sum.totalTokens ?? 0,
+        totalCostUsd: row._sum.estimatedCostUsd ?? 0,
+      }))
+      .sort((a, b) => b.totalTokens - a.totalTokens);
+  }
 }

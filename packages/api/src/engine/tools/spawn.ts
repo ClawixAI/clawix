@@ -8,7 +8,7 @@
  */
 import { createLogger } from '@clawix/shared';
 
-import type { Tool, ToolResult } from '../tool.js';
+import type { Tool, ToolExecuteContext, ToolResult } from '../tool.js';
 import type { AgentDefinitionRepository } from '../../db/agent-definition.repository.js';
 import type { AgentRunRepository } from '../../db/agent-run.repository.js';
 import type { BudgetTracker } from '../budget-tracker.js';
@@ -25,6 +25,8 @@ interface TaskSubmitter {
       readonly userId: string;
       readonly sessionId: string;
       readonly budgetTracker?: BudgetTracker;
+      /** Parent abort signal forwarded for cancellation cascade. */
+      readonly abortSignal?: AbortSignal;
     },
   ): void;
 }
@@ -69,7 +71,7 @@ export function createSpawnTool(
       required: ['prompt'],
     },
 
-    async execute(params: Record<string, unknown>): Promise<ToolResult> {
+    async execute(params: Record<string, unknown>, ctx?: ToolExecuteContext): Promise<ToolResult> {
       const agentName = params['agent_name'] as string | undefined;
       const prompt = params['prompt'] as string;
 
@@ -135,6 +137,7 @@ export function createSpawnTool(
           userId,
           sessionId: parentSessionId,
           ...(budgetTracker ? { budgetTracker } : {}),
+          ...(ctx?.abortSignal ? { abortSignal: ctx.abortSignal } : {}),
         });
       }
 

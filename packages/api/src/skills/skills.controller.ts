@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Req,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import * as path from 'path';
 
@@ -30,8 +41,24 @@ export class SkillsController {
 
   @Get(':dirName')
   async read(@Req() req: { user: JwtPayload }, @Param('dirName') dirName: string) {
-    const data = await this.skillsService.read(req.user.sub, dirName);
-    return { success: true, data };
+    // Resolve the user's custom skill dir if they have a workspace; built-in
+    // skills don't need a workspace and should be readable for any user.
+    const userAgent = await this.userAgentRepo.findByUserId(req.user.sub);
+    const customDir = userAgent
+      ? path.join(resolveWorkspacePaths(userAgent.workspacePath).localPath, 'skills')
+      : '';
+    const found = await this.skillLoader.readSkill(customDir, dirName);
+    if (!found) throw new NotFoundException(`Skill "${dirName}" not found`);
+    return {
+      success: true,
+      data: {
+        dirName,
+        name: found.name,
+        description: found.description,
+        content: found.content,
+        modifiedAt: found.mtime.toISOString(),
+      },
+    };
   }
 
   @Post()

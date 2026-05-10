@@ -427,3 +427,41 @@ describe('ToolRegistry — execute', () => {
     expect(result.output).toBe('short');
   });
 });
+
+describe('execute with abortSignal context', () => {
+  it('forwards ctx.abortSignal to the tool', async () => {
+    const registry = new ToolRegistry();
+    const seen: AbortSignal[] = [];
+
+    registry.register({
+      name: 'capture',
+      description: '',
+      parameters: { type: 'object', properties: {} },
+      async execute(_params, ctx) {
+        if (ctx?.abortSignal) seen.push(ctx.abortSignal);
+        return { output: 'ok', isError: false };
+      },
+    });
+
+    const controller = new AbortController();
+    await registry.execute('capture', {}, { abortSignal: controller.signal });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(controller.signal);
+  });
+
+  it('execute works without ctx (backward compat)', async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'noop',
+      description: '',
+      parameters: { type: 'object', properties: {} },
+      async execute() {
+        return { output: 'ok', isError: false };
+      },
+    });
+
+    const result = await registry.execute('noop', {});
+    expect(result.isError).toBe(false);
+  });
+});

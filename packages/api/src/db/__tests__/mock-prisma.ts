@@ -36,6 +36,7 @@ export function createMockPrismaService() {
     groupMember: createModelMock(),
     memoryItem: createModelMock(),
     memoryShare: createModelMock(),
+    groupInvite: createModelMock(),
     notification: createModelMock(),
     systemSettings: createModelMock(),
   };

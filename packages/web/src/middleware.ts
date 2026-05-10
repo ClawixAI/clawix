@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server';
 // UX optimization only — NOT a security boundary.
 // The clawix_has_session cookie is a non-httpOnly client-set signal with no cryptographic value.
 // All data-fetching components must verify auth via AuthProvider before rendering sensitive content.
-const PUBLIC_PATHS = ['/login', '/images', '/_next', '/favicon.ico'];
+const PUBLIC_PATHS = ['/login', '/images', '/brand', '/_next', '/favicon.ico'];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
