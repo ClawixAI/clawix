@@ -109,6 +109,16 @@ async function main() {
     ok('Pulled');
   }
 
+  if (flags.build) {
+    step('Building agent Docker image');
+    runVisible('docker build -t clawix-agent:latest -f infra/docker/agent/Dockerfile .');
+    ok('clawix-agent:latest built');
+
+    step('Building python-runner Docker image');
+    runVisible('docker build -t clawix-python-runner:latest infra/docker/python-runner');
+    ok('clawix-python-runner:latest built');
+  }
+
   step('Restarting stack');
   const buildFlag = flags.build ? '--build' : '';
   runVisible(`docker compose -f "${composeFile}" up -d --remove-orphans ${buildFlag}`.trim());
