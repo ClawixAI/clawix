@@ -528,10 +528,10 @@ export class AgentRunnerService {
         maxConcurrentPythonRuns: policy.maxConcurrentPythonRuns,
       };
 
-      if (policy.allowPython && workspacePaths !== undefined && session !== null) {
+      if (policy.allowPython && workspacePaths !== undefined) {
         registry.register(
           createPythonRunTool({
-            sessionId: session.id,
+            sessionId: session?.id ?? `agentrun-${agentRun.id}`,
             userId,
             workspaceHostPath: workspacePaths.hostPath,
             policy: pythonPolicy,
