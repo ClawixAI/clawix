@@ -14,6 +14,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { authFetch } from '@/lib/auth';
+import { DataPagination, type PaginationMeta } from '@/components/ui/data-pagination';
+import { usePaginationParams } from '@/hooks/use-pagination-params';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -46,7 +48,7 @@ interface AgentRun {
 
 interface PaginatedRuns {
   data: AgentRun[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
+  meta: PaginationMeta;
 }
 
 /* ------------------------------------------------------------------ */
@@ -81,11 +83,13 @@ function formatDuration(startedAt: string, completedAt: string | null): string {
 export default function AgentDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const id = params['id'] as string;
+  const rawId = params['id'];
+  const id = Array.isArray(rawId) ? (rawId[0] ?? '') : (rawId ?? '');
+  const { page, limit, setPage, setLimit } = usePaginationParams();
 
   const [agent, setAgent] = useState<AgentDetail | null>(null);
   const [runs, setRuns] = useState<AgentRun[]>([]);
-  const [runsMeta, setRunsMeta] = useState<PaginatedRuns['meta'] | null>(null);
+  const [runsMeta, setRunsMeta] = useState<PaginationMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -95,7 +99,7 @@ export default function AgentDetailPage() {
     try {
       const [agentRes, runsRes] = await Promise.all([
         authFetch<AgentDetail>(`/api/v1/agents/${id}`),
-        authFetch<PaginatedRuns>(`/api/v1/agents/${id}/runs?limit=50`),
+        authFetch<PaginatedRuns>(`/api/v1/agents/${id}/runs?page=${page}&limit=${limit}`),
       ]);
       setAgent(agentRes);
       setRuns(runsRes.data);
@@ -105,7 +109,7 @@ export default function AgentDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, page, limit]);
 
   useEffect(() => {
     void fetchData();
@@ -276,6 +280,15 @@ export default function AgentDetailPage() {
             </Table>
           </div>
         )}
+
+        {runs.length > 0 && runsMeta ? (
+          <DataPagination
+            meta={runsMeta}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+            label="runs"
+          />
+        ) : null}
       </div>
     </div>
   );

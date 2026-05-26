@@ -3,6 +3,9 @@ import { ContextBuilderService } from '../context-builder.service.js';
 import type { ContextBuildParams } from '../context-builder.types.js';
 import type { SystemSettingsService } from '../../system-settings/system-settings.service.js';
 import type { SessionRepository } from '../../db/session.repository.js';
+import type { WikiPageRepository } from '../../db/wiki-page.repository.js';
+import type { WikiBootstrapService } from '../wiki/wiki-bootstrap.service.js';
+import type { SessionSearchService } from '../session-recall/session-search.service.js';
 
 const noopSystemSettings = {
   get: vi.fn().mockResolvedValue({
@@ -13,9 +16,23 @@ const noopSystemSettings = {
   }),
 } as unknown as SystemSettingsService;
 
+const noopWikiPageRepo = {
+  listOwnedByUser: vi.fn().mockResolvedValue([]),
+  findDailyNotes: vi.fn().mockResolvedValue([]),
+  findVisibleToUser: vi.fn().mockResolvedValue([]),
+} as unknown as WikiPageRepository;
+
+const noopWikiBootstrap = {
+  ensureMigrated: vi.fn().mockResolvedValue(undefined),
+} as unknown as WikiBootstrapService;
+
+const noopSessionSearch = {
+  recentSessions: vi.fn().mockResolvedValue([]),
+  search: vi.fn().mockResolvedValue([]),
+} as unknown as SessionSearchService;
+
 describe('ContextBuilderService - skill summary integration', () => {
   it('includes skill summary between system prompt and memory', async () => {
-    const mockMemoryRepo = { findVisibleToUser: vi.fn().mockResolvedValue([]) };
     const mockBootstrapService = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
     const mockSkillLoader = {
       buildSkillsSummary: vi.fn().mockResolvedValue({
@@ -26,19 +43,15 @@ describe('ContextBuilderService - skill summary integration', () => {
 
     const sessionRepoMock = { setCachedSystemPrompt: vi.fn() };
     const service = new ContextBuilderService(
-      mockMemoryRepo as any,
       mockBootstrapService as any,
       mockSkillLoader as any,
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
       noopSystemSettings,
       sessionRepoMock as unknown as SessionRepository,
-      {
-        listCards: vi.fn().mockResolvedValue([]),
-        loadCard: vi.fn().mockResolvedValue(null),
-        buildSummary: vi.fn().mockResolvedValue(''),
-        buildAutoLoadedBlock: vi.fn().mockResolvedValue(''),
-      } as any,
+      noopWikiPageRepo,
+      noopWikiBootstrap,
+      noopSessionSearch,
     );
 
     const params: ContextBuildParams = {
@@ -64,7 +77,6 @@ describe('ContextBuilderService - skill summary integration', () => {
   });
 
   it('omits skill section for sub-agents even when skills are available', async () => {
-    const mockMemoryRepo = { findVisibleToUser: vi.fn().mockResolvedValue([]) };
     const mockBootstrapService = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
     const mockSkillLoader = {
       buildSkillsSummary: vi.fn().mockResolvedValue({
@@ -75,19 +87,15 @@ describe('ContextBuilderService - skill summary integration', () => {
 
     const sessionRepoMock = { setCachedSystemPrompt: vi.fn() };
     const service = new ContextBuilderService(
-      mockMemoryRepo as any,
       mockBootstrapService as any,
       mockSkillLoader as any,
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
       noopSystemSettings,
       sessionRepoMock as unknown as SessionRepository,
-      {
-        listCards: vi.fn().mockResolvedValue([]),
-        loadCard: vi.fn().mockResolvedValue(null),
-        buildSummary: vi.fn().mockResolvedValue(''),
-        buildAutoLoadedBlock: vi.fn().mockResolvedValue(''),
-      } as any,
+      noopWikiPageRepo,
+      noopWikiBootstrap,
+      noopSessionSearch,
     );
 
     const params: ContextBuildParams = {
@@ -112,7 +120,6 @@ describe('ContextBuilderService - skill summary integration', () => {
   });
 
   it('omits skill section when no skills available', async () => {
-    const mockMemoryRepo = { findVisibleToUser: vi.fn().mockResolvedValue([]) };
     const mockBootstrapService = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
     const mockSkillLoader = {
       buildSkillsSummary: vi.fn().mockResolvedValue({ xml: '', stalenessMap: new Map() }),
@@ -120,19 +127,15 @@ describe('ContextBuilderService - skill summary integration', () => {
 
     const sessionRepoMock = { setCachedSystemPrompt: vi.fn() };
     const service = new ContextBuilderService(
-      mockMemoryRepo as any,
       mockBootstrapService as any,
       mockSkillLoader as any,
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
       noopSystemSettings,
       sessionRepoMock as unknown as SessionRepository,
-      {
-        listCards: vi.fn().mockResolvedValue([]),
-        loadCard: vi.fn().mockResolvedValue(null),
-        buildSummary: vi.fn().mockResolvedValue(''),
-        buildAutoLoadedBlock: vi.fn().mockResolvedValue(''),
-      } as any,
+      noopWikiPageRepo,
+      noopWikiBootstrap,
+      noopSessionSearch,
     );
 
     const params: ContextBuildParams = {
@@ -150,7 +153,6 @@ describe('ContextBuilderService - skill summary integration', () => {
   });
 
   it('includes Skills Maintenance guidance after skills summary', async () => {
-    const mockMemoryRepo = { findVisibleToUser: vi.fn().mockResolvedValue([]) };
     const mockBootstrapService = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
     const mockSkillLoader = {
       buildSkillsSummary: vi.fn().mockResolvedValue({
@@ -161,13 +163,15 @@ describe('ContextBuilderService - skill summary integration', () => {
 
     const sessionRepoMock = { setCachedSystemPrompt: vi.fn() };
     const service = new ContextBuilderService(
-      mockMemoryRepo as any,
       mockBootstrapService as any,
       mockSkillLoader as any,
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
       noopSystemSettings,
       sessionRepoMock as unknown as SessionRepository,
+      noopWikiPageRepo,
+      noopWikiBootstrap,
+      noopSessionSearch,
     );
 
     const params: ContextBuildParams = {
@@ -193,7 +197,6 @@ describe('ContextBuilderService - skill summary integration', () => {
   });
 
   it('omits Skills Maintenance guidance when no skills', async () => {
-    const mockMemoryRepo = { findVisibleToUser: vi.fn().mockResolvedValue([]) };
     const mockBootstrapService = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
     const mockSkillLoader = {
       buildSkillsSummary: vi.fn().mockResolvedValue({ xml: '', stalenessMap: new Map() }),
@@ -201,13 +204,15 @@ describe('ContextBuilderService - skill summary integration', () => {
 
     const sessionRepoMock = { setCachedSystemPrompt: vi.fn() };
     const service = new ContextBuilderService(
-      mockMemoryRepo as any,
       mockBootstrapService as any,
       mockSkillLoader as any,
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
       noopSystemSettings,
       sessionRepoMock as unknown as SessionRepository,
+      noopWikiPageRepo,
+      noopWikiBootstrap,
+      noopSessionSearch,
     );
 
     const params: ContextBuildParams = {
@@ -225,7 +230,6 @@ describe('ContextBuilderService - skill summary integration', () => {
 
   it('returns fresh staleness map even when system prompt is cached', async () => {
     const staleMap = new Map([['/workspace/skills/test/SKILL.md', { name: 'test', stale: true }]]);
-    const mockMemoryRepo = { findVisibleToUser: vi.fn().mockResolvedValue([]) };
     const mockBootstrapService = { loadBootstrapFiles: vi.fn().mockResolvedValue([]) };
     const mockSkillLoader = {
       buildSkillsSummary: vi.fn().mockResolvedValue({
@@ -236,13 +240,15 @@ describe('ContextBuilderService - skill summary integration', () => {
 
     const sessionRepoMock = { setCachedSystemPrompt: vi.fn() };
     const service = new ContextBuilderService(
-      mockMemoryRepo as any,
       mockBootstrapService as any,
       mockSkillLoader as any,
       { findById: vi.fn().mockResolvedValue({ cronEnabled: false }) } as any,
       { findById: vi.fn().mockResolvedValue({ policyId: 'p-1' }) } as any,
       noopSystemSettings,
       sessionRepoMock as unknown as SessionRepository,
+      noopWikiPageRepo,
+      noopWikiBootstrap,
+      noopSessionSearch,
     );
 
     const cachedPrompt = 'Cached system prompt with skills';

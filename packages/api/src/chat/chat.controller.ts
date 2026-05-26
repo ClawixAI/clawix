@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -177,6 +178,16 @@ export class ChatController {
     }
     const updated = await this.sessionRepo.update(sessionId, { topic: body.topic ?? null });
     return { success: true, data: updated };
+  }
+
+  @Delete('sessions/:id')
+  async deleteSession(@Req() req: { user: JwtPayload }, @Param('id') sessionId: string) {
+    const session = await this.sessionRepo.findById(sessionId);
+    if (session.userId !== req.user.sub) {
+      throw new NotFoundException('Session not found');
+    }
+    await this.sessionRepo.delete(sessionId);
+    return { success: true };
   }
 
   @Get('sessions/:id/messages')

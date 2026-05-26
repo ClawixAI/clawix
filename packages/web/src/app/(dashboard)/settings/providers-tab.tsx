@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, MoreHorizontal, Plus, Star, Zap } from 'lucide-react';
+import { Loader2, MoreHorizontal, Plus, Star, X, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -180,8 +180,21 @@ export function ProvidersTab() {
       </div>
 
       {error && (
-        <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
+        <div
+          role="alert"
+          className="mb-4 flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+        >
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            aria-label="Dismiss error"
+            className="-mr-1 -mt-0.5 rounded-sm p-1 text-destructive/80 hover:bg-destructive/10 hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50"
+            onClick={() => {
+              setError('');
+            }}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
         </div>
       )}
 
@@ -225,12 +238,30 @@ export function ProvidersTab() {
                   <TableCell>
                     <Badge
                       variant={p.isDefault ? 'default' : 'outline'}
-                      className={`cursor-pointer gap-1 text-xs ${p.isDefault ? '' : 'opacity-40 hover:opacity-70'}`}
+                      role="button"
+                      tabIndex={p.isDefault ? -1 : 0}
+                      aria-label={
+                        p.isDefault
+                          ? `${p.displayName} is the default provider`
+                          : `Make ${p.displayName} default`
+                      }
+                      aria-pressed={p.isDefault}
+                      className={`cursor-pointer gap-1 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${p.isDefault ? '' : 'opacity-40 hover:opacity-70'}`}
                       onClick={() => {
                         if (!p.isDefault) void handleSetDefault(p);
                       }}
+                      onKeyDown={(e) => {
+                        if (p.isDefault) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          void handleSetDefault(p);
+                        }
+                      }}
                     >
-                      <Star className={`size-3 ${p.isDefault ? 'fill-current' : ''}`} />
+                      <Star
+                        className={`size-3 ${p.isDefault ? 'fill-current' : ''}`}
+                        aria-hidden="true"
+                      />
                       Default
                     </Badge>
                   </TableCell>

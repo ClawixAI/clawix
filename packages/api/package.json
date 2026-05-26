@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node --input-type=module -e \"import('fs/promises').then(fs => fs.cp('src/engine/wiki/schema-template.md', 'dist/engine/wiki/schema-template.md'))\"",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",

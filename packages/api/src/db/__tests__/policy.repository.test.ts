@@ -16,7 +16,6 @@ describe('PolicyRepository', () => {
     maxTokenBudget: 10000,
     maxAgents: 10,
     maxSkills: 20,
-    maxMemoryItems: 5000,
     maxGroupsOwned: 10,
     allowedProviders: ['anthropic', 'openai'],
     features: {},

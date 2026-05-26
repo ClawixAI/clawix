@@ -18,7 +18,7 @@ export class TaskRunsController {
   @Get('runs')
   async listRuns(@Param('id') id: string, @Query() query: unknown, @Req() req: any) {
     const task = await this.taskRepo.findById(id);
-    if (task.createdByUserId !== req.user.id) {
+    if (task.createdByUserId !== req.user.sub) {
       throw new NotFoundException('Task not found');
     }
     const pagination = paginationSchema.parse(query);
@@ -30,7 +30,7 @@ export class TaskRunsController {
   @Get('runs/:runId/messages')
   async runMessages(@Param('id') id: string, @Param('runId') runId: string, @Req() req: any) {
     const task = await this.taskRepo.findById(id);
-    if (task.createdByUserId !== req.user.id) {
+    if (task.createdByUserId !== req.user.sub) {
       throw new NotFoundException('Task not found');
     }
     const run = await this.taskRunRepo.findById(runId);

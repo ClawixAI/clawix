@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import anime from 'animejs';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { EASING, DURATION } from '@/lib/anime';
@@ -446,8 +447,8 @@ function UserBreakdownRow({ user }: { user: UserUsage }) {
     try {
       const res = await authFetch<AgentUsage[]>(`/api/v1/tokens/per-user/${user.userId}/agents`);
       setAgents(Array.isArray(res) ? res : []);
-    } catch {
-      // silently fail — row just won't expand
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load per-agent breakdown');
     }
     setLoaded(true);
   }, [user.userId, loaded]);
@@ -533,8 +534,10 @@ export default function TokenUsagePage() {
       setUserBreakdown(Array.isArray(usersRes) ? usersRes : []);
       setChartData(Array.isArray(chartRes) ? chartRes : []);
       setModelUsage(Array.isArray(modelRes) ? modelRes : []);
-    } catch {
-      // Data will remain empty
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load token usage data', {
+        id: 'tokens-fetch',
+      });
     } finally {
       setLoading(false);
     }

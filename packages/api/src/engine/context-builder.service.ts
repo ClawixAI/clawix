@@ -1,17 +1,20 @@
-import * as fs from 'fs/promises';
 import * as path from 'path';
+
 import { Injectable } from '@nestjs/common';
 import { createLogger } from '@clawix/shared';
 import type { ChatMessage } from '@clawix/shared';
 
-import { MemoryItemRepository } from '../db/memory-item.repository.js';
 import { BootstrapFileService } from './bootstrap-file.service.js';
-import { scanContextContent } from './prompt-injection-scanner.js';
 import { SkillLoaderService } from './skill-loader.service.js';
 import { PolicyRepository } from '../db/policy.repository.js';
 import { UserRepository } from '../db/user.repository.js';
 import { SystemSettingsService } from '../system-settings/system-settings.service.js';
 import { SessionRepository } from '../db/session.repository.js';
+import { WikiPageRepository } from '../db/wiki-page.repository.js';
+import { WikiBootstrapService } from './wiki/wiki-bootstrap.service.js';
+import { renderWikiContext } from './wiki/render-wiki-context.js';
+import { SessionSearchService } from './session-recall/session-search.service.js';
+import { renderRecentSessions } from './session-recall/render-recent-sessions.js';
 import type {
   ContextBuildParams,
   ContextBuildResult,
@@ -19,12 +22,6 @@ import type {
   WorkerSummary,
 } from './context-builder.types.js';
 import type { SkillStalenessMap } from './skill-loader.types.js';
-import {
-  MEMORY_FILE_TOKEN_BUDGET,
-  DAILY_NOTES_TOKEN_BUDGET,
-  DAILY_NOTES_DAYS,
-  MEMORY_ITEM_MAX_CHARS,
-} from './context-builder.types.js';
 
 const logger = createLogger('engine:context-builder');
 
@@ -39,13 +36,15 @@ const logger = createLogger('engine:context-builder');
 @Injectable()
 export class ContextBuilderService {
   constructor(
-    private readonly memoryItemRepo: MemoryItemRepository,
     private readonly bootstrapFileService: BootstrapFileService,
     private readonly skillLoader: SkillLoaderService,
     private readonly policyRepo: PolicyRepository,
     private readonly userRepo: UserRepository,
     private readonly systemSettingsService: SystemSettingsService,
     private readonly sessionRepo: SessionRepository,
+    private readonly wikiPageRepo: WikiPageRepository,
+    private readonly wikiBootstrap: WikiBootstrapService,
+    private readonly sessionSearch: SessionSearchService,
   ) {}
 
   /**
@@ -196,6 +195,13 @@ export class ContextBuilderService {
       sections.push(memorySection);
     }
 
+    if (!isSubAgent) {
+      const recentSessionsSection = await this.buildRecentSessionsSection(userId, args.session?.id);
+      if (recentSessionsSection) {
+        sections.push(recentSessionsSection);
+      }
+    }
+
     return { systemPrompt: sections.join('\n\n---\n\n'), stalenessMap };
   }
 
@@ -308,22 +314,21 @@ export class ContextBuilderService {
       '',
       '## Memory',
       '',
-      'You have two long-term memory files — keep them separate, do not duplicate facts between them:',
-      '- `/workspace/USER.md` — structured user profile (name, timezone, role, preferences, work context). Update with `edit_file` when you learn a new structured fact about the user.',
-      '- `/workspace/memory/MEMORY.md` — free-form long-term notes about ongoing work, decisions, and project context. Do NOT write user-profile facts here; they belong in USER.md.',
+      'You have two long-term stores. **Each fact belongs in exactly one** — never save the same fact to both, or they will drift.',
       '',
-      'For both files: read to recall context from previous sessions; keep them concise and well-organized — you own them completely.',
+      '- `/workspace/USER.md` — structured user profile **only**: name, timezone, role, preferences, work context. Read at session start; update with `edit_file` when you learn a new structured fact about the user. Keep it concise.',
+      '- **Wiki pages** (via `wiki_*` tools) — **everything that is not user profile**: project notes, decisions, references, daily activity, domain knowledge. Cross-link with `[[slug]]` markers.',
       '',
-      'For daily activity notes, use `save_memory` with a `daily:YYYY-MM-DD` tag (e.g., `daily:' +
+      'When the user introduces themselves or shares a preference, update USER.md — do NOT also call `wiki_write` for the same fact.',
+      '',
+      'For daily activity notes, call `wiki_write` with a `daily:YYYY-MM-DD` tag (e.g., `daily:' +
         new Date().toISOString().slice(0, 10) +
         '`).',
-      '- The last 3 days of daily notes are automatically loaded into your context',
-      '- Use `search_memory` to look up older daily notes or tagged memories',
+      'Your recent conversations are listed under "Recent Sessions"; use `session_search` ' +
+        'to recall details from any past session.',
+      '- Use `wiki_index` to browse the catalog, or `wiki_search` for free-text lookup',
       '',
-      'Your available memory tags are listed in the Memory section of your context.',
-      'Use `search_memory` with specific tags to retrieve their content.',
-      '',
-      'When writing entries to USER.md, MEMORY.md, or `save_memory`, write declarative facts, not instructions: "User prefers concise responses" ✓ — "Always respond concisely" ✗. Imperative phrasing gets re-read as a directive in later sessions and can override the user\'s current request.',
+      'When writing to USER.md or wiki pages, write declarative facts, not instructions: "User prefers concise responses" ✓ — "Always respond concisely" ✗. Imperative phrasing gets re-read as a directive in later sessions and can override the user\'s current request.',
     ].join('\n');
   }
 
@@ -386,7 +391,7 @@ export class ContextBuilderService {
         '',
         "To recall prior notes, `read_file` on a stable filename you've used before (e.g. `notes.md`, `used_jokes.md`). If the file doesn't exist, that means no prior notes for this task — proceed normally; do not treat the error as a problem. To save, `write_file` to a path under the folder above; parent directories are created automatically. Avoid `list_directory` on this folder — it errors when nothing has been saved yet, and the error suffix can derail you. Most one-shot tasks need neither read nor write — ignore the folder when continuity isn't relevant.",
         '',
-        'Prefer this folder over `save_memory` or `MEMORY.md` for task-specific breadcrumbs — those are user-wide and can leak into unrelated conversations. Use them only when the note is genuinely about the user or applies beyond this task.',
+        'Prefer this folder over `wiki_write` for task-specific breadcrumbs — wiki pages are user-wide and can leak into unrelated conversations. Use `wiki_write` only when the note is genuinely about the user or applies beyond this task.',
       );
     }
 
@@ -394,84 +399,83 @@ export class ContextBuilderService {
   }
 
   private async buildMemorySection(userId: string, workspacePath?: string): Promise<string | null> {
-    const sections: string[] = [];
-
-    // 1. MEMORY.md — read from workspace
-    if (workspacePath) {
-      try {
-        const memoryFilePath = path.join(workspacePath, 'memory', 'MEMORY.md');
-        const content = await fs.readFile(memoryFilePath, 'utf-8');
-        const trimmed = content.trim();
-        if (trimmed) {
-          const scanned = scanContextContent(trimmed, 'MEMORY.md').sanitized;
-          const truncated = truncate(scanned, MEMORY_FILE_TOKEN_BUDGET * 4);
-          sections.push(`## Long-term Memory\n\n${truncated}`);
-        }
-      } catch {
-        // File doesn't exist or unreadable — skip
-      }
-    }
-
-    // 2. Daily notes — last N days
-    try {
-      const dailyItems = await this.memoryItemRepo.findDailyNotes(userId, DAILY_NOTES_DAYS);
-      if (dailyItems.length > 0) {
-        const grouped = this.groupDailyNotesByDate(dailyItems);
-        let tokenEstimate = 0;
-        const dateLines: string[] = [];
-
-        for (const [date, items] of grouped) {
-          const dateSectionLines = [`### ${date}`];
-          for (const item of items) {
-            const text = formatMemoryItem(item.content);
-            const tokens = Math.ceil(text.length / 4);
-            if (tokenEstimate + tokens > DAILY_NOTES_TOKEN_BUDGET) break;
-            dateSectionLines.push(`- ${text}`);
-            tokenEstimate += tokens;
-          }
-          dateLines.push(dateSectionLines.join('\n'));
-          if (tokenEstimate >= DAILY_NOTES_TOKEN_BUDGET) break;
-        }
-
-        if (dateLines.length > 0) {
-          sections.push(`## Recent Activity\n\n${dateLines.join('\n\n')}`);
-        }
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.warn({ userId, error: message }, 'Failed to load daily notes');
-    }
-
-    // 3. Tag index
-    try {
-      const tags = await this.memoryItemRepo.findDistinctTags(userId);
-      if (tags.length > 0) {
-        sections.push(`## Available Memory Tags\n\n${tags.join(', ')}`);
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.warn({ userId, error: message }, 'Failed to load tag index');
-    }
-
-    if (sections.length === 0) return null;
-    const guidance =
-      'The information below reflects memory at the start of this session. ' +
-      'To check the current state of memory (including entries saved during this conversation), use the `search_memory` tool.';
-    return `# Memory\n\n${guidance}\n\n${sections.join('\n\n')}`;
+    return this.buildWikiMemorySection(userId, workspacePath);
   }
 
-  private groupDailyNotesByDate(
-    items: readonly { content: unknown; tags: readonly string[]; createdAt: Date }[],
-  ): Map<string, readonly { content: unknown }[]> {
-    const grouped = new Map<string, { content: unknown }[]>();
-    for (const item of items) {
-      const dailyTag = item.tags.find((t) => t.startsWith('daily:'));
-      const date = dailyTag ? dailyTag.slice(6) : item.createdAt.toISOString().slice(0, 10);
-      const existing = grouped.get(date) ?? [];
-      existing.push(item);
-      grouped.set(date, existing);
+  /**
+   * Wiki-backed memory section.
+   *
+   * Runs lazy one-shot migration, then pulls WikiPage rows and renders them
+   * via renderWikiContext. The legacy MEMORY.md / daily-notes / tag-index
+   * paths are completely bypassed. USER.md remains file-based and is
+   * injected separately via BootstrapFileService.
+   */
+  private async buildWikiMemorySection(
+    userId: string,
+    workspacePath?: string,
+  ): Promise<string | null> {
+    try {
+      // Lazy migration — one-shot per user, idempotent.
+      if (workspacePath) {
+        await this.wikiBootstrap.ensureMigrated(userId, workspacePath);
+      }
+
+      // Pull data.
+      const allOwned = await this.wikiPageRepo.listOwnedByUser(userId, { limit: 2000 });
+      const ambientPages = allOwned.filter((p) => p.scope === 'AMBIENT' && p.slug !== '_schema');
+      const schemaPage = allOwned.find((p) => p.slug === '_schema') ?? null;
+      const indexPagesList = await this.wikiPageRepo.findVisibleToUser(userId, { limit: 400 });
+
+      const wikiSection = renderWikiContext({
+        now: new Date(),
+        ambientPages,
+        schemaPage,
+        indexPages: indexPagesList,
+        budgets: { ambient: 2200, schema: 500, index: 4000 },
+      });
+
+      if (!wikiSection) return null;
+
+      const guidance =
+        'The information below reflects your wiki at the start of this session. ' +
+        'Browse the catalog with `wiki_index`, read a page with `wiki_read`, ' +
+        'free-text search with `wiki_search`, and create or update pages with `wiki_write`.\n\n' +
+        '**Before writing a new page**, scan the Wiki Index below for related slugs and use ' +
+        "`wiki_search` whenever the index is large or the topic isn't obvious. Include ` [[slug]] ` " +
+        'markers to every related page you find — cross-linking is what keeps the wiki navigable ' +
+        'across sessions. After `wiki_write` returns, inspect its `candidateLinks` field; if any ' +
+        'are truly related, follow up with another `wiki_write` to add the missing links (either ' +
+        'on this page, on the related page, or both so the connection is bidirectional).';
+      return `# Memory\n\n${guidance}\n\n${wikiSection}`;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { userId, error: message },
+        'Failed to build wiki memory section — falling back to empty',
+      );
+      return null;
     }
-    return new Map([...grouped.entries()].sort((a, b) => b[0].localeCompare(a[0])));
+  }
+
+  /** Recent Sessions block — the user's last 10 conversations (titles only). */
+  private async buildRecentSessionsSection(
+    userId: string,
+    currentSessionId?: string,
+  ): Promise<string | null> {
+    try {
+      const lines = await this.sessionSearch.recentSessions({
+        userId,
+        limit: 10,
+        ...(currentSessionId ? { excludeSessionId: currentSessionId } : {}),
+      });
+      const block = renderRecentSessions(lines, new Date(), 350);
+      if (!block) return null;
+      return block + '\n\nUse `session_search` to recall details from any past conversation.';
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn({ userId, error: message }, 'Failed to build recent sessions section');
+      return null;
+    }
   }
 
   private async buildUserMessage(
@@ -520,34 +524,4 @@ export class ContextBuilderService {
 
     return `${runtimeContext}\n\n${replyContextLines}\n\n${input}`;
   }
-}
-
-/**
- * Format a MemoryItem's JSON content as a human-readable string.
- *
- * - string → use directly
- * - object with `text` field → use text
- * - otherwise → JSON.stringify, truncated to MEMORY_ITEM_MAX_CHARS
- */
-function formatMemoryItem(content: unknown): string {
-  if (typeof content === 'string') {
-    return truncate(content, MEMORY_ITEM_MAX_CHARS);
-  }
-
-  if (content !== null && typeof content === 'object' && !Array.isArray(content)) {
-    const obj = content as Record<string, unknown>;
-    if (typeof obj['text'] === 'string') {
-      return truncate(obj['text'], MEMORY_ITEM_MAX_CHARS);
-    }
-  }
-
-  const serialized = JSON.stringify(content);
-  return truncate(serialized, MEMORY_ITEM_MAX_CHARS);
-}
-
-function truncate(str: string, maxLength: number): string {
-  if (str.length <= maxLength) {
-    return str;
-  }
-  return `${str.slice(0, maxLength)}...`;
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDown, Bot, Check, Copy, Loader2 } from 'lucide-react';
+import { ArrowDown, Bot, Check, Copy, Loader2, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -42,13 +42,48 @@ function formatTime(iso: string): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function UserMessage({ content, createdAt }: { content: string; createdAt: string }) {
+function UserMessage({
+  content,
+  createdAt,
+  failed,
+  onRetry,
+}: {
+  content: string;
+  createdAt: string;
+  failed?: boolean;
+  onRetry?: () => void;
+}) {
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className="max-w-[80%] rounded-3xl bg-muted px-6 py-4">
+      <div
+        className={
+          failed
+            ? 'max-w-[80%] rounded-3xl border border-destructive/50 bg-destructive/10 px-6 py-4'
+            : 'max-w-[80%] rounded-3xl bg-muted px-6 py-4'
+        }
+      >
         <p className="text-sm whitespace-pre-wrap">{content}</p>
       </div>
-      <span className="pr-2 text-[10px] text-muted-foreground">{formatTime(createdAt)}</span>
+      <div className="flex items-center gap-2 pr-2">
+        <span className="text-[10px] text-muted-foreground">{formatTime(createdAt)}</span>
+        {failed && (
+          <>
+            <span className="text-[10px] text-destructive">Failed to send</span>
+            {onRetry && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 px-2 text-xs"
+                onClick={onRetry}
+                aria-label="Retry message"
+              >
+                <RotateCcw className="size-3" />
+                Retry
+              </Button>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -121,9 +156,9 @@ function CopyButton({ content }: { content: string }) {
 
 function TypingIndicator() {
   return (
-    <div className="flex items-start gap-4">
+    <div className="flex items-start gap-4" role="status" aria-live="polite" aria-atomic="true">
       <div className="flex size-6 shrink-0 items-center justify-center rounded-full border border-foreground/20 bg-muted">
-        <Bot className="size-3.5 animate-pulse" />
+        <Bot className="size-3.5 animate-pulse" aria-hidden="true" />
       </div>
       <p className="text-sm text-muted-foreground animate-pulse">Thinking...</p>
     </div>
@@ -142,6 +177,8 @@ interface ChatThreadProps {
   hasMore: boolean;
   onLoadMore: () => void;
   toolProgressMode: ToolProgressMode;
+  failedIds?: ReadonlySet<string>;
+  onRetry?: (id: string) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -156,6 +193,8 @@ export function ChatThread({
   hasMore,
   onLoadMore,
   toolProgressMode,
+  failedIds,
+  onRetry,
 }: ChatThreadProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -206,38 +245,47 @@ export function ChatThread({
     };
   }, [loading, messages.length]);
 
-  // Auto-scroll to bottom when new messages arrive.
+  // Auto-scroll to bottom when new messages arrive OR when the last message
+  // changes identity (e.g. polling replaces an optimistic tmp- entry with the
+  // server's real id, keeping length the same).
   // Always scroll for user messages (they just sent it). For agent messages,
   // only scroll if user is near the bottom (within 600px).
   // Skip when loading older messages (prepending at top).
+  const prevLastIdRef = useRef<string>(messages[messages.length - 1]?.id ?? '');
   const prevMessageCountRef = useRef(messages.length);
+  const lastMessageId = messages[messages.length - 1]?.id ?? '';
   useEffect(() => {
-    if (messages.length <= prevMessageCountRef.current) {
+    const grew = messages.length > prevMessageCountRef.current;
+    const lastChanged = lastMessageId !== '' && lastMessageId !== prevLastIdRef.current;
+    if (!grew && !lastChanged) {
       prevMessageCountRef.current = messages.length;
+      prevLastIdRef.current = lastMessageId;
       return;
     }
 
-    // Skip auto-scroll when loading older messages
+    // Skip auto-scroll when loading older messages (they prepend at top).
     if (isLoadingOlderRef.current) {
       prevMessageCountRef.current = messages.length;
+      prevLastIdRef.current = lastMessageId;
       return;
     }
 
-    const newMessages = messages.slice(prevMessageCountRef.current);
+    const newMessages = grew ? messages.slice(prevMessageCountRef.current) : [];
     const isUserMessage = newMessages.some((m) => m.role === 'user');
     prevMessageCountRef.current = messages.length;
+    prevLastIdRef.current = lastMessageId;
 
     const el = scrollContainerRef.current;
     if (!el) return;
 
     const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (isUserMessage || distFromBottom < 600) {
-      // Delay to let the DOM fully render the new message before scrolling
+      // Delay to let the DOM fully render the new message before scrolling.
       setTimeout(() => {
         el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
       }, 500);
     }
-  }, [messages.length]);
+  }, [messages, messages.length, lastMessageId]);
 
   // Track scroll position for floating button + load more
   useEffect(() => {
@@ -329,7 +377,12 @@ export function ChatThread({
               <div key={msg.id}>
                 {showDate && <DateSeparator label={dateLabel} />}
                 {msg.role === 'user' ? (
-                  <UserMessage content={msg.content} createdAt={msg.createdAt} />
+                  <UserMessage
+                    content={msg.content}
+                    createdAt={msg.createdAt}
+                    failed={failedIds?.has(msg.id) ?? false}
+                    onRetry={onRetry ? () => onRetry(msg.id) : undefined}
+                  />
                 ) : (
                   <>
                     {msg.content.trim().length > 0 && (

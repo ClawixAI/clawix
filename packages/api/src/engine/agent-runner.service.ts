@@ -51,7 +51,6 @@ import { createLogger } from '@clawix/shared';
 import type { AgentDefinition as SharedAgentDefinition, ContainerConfig } from '@clawix/shared';
 
 import { PrismaService } from '../prisma/prisma.service.js';
-import { MemoryItemRepository } from '../db/memory-item.repository.js';
 import { SessionManagerService } from './session-manager.service.js';
 import { ContainerRunner } from './container-runner.js';
 import { ContainerPoolService } from './container-pool.service.js';
@@ -76,7 +75,7 @@ import { ReasoningLoop } from './reasoning-loop.js';
 import { CompressorService } from './compressor.js';
 import { BudgetTracker } from './budget-tracker.js';
 import { ToolRegistry } from './tool-registry.js';
-import { registerBuiltinTools, registerMemoryTools, registerCronTools } from './tools/index.js';
+import { registerBuiltinTools, registerCronTools } from './tools/index.js';
 import { createSpawnTool } from './tools/spawn.js';
 import { CronGuardService } from './cron-guard.service.js';
 import { ContextBuilderService } from './context-builder.service.js';
@@ -99,6 +98,14 @@ import { PythonConcurrencyLimiter } from './tools/python/concurrency-limiter.js'
 import { InstallMutex } from './tools/python/install-mutex.js';
 import { createPythonRunTool } from './tools/python/python-run.js';
 import { createPythonRunNetTool } from './tools/python/python-run-net.js';
+import { WikiPageRepository } from '../db/wiki-page.repository.js';
+import { WikiLinkRepository } from '../db/wiki-link.repository.js';
+import { WikiShareRepository } from '../db/wiki-share.repository.js';
+import { WikiSearchRepository } from '../db/wiki-search.repository.js';
+import { AuditLogRepository } from '../db/audit-log.repository.js';
+import { registerWikiTools } from './tools/wiki/register.js';
+import { registerSessionTools } from './tools/session/register.js';
+import { SessionSearchService } from './session-recall/session-search.service.js';
 
 const logger = createLogger('engine:agent-runner');
 
@@ -141,7 +148,6 @@ export class AgentRunnerService {
     private readonly searchProviderRegistry: SearchProviderRegistry,
     private readonly moduleRef: ModuleRef,
     private readonly prisma: PrismaService,
-    private readonly memoryItemRepo: MemoryItemRepository,
     private readonly workspaceSeeder: WorkspaceSeederService,
     private readonly policyRepo: PolicyRepository,
     private readonly channelRepo: ChannelRepository,
@@ -160,6 +166,12 @@ export class AgentRunnerService {
     private readonly pythonProxyHealth: PythonProxyHealthService,
     private readonly pythonLimiter: PythonConcurrencyLimiter,
     private readonly pythonInstallMutex: InstallMutex,
+    private readonly wikiPageRepo: WikiPageRepository,
+    private readonly wikiLinkRepo: WikiLinkRepository,
+    private readonly wikiShareRepo: WikiShareRepository,
+    private readonly wikiSearchRepo: WikiSearchRepository,
+    private readonly auditLogRepo: AuditLogRepository,
+    private readonly sessionSearchService: SessionSearchService,
   ) {}
 
   /** Lazy accessor to break circular dependency with TaskExecutorService. */
@@ -359,20 +371,13 @@ export class AgentRunnerService {
         await this.makeWorkspaceWritable(workspacePaths.localPath);
       }
 
-      // Seed bootstrap files (SOUL.md, USER.md) and MEMORY.md if they don't exist yet
+      // Seed bootstrap files (SOUL.md, USER.md) if they don't exist yet
       if (workspacePaths !== undefined) {
         const userForSeeding = await this.userRepo.findById(userId);
-
-        // Fetch existing non-daily memory items for seeding
-        const existingItems = await this.memoryItemRepo.findVisibleToUser(userId);
-        const nonDailyItems = existingItems.filter(
-          (item) => !item.tags.some((t) => t.startsWith('daily:')),
-        );
 
         await this.workspaceSeeder.seedWorkspace({
           workspacePath: workspacePaths.localPath,
           templateVars: { 'user.name': userForSeeding.name },
-          existingMemoryItems: nonDailyItems,
         });
       }
 
@@ -444,11 +449,32 @@ export class AgentRunnerService {
         });
       }
 
-      // Step 13: Create ToolRegistry, register builtin tools + web tools + memory tools + spawn tool
+      // Step 13: Create ToolRegistry, register builtin tools + web tools + memory/wiki tools + spawn tool
       const registry = new ToolRegistry();
       registerBuiltinTools(registry, containerId, this.containerRunner);
       registerWebTools(registry, this.searchProviderRegistry);
-      registerMemoryTools(registry, this.prisma, this.memoryItemRepo, userId);
+
+      // Memory toolset: wiki-backed tools.
+      const lintEnabled = (policy as { wikiLintEnabled?: boolean })?.wikiLintEnabled ?? true;
+      registerWikiTools(
+        registry,
+        {
+          prisma: this.prisma,
+          pages: this.wikiPageRepo,
+          links: this.wikiLinkRepo,
+          shares: this.wikiShareRepo,
+          search: this.wikiSearchRepo,
+          audit: this.auditLogRepo,
+          users: this.userRepo,
+          policies: this.policyRepo,
+        },
+        userId,
+        { lintEnabled },
+      );
+
+      // Session recall: search the user's own past conversations.
+      registerSessionTools(registry, { searchService: this.sessionSearchService }, userId);
+
       if (!isSubAgent && session) {
         registry.register(
           createSpawnTool(

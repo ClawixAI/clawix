@@ -20,6 +20,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { formString } from '@/lib/form';
+import { FieldError } from '@/components/ui/field-error';
+import {
+  channelNameSchema,
+  channelTelegramCreateSchema,
+  parseForm,
+  type FieldErrors,
+} from '@/lib/validation';
 import type { ApiChannel } from './channels-tab';
 
 // ------------------------------------------------------------------ //
@@ -49,6 +57,7 @@ export function CreateChannelDialog({
   onSubmit: (form: FormData) => void;
 }) {
   const [type, setType] = useState('telegram');
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -60,9 +69,27 @@ export function CreateChannelDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(new FormData(e.currentTarget));
+            const form = new FormData(e.currentTarget);
+            const base = {
+              name: formString(form, 'name'),
+              webhook_url: formString(form, 'webhook_url'),
+            };
+            const parsed =
+              type === 'telegram'
+                ? parseForm(channelTelegramCreateSchema, {
+                    ...base,
+                    bot_token: formString(form, 'bot_token'),
+                  })
+                : parseForm(channelNameSchema, base);
+            if (!parsed.success) {
+              setErrors(parsed.fieldErrors);
+              return;
+            }
+            setErrors({});
+            onSubmit(form);
           }}
           className="flex flex-col gap-4"
+          noValidate
         >
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-type">Type</Label>
@@ -82,10 +109,18 @@ export function CreateChannelDialog({
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-name">Name</Label>
-            <Input id="create-name" name="name" placeholder={namePlaceholder(type)} required />
+            <Input
+              id="create-name"
+              name="name"
+              placeholder={namePlaceholder(type)}
+              maxLength={100}
+              aria-invalid={errors['name'] ? true : undefined}
+              required
+            />
+            <FieldError message={errors['name']} />
           </div>
 
-          {type === 'telegram' && <TelegramConfigFields />}
+          {type === 'telegram' && <TelegramConfigFields requireToken errors={errors} />}
           {type === 'whatsapp' && <WhatsAppConfigFields />}
           {type === 'web' && <WebConfigFields />}
 
@@ -125,6 +160,8 @@ export function EditChannelDialog({
   saving: boolean;
   onSubmit: (id: string, form: FormData) => void;
 }) {
+  const [errors, setErrors] = useState<FieldErrors>({});
+
   if (!channel) return null;
 
   return (
@@ -137,16 +174,37 @@ export function EditChannelDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(channel.id, new FormData(e.currentTarget));
+            const form = new FormData(e.currentTarget);
+            const parsed = parseForm(channelNameSchema, {
+              name: formString(form, 'name'),
+              webhook_url: formString(form, 'webhook_url'),
+            });
+            if (!parsed.success) {
+              setErrors(parsed.fieldErrors);
+              return;
+            }
+            setErrors({});
+            onSubmit(channel.id, form);
           }}
           className="flex flex-col gap-4"
+          noValidate
         >
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-name">Name</Label>
-            <Input id="edit-name" name="name" defaultValue={channel.name} required />
+            <Input
+              id="edit-name"
+              name="name"
+              defaultValue={channel.name}
+              maxLength={100}
+              aria-invalid={errors['name'] ? true : undefined}
+              required
+            />
+            <FieldError message={errors['name']} />
           </div>
 
-          {channel.type === 'telegram' && <TelegramConfigFields config={channel.config} />}
+          {channel.type === 'telegram' && (
+            <TelegramConfigFields config={channel.config} errors={errors} />
+          )}
           {channel.type === 'whatsapp' && <WhatsAppConfigFields />}
           {channel.type === 'web' && <WebConfigFields config={channel.config} />}
 
@@ -190,7 +248,15 @@ function namePlaceholder(type: string): string {
   }
 }
 
-function TelegramConfigFields({ config = {} }: { config?: Record<string, unknown> }) {
+function TelegramConfigFields({
+  config = {},
+  requireToken = false,
+  errors,
+}: {
+  config?: Record<string, unknown>;
+  requireToken?: boolean;
+  errors?: FieldErrors;
+}) {
   const hasToken = typeof config['bot_token'] === 'string' && config['bot_token'].length > 0;
   const hasWebhookSecret =
     typeof config['webhook_secret'] === 'string' && config['webhook_secret'].length > 0;
@@ -209,7 +275,10 @@ function TelegramConfigFields({ config = {} }: { config?: Record<string, unknown
               ? 'Token is set — leave blank to keep'
               : 'Enter Telegram bot token from @BotFather'
           }
+          aria-invalid={errors?.['bot_token'] ? true : undefined}
+          required={requireToken}
         />
+        <FieldError message={errors?.['bot_token']} />
         <p className="text-xs text-muted-foreground">
           {hasToken
             ? 'Leave blank to keep the current token.'
@@ -238,10 +307,13 @@ function TelegramConfigFields({ config = {} }: { config?: Record<string, unknown
             <Input
               id="cfg-webhook_url"
               name="webhook_url"
+              type="url"
               placeholder="https://your-domain.com/api/telegram/webhook"
               defaultValue={(config['webhook_url'] as string) ?? ''}
+              aria-invalid={errors?.['webhook_url'] ? true : undefined}
               required
             />
+            <FieldError message={errors?.['webhook_url']} />
             <p className="text-xs text-muted-foreground">
               Public HTTPS URL that Telegram will send updates to.
             </p>

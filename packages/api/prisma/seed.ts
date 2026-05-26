@@ -138,7 +138,6 @@ async function main(): Promise<void> {
       maxTokenBudget: 1000, // $10.00 in cents
       maxAgents: 2,
       maxSkills: 5,
-      maxMemoryItems: 100,
       maxGroupsOwned: 2,
       allowedProviders: [defaultProvider],
       cronEnabled: true,
@@ -171,7 +170,6 @@ async function main(): Promise<void> {
       maxTokenBudget: 10000, // $100.00 in cents
       maxAgents: 10,
       maxSkills: 50,
-      maxMemoryItems: 5000,
       maxGroupsOwned: 10,
       allowedProviders: extendedProviders,
       cronEnabled: true,
@@ -204,7 +202,6 @@ async function main(): Promise<void> {
       maxTokenBudget: null, // unlimited
       maxAgents: 100,
       maxSkills: 500,
-      maxMemoryItems: 50000,
       maxGroupsOwned: 50,
       allowedProviders: providerSeeds.map((s) => s.provider),
       cronEnabled: true,

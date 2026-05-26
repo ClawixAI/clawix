@@ -38,7 +38,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { authFetch } from '@/lib/auth';
+import { formString } from '@/lib/form';
 import { SuccessDialog } from '@/components/ui/success-dialog';
+import { DataPagination, type PaginationMeta } from '@/components/ui/data-pagination';
+import { usePaginationParams } from '@/hooks/use-pagination-params';
 import { CreateChannelDialog, EditChannelDialog } from './channels-dialogs';
 
 // ------------------------------------------------------------------ //
@@ -57,7 +60,7 @@ export interface ApiChannel {
 
 interface PaginatedChannels {
   data: ApiChannel[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
+  meta: PaginationMeta;
 }
 
 // ------------------------------------------------------------------ //
@@ -87,8 +90,8 @@ function buildConfig(
   const config = { ...existing };
 
   if (type === 'telegram') {
-    const botToken = form.get('bot_token') as string;
-    const mode = form.get('mode') as string;
+    const botToken = formString(form, 'bot_token');
+    const mode = formString(form, 'mode');
     if (botToken) config['bot_token'] = botToken;
     if (mode) config['mode'] = mode;
   }
@@ -106,7 +109,14 @@ function buildConfig(
 // ------------------------------------------------------------------ //
 
 export function ChannelsTab() {
+  const { page, limit, setPage, setLimit } = usePaginationParams();
   const [channels, setChannels] = useState<ApiChannel[]>([]);
+  const [meta, setMeta] = useState<PaginationMeta>({
+    total: 0,
+    page: 1,
+    limit,
+    totalPages: 0,
+  });
   const [connectedIds, setConnectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -122,17 +132,18 @@ export function ChannelsTab() {
     setError('');
     try {
       const [res, status] = await Promise.all([
-        authFetch<PaginatedChannels>('/admin/channels?limit=100'),
+        authFetch<PaginatedChannels>(`/admin/channels?page=${page}&limit=${limit}`),
         authFetch<{ connectedIds: string[] }>('/admin/channels/status'),
       ]);
       setChannels(Array.isArray(res.data) ? res.data : []);
+      setMeta(res.meta);
       setConnectedIds(new Set(status.connectedIds ?? []));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load channels');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, limit]);
 
   useEffect(() => {
     void fetchChannels();
@@ -142,7 +153,7 @@ export function ChannelsTab() {
     setSaving(true);
     setError('');
     try {
-      const type = form.get('type') as string;
+      const type = formString(form, 'type');
       await authFetch('/admin/channels', {
         method: 'POST',
         body: JSON.stringify({
@@ -324,6 +335,17 @@ export function ChannelsTab() {
           </Table>
         </div>
       )}
+
+      {!loading && channels.length > 0 ? (
+        <div className="mt-4">
+          <DataPagination
+            meta={meta}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+            label="channels"
+          />
+        </div>
+      ) : null}
 
       <CreateChannelDialog
         open={createOpen}

@@ -114,28 +114,19 @@ export class GroupRepository {
   }
 
   /**
-   * Soft-delete: stamps `deletedAt` so listings hide the group, and atomically
-   * revokes every active `MemoryShare(targetType=GROUP, groupId)` row so
-   * members lose visibility immediately. The group identity, members,
-   * invites, and audit references all survive — recovery / shared-workspace
-   * features can lean on them later.
+   * Soft-delete: stamps `deletedAt` so listings hide the group. The group
+   * identity, members, invites, and audit references all survive — recovery /
+   * shared-workspace features can lean on them later.
    *
-   * Both timestamps are set to the same `now` so `restore()` can identify
-   * exactly which share rows it needs to un-revoke (the ones whose
-   * revokedAt equals the group's deletedAt).
+   * Note: legacy MemoryShare revocation was removed when the MemoryShare
+   * table was dropped (post-Phase-5 backfill). WikiShare is the current
+   * sharing primitive and is not coupled to group soft-delete lifecycle.
    */
   async delete(id: string): Promise<Group> {
     try {
-      const now = new Date();
-      return await this.prisma.$transaction(async (tx) => {
-        await tx.memoryShare.updateMany({
-          where: { groupId: id, isRevoked: false },
-          data: { isRevoked: true, revokedAt: now },
-        });
-        return tx.group.update({
-          where: { id },
-          data: { deletedAt: now },
-        });
+      return await this.prisma.group.update({
+        where: { id },
+        data: { deletedAt: new Date() },
       });
     } catch (error) {
       handlePrismaError(error, 'Group');
@@ -143,29 +134,19 @@ export class GroupRepository {
   }
 
   /**
-   * Inverse of `delete()`. Clears the group's `deletedAt` and un-revokes
-   * exactly the share rows that the matching delete revoked (matched by
-   * `revokedAt = group.deletedAt`). Shares that were already revoked
-   * before the delete keep their revoked state.
+   * Inverse of `delete()`. Clears the group's `deletedAt` so listings show
+   * the group again.
    */
   async restore(id: string): Promise<Group> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.group.findUnique({
-          where: { id },
-          select: { deletedAt: true },
-        });
-        if (!existing) throw new NotFoundError('Group', id);
-        if (existing.deletedAt) {
-          await tx.memoryShare.updateMany({
-            where: { groupId: id, isRevoked: true, revokedAt: existing.deletedAt },
-            data: { isRevoked: false, revokedAt: null },
-          });
-        }
-        return tx.group.update({
-          where: { id },
-          data: { deletedAt: null },
-        });
+      const existing = await this.prisma.group.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!existing) throw new NotFoundError('Group', id);
+      return await this.prisma.group.update({
+        where: { id },
+        data: { deletedAt: null },
       });
     } catch (error) {
       handlePrismaError(error, 'Group');

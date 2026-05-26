@@ -13,6 +13,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { formString } from '@/lib/form';
+import { FieldError } from '@/components/ui/field-error';
+import {
+  parseForm,
+  providerCreateSchema,
+  providerEditSchema,
+  type FieldErrors,
+} from '@/lib/validation';
 import type { ApiProvider } from './providers-tab';
 
 // ------------------------------------------------------------------ //
@@ -56,6 +64,8 @@ export function CreateProviderDialog({
   saving: boolean;
   onSubmit: (data: Record<string, unknown>) => void;
 }) {
+  const [errors, setErrors] = useState<FieldErrors>({});
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -67,18 +77,29 @@ export function CreateProviderDialog({
           onSubmit={(e) => {
             e.preventDefault();
             const form = new FormData(e.currentTarget);
+            const parsed = parseForm(providerCreateSchema, {
+              provider: formString(form, 'provider'),
+              displayName: formString(form, 'displayName'),
+              apiKey: formString(form, 'apiKey'),
+              apiBaseUrl: formString(form, 'apiBaseUrl'),
+            });
+            if (!parsed.success) {
+              setErrors(parsed.fieldErrors);
+              return;
+            }
+            setErrors({});
             const data: Record<string, unknown> = {
-              provider: form.get('provider'),
-              displayName: form.get('displayName'),
-              apiKey: form.get('apiKey'),
+              provider: parsed.data.provider,
+              displayName: parsed.data.displayName,
+              apiKey: parsed.data.apiKey,
               isDefault: form.get('isDefault') === 'on',
             };
-            const baseUrl = form.get('apiBaseUrl') as string;
-            if (baseUrl) data['apiBaseUrl'] = baseUrl;
+            if (parsed.data.apiBaseUrl) data['apiBaseUrl'] = parsed.data.apiBaseUrl;
             onSubmit(data);
           }}
           className="flex flex-col gap-4"
           autoComplete="off"
+          noValidate
         >
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-provider">Provider ID</Label>
@@ -86,9 +107,13 @@ export function CreateProviderDialog({
               id="create-provider"
               name="provider"
               placeholder="e.g. openai, anthropic, custom-llm"
+              pattern="[a-z0-9-]+"
+              maxLength={50}
+              aria-invalid={errors['provider'] ? true : undefined}
               required
               autoComplete="off"
             />
+            <FieldError message={errors['provider']} />
             <p className="text-xs text-muted-foreground">
               Unique identifier for this provider (lowercase, no spaces).
             </p>
@@ -99,9 +124,12 @@ export function CreateProviderDialog({
               id="create-displayName"
               name="displayName"
               placeholder="e.g. OpenAI, Anthropic, Custom LLM"
+              maxLength={100}
+              aria-invalid={errors['displayName'] ? true : undefined}
               required
               autoComplete="off"
             />
+            <FieldError message={errors['displayName']} />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-apiKey">API Key</Label>
@@ -109,9 +137,11 @@ export function CreateProviderDialog({
               id="create-apiKey"
               name="apiKey"
               placeholder="sk-..."
+              aria-invalid={errors['apiKey'] ? true : undefined}
               required
               autoComplete="new-password"
             />
+            <FieldError message={errors['apiKey']} />
             <p className="text-xs text-muted-foreground">
               Encrypted at rest. Never displayed in full after saving.
             </p>
@@ -123,8 +153,10 @@ export function CreateProviderDialog({
               name="apiBaseUrl"
               type="url"
               placeholder="https://api.example.com/v1"
+              aria-invalid={errors['apiBaseUrl'] ? true : undefined}
               autoComplete="off"
             />
+            <FieldError message={errors['apiBaseUrl']} />
             <p className="text-xs text-muted-foreground">
               Only needed for custom or self-hosted endpoints.
             </p>
@@ -174,6 +206,8 @@ export function EditProviderDialog({
   saving: boolean;
   onSubmit: (providerName: string, data: Record<string, unknown>) => void;
 }) {
+  const [errors, setErrors] = useState<FieldErrors>({});
+
   if (!provider) return null;
 
   return (
@@ -187,17 +221,24 @@ export function EditProviderDialog({
           onSubmit={(e) => {
             e.preventDefault();
             const form = new FormData(e.currentTarget);
-            const data: Record<string, unknown> = {};
-            const displayName = form.get('displayName') as string;
-            const apiKey = form.get('apiKey') as string;
-            const baseUrl = form.get('apiBaseUrl') as string;
-            if (displayName) data['displayName'] = displayName;
-            if (apiKey) data['apiKey'] = apiKey;
-            data['apiBaseUrl'] = baseUrl || null;
+            const parsed = parseForm(providerEditSchema, {
+              displayName: formString(form, 'displayName'),
+              apiKey: formString(form, 'apiKey'),
+              apiBaseUrl: formString(form, 'apiBaseUrl'),
+            });
+            if (!parsed.success) {
+              setErrors(parsed.fieldErrors);
+              return;
+            }
+            setErrors({});
+            const data: Record<string, unknown> = { displayName: parsed.data.displayName };
+            if (parsed.data.apiKey) data['apiKey'] = parsed.data.apiKey;
+            data['apiBaseUrl'] = parsed.data.apiBaseUrl || null;
             onSubmit(provider.provider, data);
           }}
           className="flex flex-col gap-4"
           autoComplete="off"
+          noValidate
         >
           <div className="flex flex-col gap-2">
             <Label>Provider ID</Label>
@@ -209,9 +250,12 @@ export function EditProviderDialog({
               id="edit-displayName"
               name="displayName"
               defaultValue={provider.displayName}
+              maxLength={100}
+              aria-invalid={errors['displayName'] ? true : undefined}
               required
               autoComplete="off"
             />
+            <FieldError message={errors['displayName']} />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-apiKey">API Key</Label>
@@ -233,8 +277,10 @@ export function EditProviderDialog({
               type="url"
               defaultValue={provider.apiBaseUrl ?? ''}
               placeholder="https://api.example.com/v1"
+              aria-invalid={errors['apiBaseUrl'] ? true : undefined}
               autoComplete="off"
             />
+            <FieldError message={errors['apiBaseUrl']} />
           </div>
           <DialogFooter>
             <Button

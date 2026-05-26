@@ -8,6 +8,7 @@ function createModelMock() {
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    deleteMany: vi.fn(),
     count: vi.fn(),
     aggregate: vi.fn(),
     groupBy: vi.fn(),
@@ -39,6 +40,17 @@ export function createMockPrismaService() {
     groupInvite: createModelMock(),
     notification: createModelMock(),
     systemSettings: createModelMock(),
+    wikiPage: createModelMock(),
+    wikiShare: createModelMock(),
+    wikiLink: createModelMock(),
+    // Execute each operation in the transaction array sequentially.
+    $transaction: vi.fn(async (ops: unknown[]) => {
+      const results: unknown[] = [];
+      for (const op of ops) {
+        results.push(await op);
+      }
+      return results;
+    }),
   };
 }
 

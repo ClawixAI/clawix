@@ -21,7 +21,7 @@ describe('TaskRunsController', () => {
   it('GET runs — returns owned task runs', async () => {
     taskRepo.findById.mockResolvedValue({ id: 't1', createdByUserId: 'u1' });
     taskRunRepo.findByTaskIdWithLimit.mockResolvedValue([{ id: 'r1' }]);
-    const res = await controller.listRuns('t1', {} as never, { user: { id: 'u1' } } as never);
+    const res = await controller.listRuns('t1', {} as never, { user: { sub: 'u1' } } as never);
     expect(res.success).toBe(true);
     expect((res.data as { runs: unknown[] }).runs).toHaveLength(1);
   });
@@ -29,7 +29,7 @@ describe('TaskRunsController', () => {
   it('GET runs — rejects foreign task', async () => {
     taskRepo.findById.mockResolvedValue({ id: 't1', createdByUserId: 'someone-else' });
     await expect(
-      controller.listRuns('t1', {} as never, { user: { id: 'u1' } } as never),
+      controller.listRuns('t1', {} as never, { user: { sub: 'u1' } } as never),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -37,7 +37,7 @@ describe('TaskRunsController', () => {
     taskRepo.findById.mockResolvedValue({ id: 't1', createdByUserId: 'u1' });
     taskRunRepo.findById.mockResolvedValue({ id: 'r1', taskId: 't1' });
     msgRepo.findByTaskRunId.mockResolvedValue([{ role: 'user', content: 'q' }]);
-    const res = await controller.runMessages('t1', 'r1', { user: { id: 'u1' } } as never);
+    const res = await controller.runMessages('t1', 'r1', { user: { sub: 'u1' } } as never);
     expect(res.success).toBe(true);
   });
 
@@ -45,14 +45,14 @@ describe('TaskRunsController', () => {
     taskRepo.findById.mockResolvedValue({ id: 't1', createdByUserId: 'u1' });
     taskRunRepo.findById.mockResolvedValue({ id: 'r1', taskId: 'other-task' });
     await expect(
-      controller.runMessages('t1', 'r1', { user: { id: 'u1' } } as never),
+      controller.runMessages('t1', 'r1', { user: { sub: 'u1' } } as never),
     ).rejects.toThrow(NotFoundException);
   });
 
   it('GET messages — rejects foreign task', async () => {
     taskRepo.findById.mockResolvedValue({ id: 't1', createdByUserId: 'other' });
     await expect(
-      controller.runMessages('t1', 'r1', { user: { id: 'u1' } } as never),
+      controller.runMessages('t1', 'r1', { user: { sub: 'u1' } } as never),
     ).rejects.toThrow(NotFoundException);
   });
 });

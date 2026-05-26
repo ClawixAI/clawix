@@ -123,6 +123,27 @@ function makeTaskRunMessageRepo() {
   };
 }
 
+function makeChannelRepo(overrides: { findById?: ReturnType<typeof vi.fn> } = {}) {
+  return {
+    // Default to a non-web channel (telegram) so existing tests don't go through
+    // the new session-anchor branch unless they opt in.
+    findById:
+      overrides.findById ?? vi.fn().mockResolvedValue({ id: 'channel-1', type: 'telegram' }),
+  };
+}
+
+function makeSessionRepo(overrides: { findActiveByUserId?: ReturnType<typeof vi.fn> } = {}) {
+  return {
+    findActiveByUserId: overrides.findActiveByUserId ?? vi.fn().mockResolvedValue([]),
+  };
+}
+
+function makeSessionManager(overrides: { saveMessages?: ReturnType<typeof vi.fn> } = {}) {
+  return {
+    saveMessages: overrides.saveMessages ?? vi.fn().mockResolvedValue([]),
+  };
+}
+
 function makeService(
   options: {
     agentRunner?: ReturnType<typeof makeAgentRunner>;
@@ -133,6 +154,9 @@ function makeService(
     policyRepo?: ReturnType<typeof makePolicyRepo>;
     userRepo?: ReturnType<typeof makeUserRepo>;
     pubsub?: ReturnType<typeof makePubSub>;
+    channelRepo?: ReturnType<typeof makeChannelRepo>;
+    sessionRepo?: ReturnType<typeof makeSessionRepo>;
+    sessionManager?: ReturnType<typeof makeSessionManager>;
   } = {},
 ) {
   const agentRunner = options.agentRunner ?? makeAgentRunner();
@@ -143,6 +167,9 @@ function makeService(
   const policyRepo = options.policyRepo ?? makePolicyRepo();
   const userRepo = options.userRepo ?? makeUserRepo();
   const pubsub = options.pubsub ?? makePubSub();
+  const channelRepo = options.channelRepo ?? makeChannelRepo();
+  const sessionRepo = options.sessionRepo ?? makeSessionRepo();
+  const sessionManager = options.sessionManager ?? makeSessionManager();
 
   const service = new CronTaskProcessorService(
     agentRunner as never,
@@ -153,6 +180,9 @@ function makeService(
     policyRepo as never,
     userRepo as never,
     pubsub as never,
+    channelRepo as never,
+    sessionRepo as never,
+    sessionManager as never,
   );
 
   return {
@@ -657,6 +687,9 @@ describe('CronTaskProcessorService.execute', () => {
       makePolicyRepo() as never,
       makeUserRepo() as never,
       makePubSub() as never,
+      makeChannelRepo() as never,
+      makeSessionRepo() as never,
+      makeSessionManager() as never,
     );
 
     await service.execute(baseTask);

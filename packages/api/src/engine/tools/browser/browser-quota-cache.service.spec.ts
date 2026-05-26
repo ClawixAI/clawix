@@ -41,7 +41,6 @@ const makePolicy = (maxConcurrentBrowserSessions = 3) =>
     maxTokenBudget: null,
     maxAgents: 5,
     maxSkills: 50,
-    maxMemoryItems: 100,
     maxGroupsOwned: 3,
     allowedProviders: ['anthropic'],
     features: {},

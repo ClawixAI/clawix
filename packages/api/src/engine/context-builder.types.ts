@@ -66,12 +66,6 @@ export interface SystemPromptArgs {
 /** Maximum estimated tokens for the MEMORY.md long-term narrative section. */
 export const MEMORY_FILE_TOKEN_BUDGET = 1500;
 
-/** Maximum estimated tokens for the daily notes section (last 3 days). */
-export const DAILY_NOTES_TOKEN_BUDGET = 1000;
-
-/** Number of days of daily notes to auto-load into context. */
-export const DAILY_NOTES_DAYS = 3;
-
 /** Maximum characters per individual memory item before truncation. */
 export const MEMORY_ITEM_MAX_CHARS = 500;
 

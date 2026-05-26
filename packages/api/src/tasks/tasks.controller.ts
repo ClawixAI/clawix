@@ -12,7 +12,7 @@ export class TasksController {
   @Get()
   async findAll(@Query() query: unknown, @Req() req: any) {
     const pagination = paginationSchema.parse(query);
-    const data = await this.service.findAll(req.user.id, pagination);
+    const data = await this.service.findAll(req.user.sub, pagination);
     return { success: true, data };
   }
 
@@ -25,20 +25,20 @@ export class TasksController {
   @Post()
   async create(@Body() body: unknown, @Req() req: any) {
     const input = createTaskSchema.parse(body);
-    const data = await this.service.create(req.user.id, input);
+    const data = await this.service.create(req.user.sub, input);
     return { success: true, data };
   }
 
   @Patch(':id')
   async update(@Param('id') id: string, @Body() body: unknown, @Req() req: any) {
     const input = updateTaskSchema.parse(body);
-    const data = await this.service.update(id, req.user.id, input);
+    const data = await this.service.update(id, req.user.sub, input);
     return { success: true, data };
   }
 
   @Delete(':id')
   async remove(@Param('id') id: string, @Req() req: any) {
-    const data = await this.service.remove(id, req.user.id);
+    const data = await this.service.remove(id, req.user.sub);
     return { success: true, data };
   }
 }

@@ -6,6 +6,7 @@ describe('ChatController', () => {
   const mockSessionRepo = {
     findByUserId: vi.fn(),
     findById: vi.fn(),
+    delete: vi.fn(),
   };
   const mockPrisma = {
     sessionMessage: {
@@ -172,6 +173,32 @@ describe('ChatController', () => {
         skip: 0,
         take: 50,
       });
+    });
+  });
+
+  describe('DELETE /api/v1/chat/sessions/:id', () => {
+    it('deletes a session owned by the caller', async () => {
+      mockSessionRepo.findById.mockResolvedValue({ id: 'sess-1', userId: 'user-1' });
+      mockSessionRepo.delete.mockResolvedValue({ id: 'sess-1' });
+
+      const controller = createController();
+      const req = { user: { sub: 'user-1' } };
+      const result = await controller.deleteSession(req as never, 'sess-1');
+
+      expect(result).toEqual({ success: true });
+      expect(mockSessionRepo.delete).toHaveBeenCalledWith('sess-1');
+    });
+
+    it('throws NotFoundException when session belongs to another user', async () => {
+      mockSessionRepo.findById.mockResolvedValue({ id: 'sess-1', userId: 'other-user' });
+
+      const controller = createController();
+      const req = { user: { sub: 'user-1' } };
+
+      await expect(controller.deleteSession(req as never, 'sess-1')).rejects.toThrow(
+        'Session not found',
+      );
+      expect(mockSessionRepo.delete).not.toHaveBeenCalled();
     });
   });
 });

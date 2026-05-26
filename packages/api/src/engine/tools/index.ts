@@ -8,7 +8,6 @@ import {
 } from './file-io.js';
 import { createShellTool } from './shell.js';
 
-export { registerMemoryTools } from './memory.js';
 export { createCronTool, registerCronTools } from './cron.js';
 export type { CronPolicy } from './cron.js';
 

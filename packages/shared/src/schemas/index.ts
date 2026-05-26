@@ -102,18 +102,6 @@ export {
 } from './workspace.schema.js';
 
 export {
-  memoryTagSchema,
-  createMemoryItemSchema,
-  updateMemoryItemSchema,
-  memoryListScopeSchema,
-  memoryListQuerySchema,
-  type CreateMemoryItemInput,
-  type UpdateMemoryItemInput,
-  type MemoryListScope,
-  type MemoryListQuery,
-} from './memory.schema.js';
-
-export {
   skillNameSchema,
   skillDescriptionSchema,
   skillContentSchema,
@@ -143,3 +131,25 @@ export {
   type CreatePublicMemoryDomainInput,
   type RenamePublicMemoryDomainInput,
 } from './public-memory.schema.js';
+
+export {
+  wikiScopeSchema,
+  wikiTagSchema,
+  wikiSlugSchema,
+  createWikiPageSchema,
+  updateWikiPageSchema,
+  wikiSearchQuerySchema,
+  wikiIndexQuerySchema,
+  wikiShareTargetSchema,
+  type WikiScope,
+  type CreateWikiPageInput,
+  type UpdateWikiPageInput,
+  type WikiSearchQuery,
+  type WikiIndexQuery,
+  type WikiShareTarget,
+  type WikiGraph,
+  type WikiGraphNode,
+  type WikiGraphEdge,
+  wikiGraphQuerySchema,
+  type WikiGraphQuery,
+} from './wiki.schema.js';

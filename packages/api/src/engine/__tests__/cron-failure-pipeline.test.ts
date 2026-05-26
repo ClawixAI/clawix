@@ -107,6 +107,10 @@ describe('cron failure pipeline (processor → pubsub → channel-manager → ad
           { id: 'ch-telegram', type: 'telegram', name: 'Bot', config: {}, isActive: true },
         ]),
       findByType: vi.fn().mockResolvedValue([{ id: 'web-ch', type: 'web' }]),
+      // Used by CronTaskProcessorService.executeInternal to read channel.type
+      // when deciding whether to anchor a web delivery to the user's latest
+      // session. Telegram path is unaffected by the new code.
+      findById: vi.fn().mockResolvedValue({ id: 'ch-telegram', type: 'telegram' }),
       create: vi.fn(),
     };
     const registry = {
@@ -165,6 +169,14 @@ describe('cron failure pipeline (processor → pubsub → channel-manager → ad
       findById: vi.fn().mockResolvedValue({ maxTokensPerCronRun: null }),
     };
 
+    const sessionManager = { saveMessages: vi.fn().mockResolvedValue([]) };
+    // Augment the existing sessionRepo (declared above for the channel-manager
+    // wiring) with the method the processor needs — keeps a single mock
+    // identity in scope so we don't shadow the outer declaration.
+    (sessionRepo as { findActiveByUserId?: ReturnType<typeof vi.fn> }).findActiveByUserId = vi
+      .fn()
+      .mockResolvedValue([]);
+
     const processor = new CronTaskProcessorService(
       agentRunner as never,
       taskRepo as never,
@@ -174,6 +186,9 @@ describe('cron failure pipeline (processor → pubsub → channel-manager → ad
       policyRepo as never,
       userRepo as never,
       pubsub as never,
+      channelRepo as never,
+      sessionRepo as never,
+      sessionManager as never,
     );
 
     const task: ProcessableTask = {

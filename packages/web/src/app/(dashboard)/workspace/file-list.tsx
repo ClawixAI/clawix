@@ -181,36 +181,43 @@ export function FileList({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead
-              className="cursor-pointer select-none"
-              onClick={() => {
-                toggleSort('name');
-              }}
-            >
-              <span className="flex items-center gap-1">
-                Name <ArrowUpDown className="size-3 text-muted-foreground" />
-              </span>
-            </TableHead>
-            <TableHead
-              className="w-[100px] cursor-pointer select-none"
-              onClick={() => {
-                toggleSort('size');
-              }}
-            >
-              <span className="flex items-center gap-1">
-                Size <ArrowUpDown className="size-3 text-muted-foreground" />
-              </span>
-            </TableHead>
-            <TableHead
-              className="w-[140px] cursor-pointer select-none"
-              onClick={() => {
-                toggleSort('modifiedAt');
-              }}
-            >
-              <span className="flex items-center gap-1">
-                Modified <ArrowUpDown className="size-3 text-muted-foreground" />
-              </span>
-            </TableHead>
+            {(
+              [
+                { field: 'name', label: 'Name', className: 'cursor-pointer select-none' },
+                {
+                  field: 'size',
+                  label: 'Size',
+                  className: 'w-[100px] cursor-pointer select-none',
+                },
+                {
+                  field: 'modifiedAt',
+                  label: 'Modified',
+                  className: 'w-[140px] cursor-pointer select-none',
+                },
+              ] as const
+            ).map(({ field, label, className }) => {
+              const isActive = sortField === field;
+              const ariaSort: 'ascending' | 'descending' | 'none' = isActive
+                ? sortDir === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none';
+              return (
+                <TableHead key={field} className={className} aria-sort={ariaSort}>
+                  <button
+                    type="button"
+                    className="-mx-2 flex w-full items-center gap-1 rounded-sm px-2 py-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={`Sort by ${label}`}
+                    onClick={() => {
+                      toggleSort(field);
+                    }}
+                  >
+                    {label}{' '}
+                    <ArrowUpDown className="size-3 text-muted-foreground" aria-hidden="true" />
+                  </button>
+                </TableHead>
+              );
+            })}
             <TableHead className="w-[40px]" />
           </TableRow>
         </TableHeader>

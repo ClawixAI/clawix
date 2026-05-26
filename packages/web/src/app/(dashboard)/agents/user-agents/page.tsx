@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import {
   Bot,
   ChevronRight,
@@ -25,14 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { ModelCombobox } from './model-combobox';
+import { ProviderModelFields, agentFormInput, useProviders } from '../agent-form-fields';
 import {
   Table,
   TableBody,
@@ -49,7 +43,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { authFetch } from '@/lib/auth';
+import { formString } from '@/lib/form';
+import { FieldError } from '@/components/ui/field-error';
+import { agentFormSchema, parseForm, type FieldErrors } from '@/lib/validation';
 import { cn } from '@/lib/utils';
 import { SuccessDialog } from '@/components/ui/success-dialog';
 import { useAuth } from '@/components/auth-provider';
@@ -79,97 +87,9 @@ interface AgentDefinition {
   createdBy?: { id: string; name: string; email: string } | null;
 }
 
-interface ProviderInfo {
-  name: string;
-  displayName: string;
-  defaultModel: string;
-  models: string[];
-}
-
 interface PaginatedAgents {
   data: AgentDefinition[];
   meta: { total: number; page: number; limit: number; totalPages: number };
-}
-
-// ------------------------------------------------------------------ //
-//  Provider hook                                                      //
-// ------------------------------------------------------------------ //
-
-function useProviders() {
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
-
-  useEffect(() => {
-    void authFetch<{ data: ProviderInfo[] }>('/api/v1/agents/providers')
-      .then((res) => {
-        setProviders(Array.isArray(res.data) ? res.data : []);
-      })
-      .catch(() => {});
-  }, []);
-
-  return providers;
-}
-
-// ------------------------------------------------------------------ //
-//  Provider + Model select fields                                     //
-// ------------------------------------------------------------------ //
-
-function ProviderModelFields({
-  providers,
-  defaultProvider,
-  defaultModel,
-  idPrefix,
-}: {
-  providers: ProviderInfo[];
-  defaultProvider?: string;
-  defaultModel?: string;
-  idPrefix: string;
-}) {
-  const [selectedProvider, setSelectedProvider] = useState(
-    defaultProvider ?? providers[0]?.name ?? '',
-  );
-  const currentProvider = providers.find((p) => p.name === selectedProvider);
-  const models = currentProvider?.models ?? [];
-
-  useEffect(() => {
-    if (!selectedProvider && providers.length > 0) {
-      setSelectedProvider(defaultProvider ?? providers[0]!.name);
-    }
-  }, [providers, defaultProvider, selectedProvider]);
-
-  return (
-    <>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`${idPrefix}-provider`}>Provider</Label>
-        <Select value={selectedProvider} onValueChange={setSelectedProvider} name="provider">
-          <SelectTrigger id={`${idPrefix}-provider`} className="w-full">
-            <SelectValue placeholder="Select a provider" />
-          </SelectTrigger>
-          <SelectContent>
-            {providers.map((p) => (
-              <SelectItem key={p.name} value={p.name}>
-                {p.displayName}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`${idPrefix}-model`}>Model</Label>
-        <ModelCombobox
-          id={`${idPrefix}-model`}
-          name="model"
-          models={models}
-          defaultValue={defaultModel ?? currentProvider?.defaultModel ?? ''}
-          placeholder={currentProvider?.defaultModel || 'model-name'}
-          required
-        />
-        <p className="text-xs text-muted-foreground">
-          Type any model name. Predefined models appear as suggestions.
-        </p>
-      </div>
-    </>
-  );
 }
 
 // ------------------------------------------------------------------ //
@@ -203,6 +123,7 @@ function CreateAgentDialog({
   const providers = useProviders();
   const [streamingEnabled, setStreamingEnabled] = useState(false);
   const [isPrimary, setIsPrimary] = useState(allowRoleSelect);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -216,13 +137,28 @@ function CreateAgentDialog({
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
             fd.set('streamingEnabled', String(streamingEnabled));
+            const parsed = parseForm(agentFormSchema, agentFormInput(fd));
+            if (!parsed.success) {
+              setErrors(parsed.fieldErrors);
+              return;
+            }
+            setErrors({});
             onSubmit(fd);
           }}
           className="flex flex-col gap-4"
+          noValidate
         >
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-name">Name</Label>
-            <Input id="create-name" name="name" placeholder="Research Assistant" required />
+            <Input
+              id="create-name"
+              name="name"
+              placeholder="Research Assistant"
+              maxLength={100}
+              aria-invalid={errors['name'] ? true : undefined}
+              required
+            />
+            <FieldError message={errors['name']} />
           </div>
 
           <div className="flex flex-col gap-2">
@@ -231,9 +167,11 @@ function CreateAgentDialog({
               id="create-description"
               name="description"
               rows={2}
+              maxLength={500}
               className="rounded-md border bg-background px-3 py-2 text-sm"
               placeholder="Optional description of this agent"
             />
+            <FieldError message={errors['description']} />
           </div>
 
           <div className="flex flex-col gap-2">
@@ -244,8 +182,10 @@ function CreateAgentDialog({
               rows={6}
               className="rounded-md border bg-background px-3 py-2 text-sm"
               placeholder="You are a helpful AI assistant..."
+              aria-invalid={errors['systemPrompt'] ? true : undefined}
               required
             />
+            <FieldError message={errors['systemPrompt']} />
           </div>
 
           {allowRoleSelect ? (
@@ -279,15 +219,18 @@ function CreateAgentDialog({
             <input type="hidden" name="role" value="worker" />
           )}
 
-          <ProviderModelFields providers={providers} idPrefix="create" />
+          <ProviderModelFields providers={providers} idPrefix="create" errors={errors} />
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-apiBaseUrl">API Base URL</Label>
             <Input
               id="create-apiBaseUrl"
               name="apiBaseUrl"
+              type="url"
               placeholder="https://api.example.com/v1"
+              aria-invalid={errors['apiBaseUrl'] ? true : undefined}
             />
+            <FieldError message={errors['apiBaseUrl']} />
             <p className="text-xs text-muted-foreground">
               Optional. Override the default API endpoint for this provider.
             </p>
@@ -301,7 +244,9 @@ function CreateAgentDialog({
               type="number"
               defaultValue={100000}
               min={1000}
+              aria-invalid={errors['maxTokensPerRun'] ? true : undefined}
             />
+            <FieldError message={errors['maxTokensPerRun']} />
           </div>
 
           <div className="flex items-center justify-between rounded-lg border p-4">
@@ -359,6 +304,7 @@ function EditAgentDialog({
 }) {
   const providers = useProviders();
   const [streamingEnabled, setStreamingEnabled] = useState(agent?.streamingEnabled ?? false);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   if (!agent) return null;
 
@@ -374,13 +320,28 @@ function EditAgentDialog({
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
             fd.set('streamingEnabled', String(streamingEnabled));
+            const parsed = parseForm(agentFormSchema, agentFormInput(fd));
+            if (!parsed.success) {
+              setErrors(parsed.fieldErrors);
+              return;
+            }
+            setErrors({});
             onSubmit(agent.id, fd);
           }}
           className="flex flex-col gap-4"
+          noValidate
         >
           <div className="flex flex-col gap-2">
             <Label htmlFor="edit-name">Name</Label>
-            <Input id="edit-name" name="name" defaultValue={agent.name} required />
+            <Input
+              id="edit-name"
+              name="name"
+              defaultValue={agent.name}
+              maxLength={100}
+              aria-invalid={errors['name'] ? true : undefined}
+              required
+            />
+            <FieldError message={errors['name']} />
           </div>
 
           <div className="flex flex-col gap-2">
@@ -389,9 +350,11 @@ function EditAgentDialog({
               id="edit-description"
               name="description"
               rows={2}
+              maxLength={500}
               className="rounded-md border bg-background px-3 py-2 text-sm"
               defaultValue={agent.description}
             />
+            <FieldError message={errors['description']} />
           </div>
 
           <div className="flex flex-col gap-2">
@@ -402,8 +365,10 @@ function EditAgentDialog({
               rows={6}
               className="rounded-md border bg-background px-3 py-2 text-sm"
               defaultValue={agent.systemPrompt}
+              aria-invalid={errors['systemPrompt'] ? true : undefined}
               required
             />
+            <FieldError message={errors['systemPrompt']} />
           </div>
 
           {/* Role cannot be changed; primary is system-only, workers stay workers */}
@@ -420,6 +385,7 @@ function EditAgentDialog({
             defaultProvider={agent.provider}
             defaultModel={agent.model}
             idPrefix="edit"
+            errors={errors}
           />
 
           <div className="flex flex-col gap-2">
@@ -427,9 +393,12 @@ function EditAgentDialog({
             <Input
               id="edit-apiBaseUrl"
               name="apiBaseUrl"
+              type="url"
               defaultValue={agent.apiBaseUrl ?? ''}
               placeholder="https://api.example.com/v1"
+              aria-invalid={errors['apiBaseUrl'] ? true : undefined}
             />
+            <FieldError message={errors['apiBaseUrl']} />
             <p className="text-xs text-muted-foreground">
               Optional. Override the default API endpoint for this provider.
             </p>
@@ -443,7 +412,9 @@ function EditAgentDialog({
               type="number"
               defaultValue={agent.maxTokensPerRun ?? 100000}
               min={1000}
+              aria-invalid={errors['maxTokensPerRun'] ? true : undefined}
             />
+            <FieldError message={errors['maxTokensPerRun']} />
           </div>
 
           <div className="flex items-center justify-between rounded-lg border p-4">
@@ -1014,7 +985,11 @@ function RecentRuns() {
         .then((res) => {
           setRuns(Array.isArray(res.data) ? res.data : []);
         })
-        .catch(() => {})
+        .catch((e: unknown) => {
+          toast.error(e instanceof Error ? e.message : 'Failed to load recent runs', {
+            id: 'recent-runs-fetch',
+          });
+        })
         .finally(() => {
           setLoading(false);
         });
@@ -1289,7 +1264,7 @@ export default function UserAgentsPage() {
     setSaving(true);
     setError('');
     try {
-      const name = form.get('name') as string;
+      const name = formString(form, 'name');
       await authFetch('/api/v1/agents', {
         method: 'POST',
         body: JSON.stringify({
@@ -1300,7 +1275,7 @@ export default function UserAgentsPage() {
           provider: form.get('provider'),
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
-          maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          maxTokensPerRun: Number(formString(form, 'maxTokensPerRun')),
           streamingEnabled: form.get('streamingEnabled') === 'true',
           isOfficial: true,
         }),
@@ -1319,7 +1294,7 @@ export default function UserAgentsPage() {
     setSaving(true);
     setError('');
     try {
-      const name = form.get('name') as string;
+      const name = formString(form, 'name');
       await authFetch('/api/v1/agents', {
         method: 'POST',
         body: JSON.stringify({
@@ -1330,7 +1305,7 @@ export default function UserAgentsPage() {
           provider: form.get('provider'),
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
-          maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          maxTokensPerRun: Number(formString(form, 'maxTokensPerRun')),
           streamingEnabled: form.get('streamingEnabled') === 'true',
           isOfficial: false,
         }),
@@ -1359,7 +1334,7 @@ export default function UserAgentsPage() {
           provider: form.get('provider'),
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
-          maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          maxTokensPerRun: Number(formString(form, 'maxTokensPerRun')),
           streamingEnabled: form.get('streamingEnabled') === 'true',
         }),
       });
@@ -1508,19 +1483,51 @@ export default function UserAgentsPage() {
                 <Clock className="size-5 text-muted-foreground" />
                 <h2 className="text-lg font-semibold">Recent Agent Runs</h2>
               </div>
-              <Button
-                size="sm"
-                variant="destructive"
-                className="gap-1"
-                onClick={() => {
-                  void authFetch('/api/v1/chat/agent-runs/stop', { method: 'POST' })
-                    .then(() => fetchAgents())
-                    .catch(() => {});
-                }}
-              >
-                <Square className="size-3" />
-                Stop All
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="destructive" className="gap-1">
+                    <Square className="size-3" />
+                    Stop All
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Stop all running agent runs?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This aborts every agent run you currently have in progress. Partial work
+                      already streamed to chat is preserved, but the runs will not continue. This
+                      cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        void authFetch<{ stopped: number }>('/api/v1/chat/agent-runs/stop', {
+                          method: 'POST',
+                        })
+                          .then((res) => {
+                            const n = typeof res.stopped === 'number' ? res.stopped : 0;
+                            toast.success(
+                              n > 0
+                                ? `Stopped ${n} agent run${n === 1 ? '' : 's'}`
+                                : 'No running agent runs to stop',
+                            );
+                            return fetchAgents();
+                          })
+                          .catch((e: unknown) => {
+                            toast.error(
+                              e instanceof Error ? e.message : 'Failed to stop agent runs',
+                            );
+                          });
+                      }}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Stop all runs
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
             <RecentRuns />
           </div>

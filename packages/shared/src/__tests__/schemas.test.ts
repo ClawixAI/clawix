@@ -81,7 +81,6 @@ describe('createPolicySchema', () => {
     if (result.success) {
       expect(result.data.maxAgents).toBe(5);
       expect(result.data.maxSkills).toBe(10);
-      expect(result.data.maxMemoryItems).toBe(1000);
       expect(result.data.maxGroupsOwned).toBe(5);
       expect(result.data.allowedProviders).toEqual([]);
       expect(result.data.features).toEqual({});

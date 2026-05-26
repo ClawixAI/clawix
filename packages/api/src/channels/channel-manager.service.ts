@@ -28,6 +28,13 @@ type CronResultPayload =
       readonly taskId: string;
       readonly taskName: string;
       readonly output: string;
+      // For web deliveries the cron processor first persists the output as a
+      // SessionMessage in the user's latest session and threads the ids
+      // through so the web adapter can broadcast a `message.create` frame
+      // anchored to a real session (otherwise the frame has no home in the
+      // chat client).
+      readonly sessionId?: string;
+      readonly messageId?: string;
     }
   | {
       readonly status: 'failed';
@@ -37,6 +44,8 @@ type CronResultPayload =
       readonly taskName: string;
       readonly message: string;
       readonly autoDisabled: boolean;
+      readonly sessionId?: string;
+      readonly messageId?: string;
     };
 
 @Injectable()
@@ -223,13 +232,25 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
       }
 
       const text = payload.status === 'success' ? payload.output : payload.message;
-      await adapter.sendMessage({ recipientId, text });
+      // Thread sessionId/messageId through `metadata` so the web adapter can
+      // emit a `message.create` frame the chat client can route into the
+      // correct session transcript. Telegram/WhatsApp adapters ignore
+      // metadata so this is a no-op for them.
+      const metadata: Record<string, string> = {};
+      if (payload.sessionId) metadata['sessionId'] = payload.sessionId;
+      if (payload.messageId) metadata['messageId'] = payload.messageId;
+      await adapter.sendMessage({
+        recipientId,
+        text,
+        ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+      });
       logger.info(
         {
           taskId: payload.taskId,
           channelId: payload.channelId,
           recipientId,
           status: payload.status,
+          sessionId: payload.sessionId,
         },
         'Delivered cron result to channel',
       );

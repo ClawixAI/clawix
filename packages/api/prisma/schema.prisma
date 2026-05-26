@@ -18,19 +18,21 @@ datasource db {
 // ============================================================================
 
 model Policy {
-  id                  String   @id @default(cuid())
-  name                String   @unique // "Free", "Pro", "Enterprise"
-  description         String?
-  maxTokenBudget      Int? // monthly budget in USD cents (null = unlimited)
-  maxAgents           Int      @default(5)
-  maxSkills           Int      @default(10)
-  maxMemoryItems      Int      @default(1000)
-  maxGroupsOwned      Int      @default(5)
-  allowedProviders    String[] // ["anthropic", "openai"]
-  features            Json     @default("{}") // feature flags
-  maxScheduledTasks   Int      @default(5)
-  minCronIntervalSecs Int      @default(300)
-  maxTokensPerCronRun Int?
+  id                           String   @id @default(cuid())
+  name                         String   @unique // "Free", "Pro", "Enterprise"
+  description                  String?
+  maxTokenBudget               Int? // monthly budget in USD cents (null = unlimited)
+  maxAgents                    Int      @default(5)
+  maxSkills                    Int      @default(10)
+  maxWikiPages                 Int      @default(1000)
+  maxAmbientPages              Int      @default(5)
+  wikiLintEnabled              Boolean  @default(true)
+  maxGroupsOwned               Int      @default(5)
+  allowedProviders             String[] // ["anthropic", "openai"]
+  features                     Json     @default("{}") // feature flags
+  maxScheduledTasks            Int      @default(5)
+  minCronIntervalSecs          Int      @default(300)
+  maxTokensPerCronRun          Int?
   cronEnabled                  Boolean  @default(false)
   allowBrowserCdp              Boolean  @default(false)
   maxConcurrentBrowserSessions Int      @default(2)
@@ -42,8 +44,8 @@ model Policy {
   maxPythonCpuCores            Int      @default(1)
   maxConcurrentPythonRuns      Int      @default(2)
   isActive                     Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
 
   users User[]
 }
@@ -59,22 +61,23 @@ enum UserRole {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  role         UserRole @default(viewer)
-  policyId     String
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  telegramId   String?  @unique
-  whatsappJid  String?  @unique
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  passwordHash   String
+  role           UserRole  @default(viewer)
+  policyId       String
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  telegramId     String?   @unique
+  whatsappJid    String?   @unique
+  wikiMigratedAt DateTime?
 
   policy                  Policy            @relation(fields: [policyId], references: [id])
   sessions                Session[]
   auditLogs               AuditLog[]
-  memoryItems             MemoryItem[]
+  wikiPages               WikiPage[]
   groupMembers            GroupMember[]
   notifications           Notification[]
   userAgents              UserAgent[]
@@ -82,6 +85,7 @@ model User {
   createdAgentDefinitions AgentDefinition[] @relation("CreatedAgentDefinitions")
   groupInvitesReceived    GroupInvite[]     @relation("GroupInviteInvitee")
   groupInvitesSent        GroupInvite[]     @relation("GroupInviteInvitedBy")
+  wikiSharesAuthored      WikiShare[]       @relation("WikiSharedBy")
 }
 
 // ============================================================================
@@ -357,8 +361,8 @@ model SessionMessage {
 model AuditLog {
   id         String   @id @default(cuid())
   userId     String
-  action     String // e.g. "memory.share", "agent.run", "skill.approve"
-  resource   String // e.g. "MemoryItem", "AgentRun", "Skill"
+  action     String // e.g. "wiki.share", "agent.run", "skill.approve"
+  resource   String // e.g. "WikiPage", "AgentRun", "Skill"
   resourceId String
   details    Json     @default("{}") // action-specific context
   ipAddress  String?
@@ -401,14 +405,14 @@ model Group {
   createdById String
   createdAt   DateTime  @default(now())
   // Soft-delete marker. Repositories filter `deletedAt IS NULL` on every
-  // read; deleteGroup sets it (and revokes the corresponding MemoryShare
+  // read; deleteGroup sets it (and revokes the corresponding WikiShare
   // rows) so the group's identity survives for audit + future
   // shared-workspace recovery.
   deletedAt   DateTime?
 
-  members GroupMember[]
-  shares  MemoryShare[]
-  invites GroupInvite[]
+  members    GroupMember[]
+  wikiShares WikiShare[]
+  invites    GroupInvite[]
 
   @@index([deletedAt])
 }
@@ -456,18 +460,46 @@ model GroupInvite {
   @@index([invitedById])
 }
 
-model MemoryItem {
-  id        String   @id @default(cuid())
+model WikiPage {
+  id        String    @id @default(cuid())
   ownerId   String
-  content   Json // structured memory content
+  title     String
+  slug      String
+  summary   String
+  content   String // markdown body (≤10000 chars enforced at app layer)
   tags      String[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  scope     WikiScope @default(ARCHIVED)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  owner  User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  shares MemoryShare[]
+  owner     User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  shares    WikiShare[]
+  linksFrom WikiLink[]  @relation("LinksFrom")
+  linksTo   WikiLink[]  @relation("LinksTo")
 
-  @@index([ownerId])
+  @@unique([ownerId, slug])
+  @@index([ownerId, scope])
+  @@index([ownerId, updatedAt])
+  @@index([tags], type: Gin, map: "wiki_page_tags")
+  // wiki_page_content_trgm, wiki_page_title_trgm, wiki_page_tsv: Prisma-unmanaged GIN indexes
+  // added via migration SQL (gin_trgm_ops / to_tsvector not expressible in Prisma DSL v7)
+  @@map("WikiPage")
+}
+
+enum WikiScope {
+  AMBIENT
+  ARCHIVED
+}
+
+model WikiLink {
+  id         String   @id @default(cuid())
+  fromPageId String
+  toPageId   String
+  fromPage   WikiPage @relation("LinksFrom", fields: [fromPageId], references: [id], onDelete: Cascade)
+  toPage     WikiPage @relation("LinksTo", fields: [toPageId], references: [id], onDelete: Cascade)
+
+  @@unique([fromPageId, toPageId])
+  @@index([toPageId])
 }
 
 enum ShareTarget {
@@ -475,21 +507,24 @@ enum ShareTarget {
   ORG
 }
 
-model MemoryShare {
-  id           String      @id @default(cuid())
-  memoryItemId String
-  sharedBy     String // userId who initiated the share
-  targetType   ShareTarget
-  groupId      String? // set if targetType = GROUP
-  sharedAt     DateTime    @default(now())
-  revokedAt    DateTime?
-  isRevoked    Boolean     @default(false)
+model WikiShare {
+  id         String      @id @default(cuid())
+  pageId     String
+  sharedBy   String?
+  targetType ShareTarget
+  groupId    String?
+  sharedAt   DateTime    @default(now())
+  revokedAt  DateTime?
+  isRevoked  Boolean     @default(false)
 
-  memoryItem MemoryItem @relation(fields: [memoryItemId], references: [id], onDelete: Cascade)
-  group      Group?     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  page        WikiPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  group       Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sharedByUser User?   @relation("WikiSharedBy", fields: [sharedBy], references: [id], onDelete: SetNull)
 
-  @@index([memoryItemId, isRevoked])
+  @@index([pageId, isRevoked])
   @@index([groupId, isRevoked])
+  @@index([sharedBy])
+  @@map("WikiShare")
 }
 
 enum NotificationType {

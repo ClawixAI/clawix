@@ -45,6 +45,16 @@ export type ServerMessage =
   | { readonly type: 'typing.stop'; readonly payload: Record<string, never> }
   | { readonly type: 'pong'; readonly payload: Record<string, never> }
   | {
+      // Explicit signal that the user's `/reset` command archived the session.
+      // The accompanying `message.create` frame still carries the human-
+      // readable "Session reset…" text — clients should switch on this frame
+      // type rather than substring-match on `message.create.content`, which
+      // would otherwise misfire on legitimate user messages containing the
+      // same phrase (issue #107).
+      readonly type: 'session.reset';
+      readonly payload: { readonly sessionId: string };
+    }
+  | {
       readonly type: 'error';
       readonly payload: { readonly code: string; readonly message: string };
     };

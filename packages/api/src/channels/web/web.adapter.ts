@@ -97,9 +97,10 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
     async sendMessage(message: OutboundMessage): Promise<void> {
       const messageId = (message.metadata?.['messageId'] as string | undefined) ?? '';
       const sessionId = (message.metadata?.['sessionId'] as string | undefined) ?? '';
+      const event = message.metadata?.['event'] as string | undefined;
 
       logger.info(
-        { recipientId: message.recipientId, messageId, sessionId },
+        { recipientId: message.recipientId, messageId, sessionId, event },
         'Sending message to user',
       );
 
@@ -114,6 +115,21 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
       });
 
       sendToUser(message.recipientId, payload);
+
+      // For session-altering commands (currently only `/reset`), follow the
+      // text reply with a structured event frame so the chat client can
+      // react deterministically — see web.protocol's `session.reset` type
+      // and use-chat's handler. The text frame above is still delivered so
+      // the user sees a confirmation in the transcript.
+      if (event === 'session.reset') {
+        sendToUser(
+          message.recipientId,
+          serializeServerMessage({
+            type: 'session.reset',
+            payload: { sessionId },
+          }),
+        );
+      }
     },
 
     async sendError(recipientId: string, code: string, message: string): Promise<void> {

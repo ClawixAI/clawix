@@ -2,9 +2,43 @@ import { Injectable } from '@nestjs/common';
 import { NotFoundError } from '@clawix/shared';
 
 import type { PaginatedResponse, PaginationInput } from '@clawix/shared';
-import type { Session } from '../generated/prisma/client.js';
+import type { Prisma, Session } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { buildPaginatedResponse, buildPaginationArgs, handlePrismaError } from './utils.js';
+
+export interface RecallSessionInfo {
+  readonly id: string;
+  readonly topic: string | null;
+  readonly createdAt: Date;
+  readonly firstUserMessages: string[];
+}
+
+/** Shared select for recall queries: title sources + first ≤3 user messages. */
+const RECALL_SESSION_SELECT = {
+  id: true,
+  topic: true,
+  createdAt: true,
+  sessionMessages: {
+    where: { role: 'user' },
+    orderBy: { ordering: 'asc' },
+    take: 3,
+    select: { content: true },
+  },
+} satisfies Prisma.SessionSelect;
+
+function toRecallSessionInfo(row: {
+  id: string;
+  topic: string | null;
+  createdAt: Date;
+  sessionMessages: { content: string }[];
+}): RecallSessionInfo {
+  return {
+    id: row.id,
+    topic: row.topic,
+    createdAt: row.createdAt,
+    firstUserMessages: row.sessionMessages.map((m) => m.content),
+  };
+}
 
 interface CreateSessionData {
   readonly userId: string;
@@ -193,5 +227,37 @@ export class SessionRepository {
     } catch (error: unknown) {
       handlePrismaError(error, 'Session');
     }
+  }
+
+  /** Most-recent sessions for the user (optionally excluding one), with the
+   *  first ≤3 user messages — for the Recent Sessions injection. */
+  async findRecentForRecall(
+    userId: string,
+    limit: number,
+    excludeSessionId?: string,
+  ): Promise<RecallSessionInfo[]> {
+    const where: { userId: string; id?: { not: string } } = { userId };
+    if (excludeSessionId !== undefined) where.id = { not: excludeSessionId };
+
+    const rows = await this.prisma.session.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: RECALL_SESSION_SELECT,
+    });
+
+    return rows.map(toRecallSessionInfo);
+  }
+
+  /** Title-source data for a set of sessions — for labeling search hits. */
+  async findRecallTitleData(sessionIds: readonly string[]): Promise<RecallSessionInfo[]> {
+    if (sessionIds.length === 0) return [];
+
+    const rows = await this.prisma.session.findMany({
+      where: { id: { in: [...sessionIds] } },
+      select: RECALL_SESSION_SELECT,
+    });
+
+    return rows.map(toRecallSessionInfo);
   }
 }

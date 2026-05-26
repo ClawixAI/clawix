@@ -30,6 +30,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { authFetch } from '@/lib/auth';
 import { SuccessDialog } from '@/components/ui/success-dialog';
+import { DataPagination, type PaginationMeta } from '@/components/ui/data-pagination';
+import { usePaginationParams } from '@/hooks/use-pagination-params';
 import { CreateGroupDialog, EditGroupDialog, MembersDialog } from './groups-dialogs';
 
 // ------------------------------------------------------------------ //
@@ -56,7 +58,7 @@ export interface ApiGroup {
 
 interface PaginatedGroups {
   data: ApiGroup[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
+  meta: PaginationMeta;
 }
 
 // ------------------------------------------------------------------ //
@@ -78,7 +80,17 @@ function truncate(text: string | null, max: number): string {
 // ------------------------------------------------------------------ //
 
 export function GroupsTab() {
+  const { page, limit, setPage, setLimit } = usePaginationParams({
+    pageKey: 'groupsPage',
+    limitKey: 'groupsLimit',
+  });
   const [groups, setGroups] = useState<ApiGroup[]>([]);
+  const [meta, setMeta] = useState<PaginationMeta>({
+    total: 0,
+    page: 1,
+    limit,
+    totalPages: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -93,14 +105,15 @@ export function GroupsTab() {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch<PaginatedGroups>('/admin/groups?limit=100');
+      const res = await authFetch<PaginatedGroups>(`/admin/groups?page=${page}&limit=${limit}`);
       setGroups(Array.isArray(res.data) ? res.data : []);
+      setMeta(res.meta);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load groups');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, limit]);
 
   useEffect(() => {
     void fetchGroups();
@@ -265,6 +278,17 @@ export function GroupsTab() {
           </Table>
         </div>
       )}
+
+      {!loading && groups.length > 0 ? (
+        <div className="mt-4">
+          <DataPagination
+            meta={meta}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+            label="groups"
+          />
+        </div>
+      ) : null}
 
       <CreateGroupDialog
         key={createOpen ? 'create-open' : 'create-closed'}

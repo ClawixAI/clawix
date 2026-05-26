@@ -13,11 +13,15 @@ import { TaskRunMessageRepository } from './task-run-message.repository.js';
 import { SessionRepository } from './session.repository.js';
 import { AuditLogRepository } from './audit-log.repository.js';
 import { TokenUsageRepository } from './token-usage.repository.js';
-import { MemoryItemRepository } from './memory-item.repository.js';
 import { SystemSettingsRepository } from './system-settings.repository.js';
 import { GroupRepository } from './group.repository.js';
 import { GroupInviteRepository } from './group-invite.repository.js';
 import { NotificationRepository } from './notification.repository.js';
+import { WikiPageRepository } from './wiki-page.repository.js';
+import { WikiLinkRepository } from './wiki-link.repository.js';
+import { WikiShareRepository } from './wiki-share.repository.js';
+import { WikiSearchRepository } from './wiki-search.repository.js';
+import { SessionMessageSearchRepository } from './session-message-search.repository.js';
 
 const repositories = [
   PolicyRepository,
@@ -33,11 +37,15 @@ const repositories = [
   SessionRepository,
   AuditLogRepository,
   TokenUsageRepository,
-  MemoryItemRepository,
   SystemSettingsRepository,
   GroupRepository,
   GroupInviteRepository,
   NotificationRepository,
+  WikiPageRepository,
+  WikiLinkRepository,
+  WikiShareRepository,
+  WikiSearchRepository,
+  SessionMessageSearchRepository,
 ];
 
 @Global()

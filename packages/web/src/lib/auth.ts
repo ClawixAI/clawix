@@ -9,7 +9,11 @@ export interface AuthUser {
   sub: string;
   email: string;
   role: string;
-  planName: string;
+  // Mirrors the backend JWT field — the API signs `policyName` from the user's
+  // `Policy` row (see packages/api/src/auth/auth.service.ts). The DB model is
+  // `Policy`, not `Plan`, so the field name must match exactly or
+  // `parseJwtPayload` returns null and login fails with "Invalid token received".
+  policyName: string;
 }
 
 // Access token lives in memory only — never in localStorage. If the user
@@ -85,15 +89,20 @@ function decodeJwt(token: string): Record<string, unknown> | null {
   }
 }
 
+function pickString(obj: Record<string, unknown>, key: string): string | null {
+  const v = obj[key];
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
 export function parseJwtPayload(token: string): AuthUser | null {
   const decoded = decodeJwt(token);
   if (!decoded) return null;
-  return {
-    sub: decoded['sub'] as string,
-    email: decoded['email'] as string,
-    role: decoded['role'] as string,
-    planName: decoded['planName'] as string,
-  };
+  const sub = pickString(decoded, 'sub');
+  const email = pickString(decoded, 'email');
+  const role = pickString(decoded, 'role');
+  const policyName = pickString(decoded, 'policyName');
+  if (!sub || !email || !role || !policyName) return null;
+  return { sub, email, role, policyName };
 }
 
 export function isTokenExpired(token: string): boolean {
@@ -175,9 +184,25 @@ export async function ensureAccessToken(): Promise<string | null> {
 // call sites (upload-zone, workspace, projector, use-chat).
 export const getAccessToken = ensureAccessToken;
 
-/** Wrapper for authenticated API calls — auto-attaches JWT and refreshes if expired. */
+/**
+ * Wrapper for authenticated API calls — auto-attaches JWT and refreshes if
+ * expired. If the server returns 401 mid-flight (e.g. token expired between
+ * the client-side expiry check and the request reaching the API), refresh
+ * once and retry. Re-throws on the second 401 so callers can surface the
+ * auth failure.
+ */
 export async function authFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await ensureAccessToken();
   if (!token) throw new ApiError(401, 'Not authenticated');
-  return apiFetch<T>(path, { ...options, accessToken: token });
+  try {
+    return await apiFetch<T>(path, { ...options, accessToken: token });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      const refreshed = await refreshTokens();
+      if (refreshed?.accessToken) {
+        return apiFetch<T>(path, { ...options, accessToken: refreshed.accessToken });
+      }
+    }
+    throw err;
+  }
 }

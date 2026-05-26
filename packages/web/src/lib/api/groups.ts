@@ -93,7 +93,7 @@ export const groupsApi = {
     return authFetch('/groups/deleted');
   },
 
-  /** Admin only — clear deletedAt + un-revoke the group's MemoryShare rows. */
+  /** Admin only — clear deletedAt to restore the group. */
   restore(id: string): Promise<Group> {
     return authFetch(`/groups/${encodeURIComponent(id)}/restore`, { method: 'POST' });
   },

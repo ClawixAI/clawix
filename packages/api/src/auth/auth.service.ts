@@ -22,10 +22,8 @@ import {
 } from './auth.constants.js';
 import type { JwtPayload, TokenPair } from './auth.types.js';
 
-interface LoginFailRecord {
-  count: number;
-  lastAttempt: number;
-}
+const FAIL_COUNT_SUFFIX = ':count';
+const FAIL_TS_SUFFIX = ':ts';
 
 class TooManyRequestsException extends HttpException {
   constructor(message: string) {
@@ -80,11 +78,15 @@ export class AuthService {
   }
 
   private async checkLoginDelay(email: string): Promise<void> {
-    const failData = await this.redis.get<LoginFailRecord>(`${LOGIN_FAIL_PREFIX}${email}`);
-    if (!failData) return;
+    const base = `${LOGIN_FAIL_PREFIX}${email}`;
+    const [count, lastAttempt] = await this.redis.mget<number>([
+      `${base}${FAIL_COUNT_SUFFIX}`,
+      `${base}${FAIL_TS_SUFFIX}`,
+    ]);
+    if (!count || !lastAttempt) return;
 
-    const requiredDelayMs = Math.min(2 ** failData.count, MAX_DELAY_SECONDS) * 1000;
-    const elapsedMs = Date.now() - failData.lastAttempt;
+    const requiredDelayMs = Math.min(2 ** count, MAX_DELAY_SECONDS) * 1000;
+    const elapsedMs = Date.now() - lastAttempt;
     if (elapsedMs < requiredDelayMs) {
       const remaining = Math.ceil((requiredDelayMs - elapsedMs) / 1000);
       throw new TooManyRequestsException(`Too many attempts. Try again in ${remaining}s`);
@@ -92,17 +94,18 @@ export class AuthService {
   }
 
   private async recordFailedAttempt(email: string): Promise<void> {
-    const key = `${LOGIN_FAIL_PREFIX}${email}`;
-    const existing = await this.redis.get<LoginFailRecord>(key);
-    await this.redis.set(
-      key,
-      { count: (existing?.count ?? 0) + 1, lastAttempt: Date.now() },
-      { ttlSeconds: LOGIN_FAIL_TTL_SECONDS },
-    );
+    const base = `${LOGIN_FAIL_PREFIX}${email}`;
+    const countKey = `${base}${FAIL_COUNT_SUFFIX}`;
+    const tsKey = `${base}${FAIL_TS_SUFFIX}`;
+    await this.redis.incr(countKey);
+    await this.redis.expire(countKey, LOGIN_FAIL_TTL_SECONDS);
+    await this.redis.set(tsKey, Date.now(), { ttlSeconds: LOGIN_FAIL_TTL_SECONDS });
   }
 
   private async clearFailedAttempts(email: string): Promise<void> {
-    await this.redis.del(`${LOGIN_FAIL_PREFIX}${email}`);
+    const base = `${LOGIN_FAIL_PREFIX}${email}`;
+    await this.redis.del(`${base}${FAIL_COUNT_SUFFIX}`);
+    await this.redis.del(`${base}${FAIL_TS_SUFFIX}`);
   }
 
   async refresh(refreshToken: string): Promise<TokenPair> {
@@ -112,9 +115,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Revoke old refresh token
-    await this.redis.del(`${REFRESH_TOKEN_PREFIX}${refreshToken}`);
-
+    // Validate the user is still active BEFORE revoking the refresh token.
+    // Otherwise an inactive-user refresh would burn the only token the client
+    // holds, preventing any retry path.
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { policy: { select: { name: true } } },
@@ -123,6 +126,9 @@ export class AuthService {
     if (!user || !user.isActive) {
       throw new UnauthorizedException('User not found or inactive');
     }
+
+    // Revoke old refresh token only after the user check passes.
+    await this.redis.del(`${REFRESH_TOKEN_PREFIX}${refreshToken}`);
 
     return this.generateTokenPair({
       sub: user.id,

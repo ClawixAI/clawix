@@ -32,6 +32,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { authFetch } from '@/lib/auth';
 import { SuccessDialog } from '@/components/ui/success-dialog';
+import { DataPagination, type PaginationMeta } from '@/components/ui/data-pagination';
+import { usePaginationParams } from '@/hooks/use-pagination-params';
 import { CreatePolicyDialog, EditPolicyDialog } from './policies-dialogs';
 
 // ------------------------------------------------------------------ //
@@ -45,7 +47,6 @@ export interface ApiPolicy {
   maxTokenBudget: number | null;
   maxAgents: number;
   maxSkills: number;
-  maxMemoryItems: number;
   maxGroupsOwned: number;
   allowedProviders: string[];
   cronEnabled: boolean;
@@ -59,7 +60,7 @@ export interface ApiPolicy {
 
 interface PaginatedPolicies {
   data: ApiPolicy[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
+  meta: PaginationMeta;
 }
 
 interface ApiProvider {
@@ -81,7 +82,14 @@ function formatBudget(cents: number | null): string {
 // ------------------------------------------------------------------ //
 
 export function PoliciesTab() {
+  const { page, limit, setPage, setLimit } = usePaginationParams();
   const [policies, setPolicies] = useState<ApiPolicy[]>([]);
+  const [meta, setMeta] = useState<PaginationMeta>({
+    total: 0,
+    page: 1,
+    limit,
+    totalPages: 0,
+  });
   const [providerNames, setProviderNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -97,10 +105,11 @@ export function PoliciesTab() {
     setError('');
     try {
       const [policiesRes, providersRes] = await Promise.all([
-        authFetch<PaginatedPolicies>('/admin/policies?limit=100'),
+        authFetch<PaginatedPolicies>(`/admin/policies?page=${page}&limit=${limit}`),
         authFetch<ApiProvider[]>('/admin/providers'),
       ]);
       setPolicies(Array.isArray(policiesRes.data) ? policiesRes.data : []);
+      setMeta(policiesRes.meta);
       const nameMap: Record<string, string> = {};
       for (const p of providersRes ?? []) {
         nameMap[p.provider] = p.displayName;
@@ -111,7 +120,7 @@ export function PoliciesTab() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, limit]);
 
   useEffect(() => {
     void fetchData();
@@ -301,6 +310,17 @@ export function PoliciesTab() {
           </Table>
         </div>
       )}
+
+      {!loading && policies.length > 0 ? (
+        <div className="mt-4">
+          <DataPagination
+            meta={meta}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+            label="policies"
+          />
+        </div>
+      ) : null}
 
       <CreatePolicyDialog
         key={createOpen ? 'create-open' : 'create-closed'}

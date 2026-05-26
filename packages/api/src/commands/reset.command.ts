@@ -27,6 +27,9 @@ export class ResetCommand implements SessionCommand {
     }
 
     await this.sessionManager.deactivate(ctx.sessionId);
-    return { text: 'Session reset. Your next message will start a fresh conversation.' };
+    return {
+      text: 'Session reset. Your next message will start a fresh conversation.',
+      event: 'session.reset',
+    };
   }
 }

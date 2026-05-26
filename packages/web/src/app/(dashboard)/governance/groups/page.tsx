@@ -464,8 +464,9 @@ function GroupDetailSheet({
     try {
       const d = await groupsApi.read(membership.groupId);
       setDetail(d);
-    } catch {
+    } catch (e) {
       setDetail(null);
+      toast.error(e instanceof Error ? e.message : 'Failed to load group details');
     }
   }, [membership]);
 

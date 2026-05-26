@@ -49,6 +49,8 @@ describe('Auth Integration', () => {
 
     const mockRedis = {
       get: (key: string) => Promise.resolve(redisStore.get(key) ?? null),
+      mget: (keys: readonly string[]) =>
+        Promise.resolve(keys.map((k) => redisStore.get(k) ?? null)),
       set: (key: string, value: string) => {
         redisStore.set(key, value);
         return Promise.resolve();
@@ -57,6 +59,13 @@ describe('Auth Integration', () => {
         redisStore.delete(key);
         return Promise.resolve();
       },
+      incr: (key: string) => {
+        const current = Number(redisStore.get(key) ?? 0);
+        const next = current + 1;
+        redisStore.set(key, String(next));
+        return Promise.resolve(next);
+      },
+      expire: (_key: string, _ttlSeconds: number) => Promise.resolve(true),
     };
 
     const moduleRef = await Test.createTestingModule({

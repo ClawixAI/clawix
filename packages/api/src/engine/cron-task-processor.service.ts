@@ -10,9 +10,12 @@ import { computeNextRun } from './cron-next-run.js';
 import { SystemSettingsService } from '../system-settings/system-settings.service.js';
 import { PolicyRepository } from '../db/policy.repository.js';
 import { UserRepository } from '../db/user.repository.js';
+import { ChannelRepository } from '../db/channel.repository.js';
+import { SessionRepository } from '../db/session.repository.js';
 import { RedisPubSubService } from '../cache/redis-pubsub.service.js';
 import { PUBSUB_CHANNELS } from '../cache/cache.constants.js';
 import { translateCronError } from './cron-error-messages.js';
+import { SessionManagerService } from './session-manager.service.js';
 
 const logger = createLogger('engine:cron-task-processor');
 
@@ -44,7 +47,43 @@ export class CronTaskProcessorService {
     private readonly policyRepo: PolicyRepository,
     private readonly userRepo: UserRepository,
     private readonly pubsub: RedisPubSubService,
+    private readonly channelRepo: ChannelRepository,
+    private readonly sessionRepo: SessionRepository,
+    private readonly sessionManager: SessionManagerService,
   ) {}
+
+  /**
+   * Resolve the session anchor for a cron delivery to a `web` channel.
+   *
+   * Web cron output has no natural home in the chat client unless it's bound
+   * to an existing session — `message.create` frames with an empty sessionId
+   * are silently dropped client-side (see use-chat.ts). For web channels we:
+   *  1. Look up the user's latest active session.
+   *  2. Persist the cron output as a SessionMessage so it appears in the
+   *     transcript on next reload AND when the user is currently viewing it.
+   *  3. Return the sessionId + new messageId so the pub/sub payload can
+   *     thread them through to the WS push.
+   *
+   * If the user has no active session, returns null and the cron processor
+   * falls back to publishing without a session anchor — the WS push still
+   * fires (so it can light up a toast) but no transcript row is written.
+   * TaskRun.output remains the canonical persistent record either way.
+   */
+  private async anchorWebDelivery(
+    userId: string,
+    output: string,
+  ): Promise<{ readonly sessionId: string; readonly messageId: string } | null> {
+    const sessions = await this.sessionRepo.findActiveByUserId(userId);
+    const latest = sessions[0];
+    if (!latest) return null;
+
+    const ids = await this.sessionManager.saveMessages(latest.id, [
+      { role: 'assistant', content: output },
+    ]);
+    const messageId = ids[0];
+    if (!messageId) return null;
+    return { sessionId: latest.id, messageId };
+  }
 
   async execute(task: ProcessableTask): Promise<void> {
     try {
@@ -180,6 +219,17 @@ export class CronTaskProcessorService {
 
       // Deliver result to channel if configured
       if (task.channelId && result.output) {
+        const channel = await this.channelRepo.findById(task.channelId);
+        let anchor: { sessionId: string; messageId: string } | null = null;
+        if (channel.type === 'web') {
+          anchor = await this.anchorWebDelivery(task.createdByUserId, result.output);
+          if (!anchor) {
+            logger.warn(
+              { taskId: task.id, userId: task.createdByUserId },
+              'cron:no active session for web delivery — pushing WS frame without session anchor',
+            );
+          }
+        }
         await this.pubsub.publish(PUBSUB_CHANNELS.cronResultReady, {
           status: 'success',
           channelId: task.channelId,
@@ -187,6 +237,7 @@ export class CronTaskProcessorService {
           taskId: task.id,
           taskName: task.name,
           output: result.output,
+          ...(anchor ?? {}),
         });
       }
     } catch (error) {
@@ -235,6 +286,11 @@ export class CronTaskProcessorService {
         if (autoDisabled) {
           message += `\n🛑 Task disabled after ${MAX_CONSECUTIVE_FAILURES} consecutive failures. Re-enable it from the dashboard.`;
         }
+        const failureChannel = await this.channelRepo.findById(task.channelId);
+        let anchor: { sessionId: string; messageId: string } | null = null;
+        if (failureChannel.type === 'web') {
+          anchor = await this.anchorWebDelivery(task.createdByUserId, message);
+        }
         await this.pubsub.publish(PUBSUB_CHANNELS.cronResultReady, {
           status: 'failed',
           channelId: task.channelId,
@@ -243,6 +299,7 @@ export class CronTaskProcessorService {
           taskName: task.name,
           message,
           autoDisabled,
+          ...(anchor ?? {}),
         });
       }
     }

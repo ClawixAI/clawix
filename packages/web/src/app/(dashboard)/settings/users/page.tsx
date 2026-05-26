@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   ArrowDown,
   ArrowUp,
@@ -55,7 +56,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { authFetch } from '@/lib/auth';
+import { formString } from '@/lib/form';
 import { useAnimeOnMount, staggerFadeUp, STAGGER } from '@/lib/anime';
+import { DataPagination, type PaginationMeta } from '@/components/ui/data-pagination';
+import { usePaginationParams } from '@/hooks/use-pagination-params';
 import { GroupsTab } from '../groups-tab';
 
 // ------------------------------------------------------------------ //
@@ -74,7 +78,7 @@ interface ApiUser {
 
 interface PaginatedUsers {
   data: ApiUser[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
+  meta: PaginationMeta;
 }
 
 interface ApiPolicy {
@@ -85,7 +89,7 @@ interface ApiPolicy {
 
 interface PaginatedPolicies {
   data: ApiPolicy[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
+  meta: PaginationMeta;
 }
 
 // ------------------------------------------------------------------ //
@@ -201,10 +205,13 @@ function parseSorts(param: string | null): SortEntry[] {
   return param
     .split(',')
     .map((s) => {
-      const [key, dir] = s.split(':') as [string, string];
-      return { key: key as SortKey, dir: (dir === 'desc' ? 'desc' : 'asc') as SortDir };
+      const [key = '', dir] = s.split(':');
+      const direction: SortDir = dir === 'desc' ? 'desc' : 'asc';
+      return { key, dir: direction };
     })
-    .filter((s) => ['name', 'email', 'role', 'plan', 'status'].includes(s.key));
+    .filter((s): s is SortEntry =>
+      (['name', 'email', 'role', 'plan', 'status'] as string[]).includes(s.key),
+    );
 }
 
 function serializeSorts(sorts: SortEntry[]): string {
@@ -214,8 +221,15 @@ function serializeSorts(sorts: SortEntry[]): string {
 export default function UsersPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { page, limit, setPage, setLimit } = usePaginationParams();
   const [tab, setTab] = useState('users');
   const [users, setUsers] = useState<ApiUser[]>([]);
+  const [usersMeta, setUsersMeta] = useState<PaginationMeta>({
+    total: 0,
+    page: 1,
+    limit,
+    totalPages: 0,
+  });
   const [policies, setPolicies] = useState<ApiPolicy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -247,7 +261,7 @@ export default function UsersPage() {
     setError('');
     try {
       const [usersRes, policiesRes, agentsRes, userAgentsRes] = await Promise.all([
-        authFetch<PaginatedUsers>('/admin/users?limit=100'),
+        authFetch<PaginatedUsers>(`/admin/users?page=${page}&limit=${limit}`),
         authFetch<PaginatedPolicies>('/admin/policies?limit=100'),
         authFetch<{ data: { id: string; name: string; role: string }[] }>(
           '/api/v1/agents?role=primary&limit=100',
@@ -257,6 +271,7 @@ export default function UsersPage() {
         ),
       ]);
       setUsers(Array.isArray(usersRes.data) ? usersRes.data : []);
+      setUsersMeta(usersRes.meta);
       setPolicies(Array.isArray(policiesRes.data) ? policiesRes.data : []);
       setAgentDefs(agentsRes.data.filter((a) => a.role === 'primary'));
       // Build user -> userAgent mapping
@@ -270,7 +285,7 @@ export default function UsersPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, limit]);
 
   useEffect(() => {
     void fetchData();
@@ -280,7 +295,7 @@ export default function UsersPage() {
     setSaving(true);
     setError('');
     try {
-      const role = form.get('role') as string;
+      const role = formString(form, 'role');
       const created = await authFetch<ApiUser>('/admin/users', {
         method: 'POST',
         body: JSON.stringify({
@@ -312,8 +327,8 @@ export default function UsersPage() {
                 : [],
             );
           })
-          .catch(() => {
-            /* silent */
+          .catch((e: unknown) => {
+            toast.error(e instanceof Error ? e.message : 'Failed to load agent list');
           });
       }
       await fetchData();
@@ -333,8 +348,8 @@ export default function UsersPage() {
         body: JSON.stringify({ userId: createdUserId, agentDefinitionId: selectedAgentId }),
       });
       setCreateStep('done');
-    } catch {
-      /* silent — agent can be assigned later */
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to assign agent');
     } finally {
       setAssigningAgent(false);
     }
@@ -628,6 +643,16 @@ export default function UsersPage() {
               </Table>
             </div>
           )}
+          {!loading && users.length > 0 ? (
+            <div className="mt-4">
+              <DataPagination
+                meta={usersMeta}
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+                label="users"
+              />
+            </div>
+          ) : null}
         </TabsContent>
 
         {/* ---- Roles Tab ---- */}

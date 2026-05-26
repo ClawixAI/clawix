@@ -1,9 +1,8 @@
 /**
- * Shared helper for extracting text from MemoryItem JSON content.
- * Used by: MemoryItemRepository.search, search_memory tool, ContextBuilderService.
+ * Shared helper for extracting text from JSON content blobs.
  */
 
-/** Extract the text string from a MemoryItem's JSON content. */
+/** Extract the text string from a JSON content value (string, {text}, or JSON.stringify fallback). */
 export function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (content !== null && typeof content === 'object' && !Array.isArray(content)) {

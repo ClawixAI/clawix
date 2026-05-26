@@ -22,8 +22,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { authFetch } from '@/lib/auth';
+import { formString } from '@/lib/form';
 import { useAnimeOnMount, staggerFadeUp, STAGGER } from '@/lib/anime';
 import { SuccessDialog } from '@/components/ui/success-dialog';
+import { DataPagination, type PaginationMeta } from '@/components/ui/data-pagination';
+import { usePaginationParams } from '@/hooks/use-pagination-params';
 import { CreateAgentDialog, EditAgentDialog } from './agents-dialogs';
 
 // ------------------------------------------------------------------ //
@@ -52,7 +55,7 @@ export interface ApiAgent {
 
 interface PaginatedAgents {
   data: ApiAgent[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
+  meta: PaginationMeta;
 }
 
 // ------------------------------------------------------------------ //
@@ -73,10 +76,11 @@ function parseSorts(param: string | null): SortEntry[] {
   return param
     .split(',')
     .map((s) => {
-      const [key, dir] = s.split(':') as [string, string];
-      return { key: key as SortKey, dir: (dir === 'desc' ? 'desc' : 'asc') as SortDir };
+      const [key = '', dir] = s.split(':');
+      const direction: SortDir = dir === 'desc' ? 'desc' : 'asc';
+      return { key, dir: direction };
     })
-    .filter((s) => VALID_KEYS.includes(s.key));
+    .filter((s): s is SortEntry => (VALID_KEYS as string[]).includes(s.key));
 }
 
 function serializeSorts(sorts: SortEntry[]): string {
@@ -90,7 +94,14 @@ function serializeSorts(sorts: SortEntry[]): string {
 export function AgentsList() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { page, limit, setPage, setLimit } = usePaginationParams();
   const [agents, setAgents] = useState<ApiAgent[]>([]);
+  const [meta, setMeta] = useState<PaginationMeta>({
+    total: 0,
+    page: 1,
+    limit,
+    totalPages: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -163,14 +174,15 @@ export function AgentsList() {
     setLoading(true);
     setError('');
     try {
-      const res = await authFetch<PaginatedAgents>('/api/v1/agents?limit=100');
+      const res = await authFetch<PaginatedAgents>(`/api/v1/agents?page=${page}&limit=${limit}`);
       setAgents(Array.isArray(res.data) ? res.data : []);
+      setMeta(res.meta);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load agents');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, limit]);
 
   useEffect(() => {
     void fetchAgents();
@@ -190,13 +202,12 @@ export function AgentsList() {
           provider: form.get('provider'),
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
-          maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          maxTokensPerRun: Number(formString(form, 'maxTokensPerRun')),
           streamingEnabled: form.get('streamingEnabled') === 'true',
-          skillIds:
-            (form.get('skillIds') as string)
-              ?.split(',')
-              .map((s) => s.trim())
-              .filter(Boolean) || [],
+          skillIds: formString(form, 'skillIds')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
         }),
       });
       setCreateOpen(false);
@@ -223,13 +234,12 @@ export function AgentsList() {
           provider: form.get('provider'),
           model: form.get('model'),
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
-          maxTokensPerRun: Number(form.get('maxTokensPerRun')) || 100000,
+          maxTokensPerRun: Number(formString(form, 'maxTokensPerRun')),
           streamingEnabled: form.get('streamingEnabled') === 'true',
-          skillIds:
-            (form.get('skillIds') as string)
-              ?.split(',')
-              .map((s) => s.trim())
-              .filter(Boolean) || [],
+          skillIds: formString(form, 'skillIds')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
         }),
       });
       setEditAgent(null);
@@ -406,6 +416,15 @@ export function AgentsList() {
           </Table>
         </div>
       )}
+
+      {!loading && agents.length > 0 ? (
+        <DataPagination
+          meta={meta}
+          onPageChange={setPage}
+          onLimitChange={setLimit}
+          label="agents"
+        />
+      ) : null}
 
       <CreateAgentDialog
         key={createOpen ? 'open' : 'closed'}

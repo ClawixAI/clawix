@@ -17,6 +17,8 @@ export default tseslint.config(
       '**/generated/**',
       'scripts/**',
       'data/**',
+      // playwright.config.ts requires @playwright/test which is not yet installed
+      '**/playwright.config.ts',
     ],
   },
   js.configs.recommended,
@@ -93,6 +95,8 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-extraneous-class': 'off',
       '@typescript-eslint/no-useless-constructor': 'off',
+      // Integration tests legitimately use console.warn to signal skipped suites
+      'no-console': 'off',
     },
   },
   {

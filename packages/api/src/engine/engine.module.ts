@@ -44,14 +44,18 @@ import { BrowserQuotaCache } from './tools/browser/browser-quota-cache.service.j
 import { AgentRunSourceAdapter } from './tools/browser/agent-run-source.adapter.js';
 import { PythonConcurrencyLimiter } from './tools/python/concurrency-limiter.js';
 import { InstallMutex } from './tools/python/install-mutex.js';
+import { WikiBootstrapService } from './wiki/wiki-bootstrap.service.js';
+import { SessionSearchService } from './session-recall/session-search.service.js';
 
 @Module({
   imports: [DbModule, SystemSettingsModule, ProviderConfigModule],
   providers: [
     AgentRunnerService,
     ContextBuilderService,
+    SessionSearchService,
     BootstrapFileService,
     WorkspaceSeederService,
+    WikiBootstrapService,
     // String-token aliases to break circular dependency:
     // TaskExecutorService injects AgentRunnerService via @Inject('AgentRunnerService')
     // AgentRunnerService resolves TaskExecutorService lazily via ModuleRef
@@ -139,6 +143,7 @@ import { InstallMutex } from './tools/python/install-mutex.js';
     AgentRunRegistry,
     PythonProxyHealthService,
     PythonContainerPoolService,
+    WikiBootstrapService,
   ],
 })
 export class EngineModule implements OnModuleInit, OnModuleDestroy {

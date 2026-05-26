@@ -128,20 +128,41 @@ export function ChatInput({
     setMounted(true);
   }, []);
 
-  // Fetch skills and merge with builtin commands
+  // Fetch skills and merge with builtin commands.
+  // Retries silently with exponential backoff (1s → 3s → 6s, up to 3 retries)
+  // before falling back to builtins for the session. Issue #114 — single
+  // failed fetch should not lock the user out of skills for the entire tab.
   useEffect(() => {
-    void authFetch<{ data: { name: string; description: string }[] }>('/api/v1/skills')
-      .then((res) => {
-        const skills: SlashItem[] = (Array.isArray(res.data) ? res.data : []).map((s) => ({
-          name: `/${s.name}`,
-          description: s.description,
-          type: 'skill' as const,
-        }));
-        setSlashItems([...skills, ...builtinCommands]);
-      })
-      .catch(() => {
-        /* keep builtin commands only */
-      });
+    let cancelled = false;
+    const attemptDelays = [1_000, 3_000, 6_000];
+
+    const run = async () => {
+      for (let attempt = 0; attempt <= attemptDelays.length; attempt++) {
+        if (cancelled) return;
+        try {
+          const res = await authFetch<{ data: { name: string; description: string }[] }>(
+            '/api/v1/skills',
+          );
+          if (cancelled) return;
+          const skills: SlashItem[] = (Array.isArray(res.data) ? res.data : []).map((s) => ({
+            name: `/${s.name}`,
+            description: s.description,
+            type: 'skill' as const,
+          }));
+          setSlashItems([...skills, ...builtinCommands]);
+          return;
+        } catch {
+          const delay = attemptDelays[attempt];
+          if (delay === undefined) return;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Filter commands based on current input
@@ -244,6 +265,7 @@ export function ChatInput({
             ref={textareaRef}
             rows={1}
             placeholder="Type / for commands or send a message..."
+            aria-label="Chat message"
             className="flex-1 resize-none bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
             value={value}
             onChange={(e) => {
@@ -277,7 +299,11 @@ export function ChatInput({
                   return;
                 }
               }
-              // Input history: ArrowUp/Down when not in slash menu
+              // Input history: ArrowUp/Down when not in slash menu.
+              // After programmatically restoring a history entry, schedule an
+              // autoResize on the next tick so the textarea grows/shrinks to
+              // match — onChange does not fire for setValue() and stale heights
+              // truncate long entries.
               if (e.key === 'ArrowUp' && !showCommands && inputHistory.length > 0) {
                 if (historyIndexRef.current === -1) {
                   savedInputRef.current = value;
@@ -286,6 +312,7 @@ export function ChatInput({
                 if (nextIndex !== historyIndexRef.current || historyIndexRef.current === -1) {
                   historyIndexRef.current = nextIndex;
                   setValue(inputHistory[nextIndex]!);
+                  setTimeout(autoResize, 0);
                   e.preventDefault();
                 }
                 return;
@@ -299,6 +326,7 @@ export function ChatInput({
                 } else {
                   setValue(inputHistory[nextIndex]!);
                 }
+                setTimeout(autoResize, 0);
                 return;
               }
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -313,6 +341,7 @@ export function ChatInput({
           />
           <Button
             size="icon"
+            aria-label="Send message"
             className="size-8 shrink-0 rounded-full"
             disabled={!value.trim() || disabled || !isConnected}
             onClick={handleSend}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import type { ToolCallRequest, ToolProgressMode } from '@clawix/shared';
 import { resolveToolProgressMode } from '@clawix/shared';
@@ -35,7 +36,12 @@ function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T 
   }) as T;
 }
 
-const TYPING_TIMEOUT = 60_000;
+// Reduced from 60s — a 30s ceiling matches typical p95 first-token latency for
+// the supported providers; longer than that almost always means a silent crash.
+const TYPING_TIMEOUT = 30_000;
+// Show a non-blocking toast at the halfway mark so users know the agent is
+// still working before the timeout fires.
+const TYPING_WARN_THRESHOLD = 15_000;
 
 /* ------------------------------------------------------------------ */
 /*  Public types                                                       */
@@ -96,6 +102,7 @@ type ServerEvent =
   | { type: 'typing.start'; payload: Record<string, never> }
   | { type: 'typing.stop'; payload: Record<string, never> }
   | { type: 'pong'; payload: Record<string, never> }
+  | { type: 'session.reset'; payload: { sessionId: string } }
   | { type: 'error'; payload: { code: string; message: string } };
 
 /* ------------------------------------------------------------------ */
@@ -136,7 +143,12 @@ export function useChat() {
   const reconnectAttemptsRef = useRef(0);
   const currentSessionIdRef = useRef<string | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const typingWarnTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const isMountedRef = useRef(false);
+  const messagesRef = useRef<ChatMessage[]>([]);
+
+  /* ---- track failed user messages (server returned error before assistant reply) ---- */
+  const [failedTmpIds, setFailedTmpIds] = useState<Set<string>>(new Set());
 
   const fetchSessionsRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
@@ -144,6 +156,10 @@ export function useChat() {
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
   }, [currentSessionId]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   /* ---- fetch sessions (merges into existing list to avoid dropping older entries) ---- */
   const fetchSessions = useCallback(async () => {
@@ -176,8 +192,10 @@ export function useChat() {
       setSessions((prev) => upsertSessions(prev, incoming));
       setSessionPage(nextPage);
       setHasMoreSessions(nextPage * SESSIONS_PER_PAGE < res.meta.total);
-    } catch {
-      // silent — user can retry by scrolling again
+    } catch (err) {
+      toast.error('Failed to load more sessions', {
+        description: err instanceof Error ? err.message : 'Please try again.',
+      });
     } finally {
       setLoadingMoreSessions(false);
     }
@@ -214,7 +232,11 @@ export function useChat() {
     // TODO: Token in query string is visible in logs — migrate to first-message auth when backend supports it.
     // Close any existing connection before creating a new one.
     if (wsRef.current) {
-      wsRef.current.onclose = null; // Prevent reconnect loop from the old socket.
+      // Detach handlers so the intentional close doesn't trigger a reconnect
+      // (onclose) or a noisy "error before handshake" log (onerror). The new
+      // socket below owns its own handlers.
+      wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
       wsRef.current.close();
       wsRef.current = null;
     }
@@ -345,27 +367,40 @@ export function useChat() {
             setIsInitializing(false);
           }
 
-          // Auto-clear after /reset command response
-          if (content.includes('Session reset')) {
-            setTimeout(() => {
-              setCurrentSessionId(null);
-              setMessages([]);
-              setIsTyping(false);
-              setHasPending(false);
-              pendingCountRef.current = 0;
-              void fetchSessionsRef.current?.();
-            }, 1500);
-          } else {
-            debouncedFetchSessions();
-          }
+          // The `/reset` auto-clear is driven by the explicit `session.reset`
+          // frame (handled below) — not by substring-matching content here,
+          // which would misfire on legitimate user messages containing the
+          // phrase "Session reset" (issue #107).
+          debouncedFetchSessions();
+          break;
+        }
+
+        case 'session.reset': {
+          // Server confirms the active session was archived via `/reset`.
+          // Give the user ~1.5s to read the confirmation message that
+          // arrived in the preceding `message.create` frame, then clear
+          // local state so the next message starts a fresh session.
+          setTimeout(() => {
+            setCurrentSessionId(null);
+            setMessages([]);
+            setIsTyping(false);
+            setHasPending(false);
+            pendingCountRef.current = 0;
+            void fetchSessionsRef.current?.();
+          }, 1500);
           break;
         }
 
         case 'typing.start':
           setIsTyping(true);
-          // Clear any existing typing timeout
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-          // Auto-clear typing if server doesn't respond within timeout
+          if (typingWarnTimeoutRef.current) clearTimeout(typingWarnTimeoutRef.current);
+          // Early warning at the halfway mark — gives users a heads-up that
+          // the agent is still working before we give up.
+          typingWarnTimeoutRef.current = setTimeout(() => {
+            toast.info('No response yet — still thinking…', { duration: 4_000 });
+          }, TYPING_WARN_THRESHOLD);
+          // Hard timeout — drop the typing indicator so users aren't stuck.
           typingTimeoutRef.current = setTimeout(() => {
             setIsTyping(false);
           }, TYPING_TIMEOUT);
@@ -374,6 +409,7 @@ export function useChat() {
         case 'typing.stop':
           setIsTyping(false);
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          if (typingWarnTimeoutRef.current) clearTimeout(typingWarnTimeoutRef.current);
           break;
 
         case 'error':
@@ -383,6 +419,16 @@ export function useChat() {
           setHasPending(false);
           setIsTyping(false);
           if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          if (typingWarnTimeoutRef.current) clearTimeout(typingWarnTimeoutRef.current);
+          // Mark every optimistic user message still on screen as failed so
+          // the thread can surface a Retry button next to each.
+          setFailedTmpIds((prev) => {
+            const next = new Set(prev);
+            for (const m of messagesRef.current) {
+              if (m.role === 'user' && m.id.startsWith('tmp-')) next.add(m.id);
+            }
+            return next;
+          });
           break;
 
         case 'pong':
@@ -414,8 +460,12 @@ export function useChat() {
       }
     };
 
-    ws.onerror = () => {
-      // Don't show error during reconnect — onclose handles it
+    ws.onerror = (event) => {
+      // onclose owns the user-facing reconnect / "Connection lost" toast so
+      // we don't double-notify. Log to the console so devs debugging a
+      // dropped chat session still get a stack-trace-friendly breadcrumb.
+      // eslint-disable-next-line no-console -- dev breadcrumb for a dropped socket; onclose owns user UX
+      console.error('[chat] WebSocket error', event);
     };
 
     wsRef.current = ws;
@@ -475,8 +525,10 @@ export function useChat() {
       });
       setMessagePage(nextPage);
       setHasMore(nextPage < Math.ceil(res.meta.total / MESSAGE_LIMIT));
-    } catch {
-      // silent
+    } catch (err) {
+      toast.error('Failed to load older messages', {
+        description: err instanceof Error ? err.message : 'Please try again.',
+      });
     } finally {
       setLoadingMore(false);
     }
@@ -506,6 +558,48 @@ export function useChat() {
     pendingCountRef.current += 1;
     setHasPending(true);
     setIsTyping(true);
+    return true;
+  }, []);
+
+  /* ---- retry a failed user message ---- */
+  const retryMessage = useCallback(
+    (id: string): boolean => {
+      const target = messagesRef.current.find((m) => m.id === id);
+      if (!target) return false;
+
+      // Drop the failed placeholder and clear its failed flag before re-sending —
+      // sendMessage will push a fresh optimistic entry with a new tmp- id.
+      setFailedTmpIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      setError('');
+      return sendMessage(target.content);
+    },
+    // sendMessage is a stable useCallback([]) reference declared earlier in the
+    // hook body; the closure captures it without needing a dependency.
+    [],
+  );
+
+  /* ---- delete session (hard delete + cascade messages) ---- */
+  const deleteSession = useCallback(async (sessionId: string): Promise<boolean> => {
+    try {
+      await authFetch(`/api/v1/chat/sessions/${sessionId}`, { method: 'DELETE' });
+    } catch {
+      setError('Failed to delete conversation');
+      return false;
+    }
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    if (currentSessionIdRef.current === sessionId) {
+      setCurrentSessionId(null);
+      setMessages([]);
+      setIsTyping(false);
+      setHasPending(false);
+      pendingCountRef.current = 0;
+    }
     return true;
   }, []);
 
@@ -559,13 +653,24 @@ export function useChat() {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (typingWarnTimeoutRef.current) clearTimeout(typingWarnTimeoutRef.current);
       if (wsRef.current) {
+        // Detach handlers — unmounting is an intentional close; we don't
+        // want onclose to schedule a reconnect or onerror to log a fake
+        // "WebSocket is closed before connection is established" during
+        // React Strict Mode's dev-only double mount.
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
         wsRef.current.close();
         wsRef.current = null;
       }
     };
   }, []);
   /* ---- adaptive polling: fast (2s) when waiting, slow (30s) when idle ---- */
+  // Combine the two activity flags into one boolean so the polling effect
+  // restarts only when we cross the idle<->active boundary, not on every
+  // internal isTyping/hasPending flip (#117).
+  const pollActive = isTyping || hasPending;
   useEffect(() => {
     const pollMessages = () => {
       const sid = currentSessionIdRef.current;
@@ -610,13 +715,18 @@ export function useChat() {
         });
     };
 
-    // Fast polling when waiting for response, slow polling when idle
-    const pollInterval = isTyping || hasPending ? 2000 : 30_000;
+    // Fast polling when waiting for a response, slow polling when idle.
+    // Keyed on pollActive (not isTyping/hasPending individually): rapid flips
+    // such as typing.start -> message.create -> typing.start keep pollActive
+    // true throughout, so the timer is not torn down and recreated each tick.
+    // The previous [isTyping, hasPending] deps restarted the interval on every
+    // flip, which reset the countdown and starved the 30s idle poll (#117).
+    const pollInterval = pollActive ? 2000 : 30_000;
     const interval = setInterval(pollMessages, pollInterval);
     return () => {
       clearInterval(interval);
     };
-  }, [isTyping, hasPending]);
+  }, [pollActive]);
 
   /* ---- lifecycle: fetch sessions when channel ID resolves ---- */
   useEffect(() => {
@@ -640,6 +750,9 @@ export function useChat() {
     hasMoreSessions,
     selectSession,
     sendMessage,
+    retryMessage,
+    deleteSession,
+    failedTmpIds,
     startNewChat,
     loadMore,
     loadMoreSessions,

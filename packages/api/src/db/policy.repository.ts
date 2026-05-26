@@ -12,7 +12,6 @@ interface CreatePolicyData {
   readonly maxTokenBudget?: number | null;
   readonly maxAgents?: number;
   readonly maxSkills?: number;
-  readonly maxMemoryItems?: number;
   readonly maxGroupsOwned?: number;
   readonly allowedProviders?: string[];
   readonly cronEnabled?: boolean;
@@ -76,7 +75,6 @@ export class PolicyRepository {
           ...(data.maxTokenBudget !== undefined ? { maxTokenBudget: data.maxTokenBudget } : {}),
           ...(data.maxAgents !== undefined ? { maxAgents: data.maxAgents } : {}),
           ...(data.maxSkills !== undefined ? { maxSkills: data.maxSkills } : {}),
-          ...(data.maxMemoryItems !== undefined ? { maxMemoryItems: data.maxMemoryItems } : {}),
           ...(data.maxGroupsOwned !== undefined ? { maxGroupsOwned: data.maxGroupsOwned } : {}),
           ...(data.allowedProviders !== undefined
             ? { allowedProviders: data.allowedProviders }
@@ -109,7 +107,6 @@ export class PolicyRepository {
           ...(data.maxTokenBudget !== undefined ? { maxTokenBudget: data.maxTokenBudget } : {}),
           ...(data.maxAgents !== undefined ? { maxAgents: data.maxAgents } : {}),
           ...(data.maxSkills !== undefined ? { maxSkills: data.maxSkills } : {}),
-          ...(data.maxMemoryItems !== undefined ? { maxMemoryItems: data.maxMemoryItems } : {}),
           ...(data.maxGroupsOwned !== undefined ? { maxGroupsOwned: data.maxGroupsOwned } : {}),
           ...(data.allowedProviders !== undefined
             ? { allowedProviders: data.allowedProviders }

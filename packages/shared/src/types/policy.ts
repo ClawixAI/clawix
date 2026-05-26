@@ -5,7 +5,6 @@ export interface Policy {
   readonly maxTokenBudget: number | null;
   readonly maxAgents: number;
   readonly maxSkills: number;
-  readonly maxMemoryItems: number;
   readonly maxGroupsOwned: number;
   readonly allowedProviders: readonly string[];
   readonly features: Record<string, unknown>;

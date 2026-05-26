@@ -104,7 +104,15 @@ export class MessageRouterService {
         text = result.forwardToAgent;
         // Fall through to agent execution below
       } else {
-        await channel.sendMessage({ recipientId: senderId, text: result.text });
+        // Thread the optional structured event (e.g. `session.reset`) through
+        // `metadata.event` so the web adapter can emit a follow-up frame
+        // and the chat client can react without a substring match (#107).
+        // Telegram / WhatsApp adapters drop metadata they don't recognise.
+        await channel.sendMessage({
+          recipientId: senderId,
+          text: result.text,
+          ...(result.event ? { metadata: { event: result.event } } : {}),
+        });
         return;
       }
     }

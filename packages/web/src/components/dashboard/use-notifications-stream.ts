@@ -85,8 +85,12 @@ export function useNotificationsStream({ onNotification, enabled = true }: Optio
         backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);
       };
 
-      ws.onerror = () => {
-        // Errors generally precede a close — let onclose handle reconnect.
+      ws.onerror = (event) => {
+        // onclose owns reconnect — but log so devs can spot a flapping
+        // notification stream in DevTools rather than silently wondering
+        // why the bell badge stopped updating.
+        // eslint-disable-next-line no-console -- dev breadcrumb for a dropped socket; onclose owns user UX
+        console.error('[notifications] WebSocket error', event);
       };
     };
 
@@ -97,7 +101,11 @@ export function useNotificationsStream({ onNotification, enabled = true }: Optio
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (pingTimer) clearInterval(pingTimer);
       if (ws) {
+        // Detach handlers — unmounting is an intentional close; we don't
+        // want onclose to schedule a reconnect or onerror to log a fake
+        // handshake error during React Strict Mode's dev-only double mount.
         ws.onclose = null;
+        ws.onerror = null;
         ws.close();
         ws = null;
       }

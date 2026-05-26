@@ -18,9 +18,20 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={GeistSans.className}>
+        {/* Skip link for pages that fall outside the dashboard layout (login,
+            marketing). Dashboard pages have their own scoped skip link
+            targeting #dashboard-main. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow-md focus:ring-2 focus:ring-ring"
+        >
+          Skip to main content
+        </a>
         <ThemeProvider>
           <AuthProvider>
-            <TooltipProvider>{children}</TooltipProvider>
+            <TooltipProvider>
+              <div id="main-content">{children}</div>
+            </TooltipProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

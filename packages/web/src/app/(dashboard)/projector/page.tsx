@@ -245,10 +245,18 @@ export default function ProjectorPage() {
               <Loader2 className="size-6 animate-spin text-muted-foreground" />
             </div>
           ) : activeHtml ? (
+            // Sandbox: agent-generated HTML must run in an opaque origin so a
+            // compromised projector output cannot reach the dashboard's
+            // cookies, localStorage, JWT, or DOM. `allow-same-origin` is
+            // intentionally omitted — combined with `allow-scripts` it would
+            // negate the sandbox entirely. Projector tools that need to
+            // persist files communicate via `postMessage` (handled above);
+            // anything that needs to fetch resources must be proxied through
+            // the API rather than running cross-origin fetches from here.
             <iframe
               ref={iframeRef}
               srcDoc={activeHtml}
-              sandbox="allow-scripts allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+              sandbox="allow-scripts allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox"
               className="h-full w-full border-0"
               title={activeItem ?? 'Projector'}
             />

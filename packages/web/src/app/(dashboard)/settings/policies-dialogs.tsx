@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +15,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { authFetch } from '@/lib/auth';
+import { formString } from '@/lib/form';
+import { FieldError } from '@/components/ui/field-error';
+import {
+  parseForm,
+  policyFormSchema,
+  type FieldErrors,
+  type PolicyFormValues,
+} from '@/lib/validation';
 import type { ApiPolicy } from './policies-tab';
 
 // ------------------------------------------------------------------ //
@@ -29,39 +38,50 @@ interface ProviderOption {
 //  Helpers                                                            //
 // ------------------------------------------------------------------ //
 
-function parseIntOrNull(value: string): number | null {
-  if (value === '' || value === 'null') return null;
-  const n = parseInt(value, 10);
-  return Number.isNaN(n) ? null : n;
+/** Raw string values pulled from the policy form, for zod validation. */
+function policyFormInput(form: FormData) {
+  return {
+    name: formString(form, 'name'),
+    description: formString(form, 'description'),
+    maxTokenBudget: formString(form, 'maxTokenBudget'),
+    maxAgents: formString(form, 'maxAgents'),
+    maxSkills: formString(form, 'maxSkills'),
+    maxMemoryItems: formString(form, 'maxMemoryItems'),
+    maxGroupsOwned: formString(form, 'maxGroupsOwned'),
+    maxScheduledTasks: formString(form, 'maxScheduledTasks'),
+    minCronIntervalSecs: formString(form, 'minCronIntervalSecs'),
+    maxTokensPerCronRun: formString(form, 'maxTokensPerCronRun'),
+  };
 }
 
-function buildPolicyData(
+const emptyToNull = (v: number | '' | undefined): number | null =>
+  v === '' || v === undefined ? null : v;
+
+/** Build the API payload from validated values + the checkbox/provider fields. */
+function policyPayload(
+  parsed: PolicyFormValues,
   form: FormData,
   availableProviders: ProviderOption[],
 ): Record<string, unknown> {
-  const data: Record<string, unknown> = {
-    name: form.get('name'),
-    description: (form.get('description') as string) || null,
-    maxTokenBudget: parseIntOrNull(form.get('maxTokenBudget') as string),
-    maxAgents: parseInt(form.get('maxAgents') as string, 10) || 5,
-    maxSkills: parseInt(form.get('maxSkills') as string, 10) || 10,
-    maxMemoryItems: parseInt(form.get('maxMemoryItems') as string, 10) || 1000,
-    maxGroupsOwned: parseInt(form.get('maxGroupsOwned') as string, 10) || 5,
-  };
-
   const providers: string[] = [];
   for (const p of availableProviders) {
     if (form.get(`provider_${p.provider}`) === 'on') providers.push(p.provider);
   }
-  data['allowedProviders'] = providers;
 
-  // Cron settings
-  data['cronEnabled'] = form.get('cronEnabled') === 'on';
-  data['maxScheduledTasks'] = parseInt(form.get('maxScheduledTasks') as string, 10) || 5;
-  data['minCronIntervalSecs'] = parseInt(form.get('minCronIntervalSecs') as string, 10) || 300;
-  data['maxTokensPerCronRun'] = parseIntOrNull(form.get('maxTokensPerCronRun') as string);
-
-  return data;
+  return {
+    name: parsed.name,
+    description: parsed.description && parsed.description.length > 0 ? parsed.description : null,
+    maxTokenBudget: emptyToNull(parsed.maxTokenBudget),
+    maxAgents: parsed.maxAgents,
+    maxSkills: parsed.maxSkills,
+    maxMemoryItems: parsed.maxMemoryItems,
+    maxGroupsOwned: parsed.maxGroupsOwned,
+    allowedProviders: providers,
+    cronEnabled: form.get('cronEnabled') === 'on',
+    maxScheduledTasks: parsed.maxScheduledTasks,
+    minCronIntervalSecs: parsed.minCronIntervalSecs,
+    maxTokensPerCronRun: emptyToNull(parsed.maxTokensPerCronRun),
+  };
 }
 
 function useProviders() {
@@ -77,8 +97,9 @@ function useProviders() {
         );
       const enabled = (res ?? []).filter((p) => p.isEnabled);
       setProviders(enabled.map((p) => ({ provider: p.provider, displayName: p.displayName })));
-    } catch {
+    } catch (e) {
       setProviders([]);
+      toast.error(e instanceof Error ? e.message : 'Failed to load providers');
     } finally {
       setLoading(false);
     }
@@ -107,6 +128,7 @@ export function CreatePolicyDialog({
   onSubmit: (data: Record<string, unknown>) => void;
 }) {
   const { providers, loading: providersLoading } = useProviders();
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -120,11 +142,23 @@ export function CreatePolicyDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(buildPolicyData(new FormData(e.currentTarget), providers));
+            const form = new FormData(e.currentTarget);
+            const parsed = parseForm(policyFormSchema, policyFormInput(form));
+            if (!parsed.success) {
+              setErrors(parsed.fieldErrors);
+              return;
+            }
+            setErrors({});
+            onSubmit(policyPayload(parsed.data, form, providers));
           }}
           className="flex flex-col gap-4"
+          noValidate
         >
-          <PolicyFormFields providers={providers} providersLoading={providersLoading} />
+          <PolicyFormFields
+            providers={providers}
+            providersLoading={providersLoading}
+            errors={errors}
+          />
           <DialogFooter>
             <Button
               type="button"
@@ -162,6 +196,7 @@ export function EditPolicyDialog({
   onSubmit: (id: string, data: Record<string, unknown>) => void;
 }) {
   const { providers, loading: providersLoading } = useProviders();
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   if (!policy) return null;
 
@@ -175,14 +210,23 @@ export function EditPolicyDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSubmit(policy.id, buildPolicyData(new FormData(e.currentTarget), providers));
+            const form = new FormData(e.currentTarget);
+            const parsed = parseForm(policyFormSchema, policyFormInput(form));
+            if (!parsed.success) {
+              setErrors(parsed.fieldErrors);
+              return;
+            }
+            setErrors({});
+            onSubmit(policy.id, policyPayload(parsed.data, form, providers));
           }}
           className="flex flex-col gap-4"
+          noValidate
         >
           <PolicyFormFields
             policy={policy}
             providers={providers}
             providersLoading={providersLoading}
+            errors={errors}
           />
           <DialogFooter>
             <Button
@@ -213,10 +257,12 @@ function PolicyFormFields({
   policy,
   providers,
   providersLoading,
+  errors,
 }: {
   policy?: ApiPolicy;
   providers: ProviderOption[];
   providersLoading: boolean;
+  errors?: FieldErrors;
 }) {
   return (
     <>
@@ -227,8 +273,11 @@ function PolicyFormFields({
           name="name"
           placeholder="e.g. Standard, Pro, Enterprise"
           defaultValue={policy?.name ?? ''}
+          maxLength={60}
+          aria-invalid={errors?.['name'] ? true : undefined}
           required
         />
+        <FieldError message={errors?.['name']} />
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="policy-description">Description</Label>
@@ -237,7 +286,10 @@ function PolicyFormFields({
           name="description"
           placeholder="Brief description of this policy tier"
           defaultValue={policy?.description ?? ''}
+          maxLength={200}
+          aria-invalid={errors?.['description'] ? true : undefined}
         />
+        <FieldError message={errors?.['description']} />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -250,7 +302,9 @@ function PolicyFormFields({
             min="0"
             placeholder="Empty = unlimited"
             defaultValue={policy?.maxTokenBudget ?? ''}
+            aria-invalid={errors?.['maxTokenBudget'] ? true : undefined}
           />
+          <FieldError message={errors?.['maxTokenBudget']} />
           <p className="text-xs text-muted-foreground">In USD cents. Leave empty for unlimited.</p>
         </div>
         <div className="flex flex-col gap-2">
@@ -261,8 +315,10 @@ function PolicyFormFields({
             type="number"
             min="1"
             defaultValue={policy?.maxAgents ?? 5}
+            aria-invalid={errors?.['maxAgents'] ? true : undefined}
             required
           />
+          <FieldError message={errors?.['maxAgents']} />
         </div>
       </div>
 
@@ -275,8 +331,10 @@ function PolicyFormFields({
             type="number"
             min="1"
             defaultValue={policy?.maxSkills ?? 10}
+            aria-invalid={errors?.['maxSkills'] ? true : undefined}
             required
           />
+          <FieldError message={errors?.['maxSkills']} />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="policy-maxMemoryItems">Max Memory Items</Label>
@@ -286,8 +344,10 @@ function PolicyFormFields({
             type="number"
             min="1"
             defaultValue={policy?.maxMemoryItems ?? 1000}
+            aria-invalid={errors?.['maxMemoryItems'] ? true : undefined}
             required
           />
+          <FieldError message={errors?.['maxMemoryItems']} />
         </div>
       </div>
 
@@ -299,8 +359,10 @@ function PolicyFormFields({
           type="number"
           min="1"
           defaultValue={policy?.maxGroupsOwned ?? 5}
+          aria-invalid={errors?.['maxGroupsOwned'] ? true : undefined}
           required
         />
+        <FieldError message={errors?.['maxGroupsOwned']} />
       </div>
 
       <div className="flex flex-col gap-2">
@@ -357,7 +419,9 @@ function PolicyFormFields({
             type="number"
             min="1"
             defaultValue={policy?.maxScheduledTasks ?? 5}
+            aria-invalid={errors?.['maxScheduledTasks'] ? true : undefined}
           />
+          <FieldError message={errors?.['maxScheduledTasks']} />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="policy-minCronIntervalSecs">Min Interval (s)</Label>
@@ -367,7 +431,9 @@ function PolicyFormFields({
             type="number"
             min="60"
             defaultValue={policy?.minCronIntervalSecs ?? 300}
+            aria-invalid={errors?.['minCronIntervalSecs'] ? true : undefined}
           />
+          <FieldError message={errors?.['minCronIntervalSecs']} />
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="policy-maxTokensPerCronRun">Max Tokens/Run</Label>
@@ -378,7 +444,9 @@ function PolicyFormFields({
             min="0"
             placeholder="Unlimited"
             defaultValue={policy?.maxTokensPerCronRun ?? ''}
+            aria-invalid={errors?.['maxTokensPerCronRun'] ? true : undefined}
           />
+          <FieldError message={errors?.['maxTokensPerCronRun']} />
         </div>
       </div>
     </>

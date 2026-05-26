@@ -14,6 +14,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Table,
   TableBody,
   TableCell,
@@ -186,6 +196,11 @@ export function MembersDialog({
   const [users, setUsers] = useState<ApiUser[]>([]);
   const [addUserId, setAddUserId] = useState('');
   const [addRole, setAddRole] = useState<'OWNER' | 'MEMBER'>('MEMBER');
+  // Pending destructive actions awaiting AlertDialog confirmation. Only
+  // `OWNER → MEMBER` demotions and member removals are gated — promotions
+  // and benign edits fire immediately to keep the flow snappy.
+  const [removeCandidate, setRemoveCandidate] = useState<ApiGroupMember | null>(null);
+  const [demoteCandidate, setDemoteCandidate] = useState<ApiGroupMember | null>(null);
 
   const fetchMembers = useCallback(async () => {
     if (!group) return;
@@ -318,10 +333,15 @@ export function MembersDialog({
                         className="rounded-md border bg-background px-2 py-1 text-sm"
                         value={member.role}
                         onChange={(e) => {
-                          void handleRoleChange(
-                            member.userId,
-                            e.target.value as 'OWNER' | 'MEMBER',
-                          );
+                          const next = e.target.value as 'OWNER' | 'MEMBER';
+                          if (next === member.role) return;
+                          // OWNER → MEMBER is destructive (loses privileges).
+                          // Other transitions fire immediately.
+                          if (member.role === 'OWNER' && next === 'MEMBER') {
+                            setDemoteCandidate(member);
+                            return;
+                          }
+                          void handleRoleChange(member.userId, next);
                         }}
                         disabled={saving || (member.role === 'OWNER' && ownerCount <= 1)}
                       >
@@ -335,7 +355,7 @@ export function MembersDialog({
                         size="icon"
                         className="size-8 text-destructive hover:text-destructive"
                         onClick={() => {
-                          void handleRemoveMember(member.userId);
+                          setRemoveCandidate(member);
                         }}
                         disabled={saving || (member.role === 'OWNER' && ownerCount <= 1)}
                         title={
@@ -424,6 +444,80 @@ export function MembersDialog({
           </Button>
         )}
       </DialogContent>
+
+      {/* Confirm member removal */}
+      <AlertDialog
+        open={removeCandidate !== null}
+        onOpenChange={(open) => {
+          if (!open && !saving) setRemoveCandidate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removeCandidate
+                ? `Remove ${removeCandidate.user.name} (${removeCandidate.user.email}) from ${group.name}? They will lose access to anything shared with the group. This cannot be undone.`
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              onClick={(e) => {
+                e.preventDefault();
+                if (!removeCandidate) return;
+                const userId = removeCandidate.userId;
+                void handleRemoveMember(userId).finally(() => {
+                  setRemoveCandidate(null);
+                });
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm OWNER → MEMBER demotion */}
+      <AlertDialog
+        open={demoteCandidate !== null}
+        onOpenChange={(open) => {
+          if (!open && !saving) setDemoteCandidate(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Demote owner to member?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {demoteCandidate
+                ? `${demoteCandidate.user.name} will lose owner privileges (invite, role changes, member removal) but stay in the group.`
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              onClick={(e) => {
+                e.preventDefault();
+                if (!demoteCandidate) return;
+                const userId = demoteCandidate.userId;
+                void handleRoleChange(userId, 'MEMBER').finally(() => {
+                  setDemoteCandidate(null);
+                });
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Demote to member
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
