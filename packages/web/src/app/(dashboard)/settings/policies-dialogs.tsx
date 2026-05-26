@@ -46,7 +46,6 @@ function policyFormInput(form: FormData) {
     maxTokenBudget: formString(form, 'maxTokenBudget'),
     maxAgents: formString(form, 'maxAgents'),
     maxSkills: formString(form, 'maxSkills'),
-    maxMemoryItems: formString(form, 'maxMemoryItems'),
     maxGroupsOwned: formString(form, 'maxGroupsOwned'),
     maxScheduledTasks: formString(form, 'maxScheduledTasks'),
     minCronIntervalSecs: formString(form, 'minCronIntervalSecs'),
@@ -74,7 +73,6 @@ function policyPayload(
     maxTokenBudget: emptyToNull(parsed.maxTokenBudget),
     maxAgents: parsed.maxAgents,
     maxSkills: parsed.maxSkills,
-    maxMemoryItems: parsed.maxMemoryItems,
     maxGroupsOwned: parsed.maxGroupsOwned,
     allowedProviders: providers,
     cronEnabled: form.get('cronEnabled') === 'on',
@@ -337,32 +335,18 @@ function PolicyFormFields({
           <FieldError message={errors?.['maxSkills']} />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="policy-maxMemoryItems">Max Memory Items</Label>
+          <Label htmlFor="policy-maxGroupsOwned">Max Groups Owned</Label>
           <Input
-            id="policy-maxMemoryItems"
-            name="maxMemoryItems"
+            id="policy-maxGroupsOwned"
+            name="maxGroupsOwned"
             type="number"
             min="1"
-            defaultValue={policy?.maxMemoryItems ?? 1000}
-            aria-invalid={errors?.['maxMemoryItems'] ? true : undefined}
+            defaultValue={policy?.maxGroupsOwned ?? 5}
+            aria-invalid={errors?.['maxGroupsOwned'] ? true : undefined}
             required
           />
-          <FieldError message={errors?.['maxMemoryItems']} />
+          <FieldError message={errors?.['maxGroupsOwned']} />
         </div>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="policy-maxGroupsOwned">Max Groups Owned</Label>
-        <Input
-          id="policy-maxGroupsOwned"
-          name="maxGroupsOwned"
-          type="number"
-          min="1"
-          defaultValue={policy?.maxGroupsOwned ?? 5}
-          aria-invalid={errors?.['maxGroupsOwned'] ? true : undefined}
-          required
-        />
-        <FieldError message={errors?.['maxGroupsOwned']} />
       </div>
 
       <div className="flex flex-col gap-2">

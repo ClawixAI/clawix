@@ -114,7 +114,6 @@ export const policyFormSchema = z.object({
   maxTokenBudget: optionalIntMin('Token budget', 0),
   maxAgents: intMin('Max agents', 1),
   maxSkills: intMin('Max skills', 1),
-  maxMemoryItems: intMin('Max memory items', 1),
   maxGroupsOwned: intMin('Max groups owned', 1),
   maxScheduledTasks: intMin('Max scheduled tasks', 1),
   minCronIntervalSecs: intMin('Min cron interval', 60),
