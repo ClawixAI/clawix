@@ -27,8 +27,30 @@ import {
   SCAN_BATCH_SIZE,
 } from '../cache/cache.constants.js';
 import { AgentDefinitionRepository } from '../db/agent-definition.repository.js';
+import { AgentRunRegistry } from './agent-run-registry.service.js';
 
 const logger = createLogger('engine:task-executor');
+
+/**
+ * Fallback wall-clock cap (ms) for a sub-agent run when the submit options
+ * carry no policy-resolved timeout (e.g. an orphan recovered after a crash,
+ * which has no parent/policy context). Overridable via SUBAGENT_TIMEOUT_MS.
+ */
+const DEFAULT_SUBAGENT_TIMEOUT_MS = (() => {
+  const raw = parseInt(process.env['SUBAGENT_TIMEOUT_MS'] ?? '300000', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 300000;
+})();
+
+/**
+ * Grace added on top of the run's own timeout before the executor's hard
+ * watchdog fires. The reasoning loop should abort cleanly at `timeoutMs`; the
+ * watchdog only fires if it cannot (e.g. a tool that ignores the abort signal),
+ * forcibly freeing the slot and reporting failure to the parent.
+ */
+const SUBAGENT_WATCHDOG_GRACE_MS = 30_000;
+
+/** Minimum spacing between progress heartbeats forwarded to the parent channel. */
+const SUBAGENT_PROGRESS_THROTTLE_MS = 30_000;
 
 // ------------------------------------------------------------------ //
 //  Types                                                              //
@@ -51,6 +73,14 @@ interface SubmitOptions {
    * In-memory only — the recovery path (orphan runs) has no parent signal.
    */
   readonly abortSignal?: AbortSignal;
+  /**
+   * Wall-clock cap (ms) for the run, resolved from the spawning user's policy
+   * (`Policy.maxSubAgentRunMs`). Drives both the reasoning loop's own timeout
+   * and the executor's hard watchdog. Absent on the orphan-recovery path.
+   */
+  readonly timeoutMs?: number;
+  /** Human-readable agent label, used to tag progress heartbeats to the parent. */
+  readonly displayName?: string;
 }
 
 interface QueueItem {
@@ -96,6 +126,7 @@ export class TaskExecutorService implements OnModuleInit {
     private readonly redis: RedisService,
     private readonly pubsub: RedisPubSubService,
     private readonly agentDefRepo: AgentDefinitionRepository,
+    private readonly agentRunRegistry: AgentRunRegistry,
   ) {
     this.maxConcurrent = parseInt(process.env['MAX_CONCURRENT_AGENTS'] ?? '10', 10);
     this.maxPending = parseInt(process.env['MAX_PENDING_AGENTS'] ?? '100', 10);
@@ -257,31 +288,104 @@ export class TaskExecutorService implements OnModuleInit {
   /**
    * Execute a single task via AgentRunnerService.
    *
-   * Decrements the active counter and drains the queue when done.
-   * On completion (success or failure), publishes result to Redis if this is a child agent.
+   * Guarantees the parent always hears back and the concurrency slot is always
+   * freed — exactly once — via a `settled` latch shared by three racing exits:
+   *   1. the run resolves        → publish result,
+   *   2. the run rejects         → publish failure,
+   *   3. the hard watchdog fires → abort the in-flight run, publish failure.
+   *
+   * The watchdog (3) is the backstop for a run that cannot honor its own
+   * timeout (e.g. a tool that ignores the abort signal): without it the awaited
+   * `agentRunner.run()` would never settle, leaking the slot forever and
+   * leaving the parent waiting indefinitely with no feedback.
    */
   private async executeTask(item: QueueItem): Promise<void> {
     const { agentRunId, options } = item;
+    const timeoutMs = options.timeoutMs ?? DEFAULT_SUBAGENT_TIMEOUT_MS;
 
-    logger.debug({ agentRunId }, 'Starting task execution');
+    logger.debug({ agentRunId, timeoutMs }, 'Starting task execution');
+
+    let settled = false;
+    const finalize = (): void => {
+      this.activeCount_--;
+      this.drain();
+    };
+
+    // Backstop: if the run hasn't settled within its timeout + grace, the loop
+    // failed to abort itself. Forcibly abort, report failure to the parent, and
+    // free the slot — the orphaned promise (if any) becomes a no-op on settle.
+    const watchdog = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      logger.error(
+        { agentRunId, timeoutMs },
+        'Sub-agent watchdog fired — run did not settle; aborting and failing',
+      );
+      this.agentRunRegistry.abort(agentRunId, 'watchdog_timeout');
+      this.agentRunRepo
+        .update(agentRunId, {
+          status: 'failed',
+          error: 'Sub-agent run timed out (watchdog)',
+          completedAt: new Date(),
+        })
+        .catch((err: unknown) => {
+          logger.error({ agentRunId, err }, 'Failed to mark watchdog-timed-out run as failed');
+        });
+      void this.publishFailureIfChild(agentRunId, new Error('Sub-agent run timed out'));
+      finalize();
+    }, timeoutMs + SUBAGENT_WATCHDOG_GRACE_MS);
+    if (typeof watchdog === 'object' && watchdog !== null && typeof watchdog.unref === 'function') {
+      watchdog.unref();
+    }
 
     try {
       const result = await this.agentRunner.run({
         ...options,
         isSubAgent: true,
         agentRunId,
+        timeoutMs,
+        onProgress: this.buildProgressForwarder(options),
       });
 
+      if (settled) return; // watchdog already handled it
+      settled = true;
+      clearTimeout(watchdog);
       logger.info({ agentRunId }, 'Task completed successfully');
       await this.publishResultIfChild(agentRunId, result);
+      finalize();
     } catch (err: unknown) {
+      if (settled) return; // watchdog already handled it
+      settled = true;
+      clearTimeout(watchdog);
       const error = err instanceof Error ? err : new Error(String(err));
       logger.error({ agentRunId, error: error.message }, 'Task execution failed');
       await this.publishFailureIfChild(agentRunId, error);
-    } finally {
-      this.activeCount_--;
-      this.drain();
+      finalize();
     }
+  }
+
+  /**
+   * Build a throttled progress callback that forwards a sub-agent's tool
+   * activity to the parent's channel, so long-running sub-agents are visibly
+   * alive instead of looking hung. Transient: delivered as a channel message,
+   * not persisted to session history.
+   */
+  private buildProgressForwarder(options: SubmitOptions): (hint: string) => void {
+    const label = options.displayName ?? 'sub-agent';
+    let lastEmit = 0;
+    return (hint: string): void => {
+      const now = Date.now();
+      if (now - lastEmit < SUBAGENT_PROGRESS_THROTTLE_MS) return;
+      lastEmit = now;
+      void this.pubsub
+        .publish(PUBSUB_CHANNELS.channelResponseReady, {
+          sessionId: options.sessionId,
+          output: `_${label} is working: ${hint}_`,
+        })
+        .catch((err: unknown) => {
+          logger.debug({ err }, 'Failed to forward sub-agent progress');
+        });
+    };
   }
 
   // ---------------------------------------------------------------- //

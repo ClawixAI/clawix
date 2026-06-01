@@ -198,6 +198,7 @@ const mockPolicy = {
   maxTokensPerCronRun: null,
   allowBrowserCdp: false,
   maxConcurrentBrowserSessions: 2,
+  maxSubAgentRunMs: 300000,
   isActive: true,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -950,6 +951,7 @@ describe('AgentRunnerService', () => {
       'run-1', // parentAgentRunId (the current run's ID)
       'user-1', // userId
       undefined, // budgetTracker — none in this test (no tokenBudget passed)
+      300000, // subAgentTimeoutMs from policy.maxSubAgentRunMs
     );
   });
 

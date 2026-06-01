@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Policy" ADD COLUMN     "maxSubAgentRunMs" INTEGER NOT NULL DEFAULT 300000;

@@ -244,6 +244,33 @@ describe('AgentRunRepository', () => {
         NotFoundError,
       );
     });
+
+    it('should reset startedAt when transitioning to running so the execution clock matches the watchdog', async () => {
+      // The pending row is created with startedAt at creation time; a sub-agent
+      // may then wait in the executor queue. Anchoring startedAt to the
+      // running transition keeps the stale-run reaper's clock aligned with the
+      // executor watchdog and reasoning-loop timeout (all execution-anchored),
+      // so the watchdog fires before the reaper instead of the reverse.
+      mockPrisma.agentRun.update.mockResolvedValue({ ...mockAgentRun, status: 'running' });
+
+      await repository.update('run-1', { status: 'running' });
+
+      expect(mockPrisma.agentRun.update).toHaveBeenCalledWith({
+        where: { id: 'run-1' },
+        data: { status: 'running', startedAt: expect.any(Date) },
+      });
+    });
+
+    it('should NOT touch startedAt for non-running transitions', async () => {
+      mockPrisma.agentRun.update.mockResolvedValue({ ...mockAgentRun, status: 'completed' });
+
+      await repository.update('run-1', { status: 'completed', output: 'done' });
+
+      expect(mockPrisma.agentRun.update).toHaveBeenCalledWith({
+        where: { id: 'run-1' },
+        data: { status: 'completed', output: 'done' },
+      });
+    });
   });
 
   describe('delete', () => {

@@ -131,6 +131,7 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 60,
       maxPythonCpuCores: 1,
       maxConcurrentPythonRuns: 2,
+      maxSubAgentRunMs: 300000, // 5 min
     },
     create: {
       name: 'Standard',
@@ -149,6 +150,7 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 60,
       maxPythonCpuCores: 1,
       maxConcurrentPythonRuns: 2,
+      maxSubAgentRunMs: 300000, // 5 min
     },
   });
   console.log(`  Policy: ${standardPolicy.name}`);
@@ -163,6 +165,7 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 300,
       maxPythonCpuCores: 2,
       maxConcurrentPythonRuns: 3,
+      maxSubAgentRunMs: 480000, // 8 min
     },
     create: {
       name: 'Extended',
@@ -181,6 +184,7 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 300,
       maxPythonCpuCores: 2,
       maxConcurrentPythonRuns: 3,
+      maxSubAgentRunMs: 480000, // 8 min
     },
   });
   console.log(`  Policy: ${extendedPolicy.name}`);
@@ -195,6 +199,7 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 600,
       maxPythonCpuCores: 4,
       maxConcurrentPythonRuns: 5,
+      maxSubAgentRunMs: 540000, // 9 min (kept under the 10-min stale-run reaper)
     },
     create: {
       name: 'Unrestricted',
@@ -213,6 +218,7 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 600,
       maxPythonCpuCores: 4,
       maxConcurrentPythonRuns: 5,
+      maxSubAgentRunMs: 540000, // 9 min (kept under the 10-min stale-run reaper)
     },
   });
   console.log(`  Policy: ${unrestrictedPolicy.name}`);

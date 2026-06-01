@@ -67,6 +67,7 @@ import { TaskRunMessageRepository } from '../db/task-run-message.repository.js';
 import type { RunOptions, RunResult } from './agent-runner.types.js';
 import { SessionMessageStore } from './message-store/session-message-store.js';
 import type { MessageStore } from './message-store/message-store.js';
+import { computeHiddenInHistory } from './history-visibility.js';
 import type { Session } from '../generated/prisma/client.js';
 import { ProviderConfigService } from '../provider-config/provider-config.service.js';
 import { createProvider } from './providers/provider-factory.js';
@@ -485,6 +486,7 @@ export class AgentRunnerService {
             agentRun.id,
             userId,
             budgetTracker,
+            policy.maxSubAgentRunMs,
           ),
         );
       }
@@ -591,7 +593,9 @@ export class AgentRunnerService {
       });
 
       // Step 15: Run loop
-      // No default wall-clock timeout — let the model finish. The stale run reaper (10 min) is the safety net.
+      // Sub-agents always carry a policy-resolved timeout (supplied by the
+      // TaskExecutorService); primary runs have none by default and let the
+      // model finish, with the stale-run reaper (10 min) as their backstop.
       const timeoutMs = options.timeoutMs;
 
       // Wire the streaming event sink only for primary runs of agents that
@@ -644,7 +648,11 @@ export class AgentRunnerService {
       if (!isSubAgent) {
         const loopMessages = loopResult.messages.slice(initialMessages.length);
         if (loopMessages.length > 0) {
-          const savedIds = await store.saveMessages(loopMessages);
+          // Non-streamed runs only showed the user one combined final reply, so
+          // hide the intermediate reasoning steps from history to match. Streamed
+          // runs surfaced every step live, so all stay visible.
+          const hiddenInHistory = computeHiddenInHistory(loopMessages, streamingUsed);
+          const savedIds = await store.saveMessages(loopMessages, { hiddenInHistory });
           // Find the ID of the last assistant message for WebSocket delivery
           for (let i = loopMessages.length - 1; i >= 0; i--) {
             if (loopMessages[i]!.role === 'assistant') {

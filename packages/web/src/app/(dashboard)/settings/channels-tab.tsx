@@ -82,7 +82,7 @@ function ChannelIcon({ type }: { type: string }) {
  * Build a config object from form data, merging with existing config.
  * Blank sensitive fields (e.g. bot token) are omitted to preserve existing values.
  */
-function buildConfig(
+export function buildConfig(
   type: string,
   form: FormData,
   existing: Record<string, unknown> = {},
@@ -92,8 +92,14 @@ function buildConfig(
   if (type === 'telegram') {
     const botToken = formString(form, 'bot_token');
     const mode = formString(form, 'mode');
+    const webhookUrl = formString(form, 'webhook_url');
+    const webhookSecret = formString(form, 'webhook_secret');
     if (botToken) config['bot_token'] = botToken;
     if (mode) config['mode'] = mode;
+    // Webhook fields render only in webhook mode; omit when blank so a blank
+    // secret preserves the existing one (same convention as bot_token).
+    if (webhookUrl) config['webhook_url'] = webhookUrl;
+    if (webhookSecret) config['webhook_secret'] = webhookSecret;
   }
 
   if (type === 'web') {

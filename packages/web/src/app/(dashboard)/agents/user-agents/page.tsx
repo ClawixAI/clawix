@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { ProviderModelFields, agentFormInput, useProviders } from '../agent-form-fields';
+import { selectBoundAgentIds, type UserAgentBinding } from './bound-agents';
 import {
   Table,
   TableBody,
@@ -1209,11 +1210,14 @@ export default function UserAgentsPage() {
       const [agentsRes, userAgentsRes] = await Promise.all([
         authFetch<PaginatedAgents>('/api/v1/agents?limit=100&includeCreatedBy=true'),
         // Endpoint returns the array directly, not wrapped in { data }.
-        authFetch<{ agentDefinitionId: string }[]>('/api/v1/agents/user-agents').catch(() => []),
+        // For admins it returns ALL users' bindings, so selectBoundAgentIds
+        // filters to the current user — boundAgentIds must only reflect *my*
+        // assigned primary.
+        authFetch<UserAgentBinding[]>('/api/v1/agents/user-agents').catch(() => []),
       ]);
       const all = Array.isArray(agentsRes.data) ? agentsRes.data : [];
       const bindings = Array.isArray(userAgentsRes) ? userAgentsRes : [];
-      setBoundAgentIds(new Set(bindings.map((b) => b.agentDefinitionId)));
+      setBoundAgentIds(selectBoundAgentIds(bindings, currentUserId));
 
       // Official agents (primary first, then workers)
       setOfficialAgents(

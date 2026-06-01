@@ -1,6 +1,6 @@
 import type { ChatMessage } from '@clawix/shared';
 import type { SessionManagerService } from '../session-manager.service.js';
-import type { MessageStore } from './message-store.js';
+import type { MessageStore, SaveMessagesOptions } from './message-store.js';
 
 export class SessionMessageStore implements MessageStore {
   constructor(
@@ -12,7 +12,10 @@ export class SessionMessageStore implements MessageStore {
     return this.sessionManager.loadMessages(this.sessionId);
   }
 
-  saveMessages(messages: readonly ChatMessage[]): Promise<readonly string[]> {
-    return this.sessionManager.saveMessages(this.sessionId, messages);
+  saveMessages(
+    messages: readonly ChatMessage[],
+    opts?: SaveMessagesOptions,
+  ): Promise<readonly string[]> {
+    return this.sessionManager.saveMessages(this.sessionId, messages, opts);
   }
 }

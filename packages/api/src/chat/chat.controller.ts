@@ -205,14 +205,18 @@ export class ChatController {
     const limit = Math.min(Number(query.limit) || 50, 100);
     const skip = (page - 1) * limit;
 
+    // `hiddenInHistory` rows are intermediate reasoning steps of a non-streamed
+    // run — excluded so reopened history mirrors the single combined reply the
+    // user saw live. Both queries filter identically to keep pagination correct.
+    const where = { sessionId, archivedAt: null, hiddenInHistory: false };
     const [data, total] = await Promise.all([
       this.prisma.sessionMessage.findMany({
-        where: { sessionId, archivedAt: null },
+        where,
         orderBy: { ordering: 'desc' },
         skip,
         take: limit,
       }),
-      this.prisma.sessionMessage.count({ where: { sessionId, archivedAt: null } }),
+      this.prisma.sessionMessage.count({ where }),
     ]);
 
     return {

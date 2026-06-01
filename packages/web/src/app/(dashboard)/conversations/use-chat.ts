@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import type { ToolCallRequest, ToolProgressMode } from '@clawix/shared';
 import { resolveToolProgressMode } from '@clawix/shared';
 
-import { authFetch, getAccessToken } from '@/lib/auth';
+import { authFetch, clearTokens, getAccessToken } from '@/lib/auth';
 import { uuidv4 } from '@/lib/utils';
 
 /**
@@ -441,9 +441,12 @@ export function useChat() {
       setIsConnected(false);
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
 
-      // Auth failure — don't reconnect, redirect to login
+      // Auth failure — clear the stale tokens and redirect to login instead of
+      // leaving the user stranded on a half-broken dashboard.
       if (event.code === 4001) {
         setError('Session expired. Please log in again.');
+        clearTokens();
+        window.location.href = '/login';
         return;
       }
 

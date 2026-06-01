@@ -9,10 +9,21 @@ import { createLogger } from '@clawix/shared';
 
 import type { WebAdapterExtended } from './web.adapter.js';
 import { serializeServerMessage } from './web.protocol.js';
+import { getAllowedOrigins } from '../../common/security.config.js';
 
 const logger = createLogger('channels:web:gateway');
 
 const HEARTBEAT_INTERVAL = 30_000;
+
+/**
+ * Validate a WebSocket upgrade's `Origin` header against the allowlist to block
+ * cross-site WebSocket hijacking. Non-browser clients omit `Origin`; allow
+ * those (browsers always send it, so a malicious page is still rejected).
+ */
+export function isWsOriginAllowed(origin: string | undefined, allowed: string[]): boolean {
+  if (origin === undefined || origin === '') return true;
+  return allowed.includes(origin);
+}
 
 interface SocketWithAlive extends WebSocket {
   isAlive?: boolean;
@@ -34,6 +45,7 @@ interface JwtPayload {
 export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
   private adapter: WebAdapterExtended | null = null;
   private wss: WebSocketServer | null = null;
+  private allowedOrigins: string[] = [];
 
   constructor(
     private readonly jwtService: JwtService,
@@ -43,6 +55,9 @@ export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     const server = this.httpAdapterHost.httpAdapter.getHttpServer();
+    // Resolve the Origin allowlist once at startup (throws on a misconfigured
+    // wildcard, surfacing the error early) — shared with the HTTP CORS layer.
+    this.allowedOrigins = getAllowedOrigins();
     // noServer mode: we manually route only matching paths so that other
     // WebSocketServers (e.g. /ws/notifications) can coexist on the same
     // HTTP server without one tearing down the other's upgrade.
@@ -55,6 +70,17 @@ export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
     server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
       const url = new URL(req.url ?? '/', 'http://localhost');
       if (url.pathname !== '/ws/chat') return;
+      // Block cross-site WebSocket hijacking: reject upgrades whose Origin is
+      // not allowlisted before completing the handshake.
+      if (!isWsOriginAllowed(req.headers.origin, this.allowedOrigins)) {
+        logger.warn(
+          { origin: req.headers.origin },
+          'WebSocket upgrade rejected — origin not allowed',
+        );
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
       this.wss?.handleUpgrade(req, socket, head, (ws) => {
         this.wss?.emit('connection', ws, req);
       });

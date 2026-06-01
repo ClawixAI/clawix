@@ -161,6 +161,15 @@ export class AgentRunRepository {
         where: { id },
         data: {
           ...(data.status ? { status: data.status } : {}),
+          // Anchor the execution clock to the pending→running transition.
+          // `startedAt` defaults to row-creation time, but a spawned sub-agent
+          // can sit in the executor queue before it runs. The stale-run reaper
+          // measures staleness from `startedAt`, while the executor watchdog
+          // and reasoning-loop timeout are anchored at execution start — so a
+          // queued run could be reaped (10 min from creation) before its own
+          // watchdog (timeout + 30s from execution) fired. Resetting here keeps
+          // all three layers on the same clock so the watchdog wins.
+          ...(data.status === 'running' ? { startedAt: new Date() } : {}),
           ...(data.sessionId !== undefined ? { sessionId: data.sessionId } : {}),
           ...(data.output !== undefined ? { output: data.output } : {}),
           ...(data.error !== undefined ? { error: data.error } : {}),

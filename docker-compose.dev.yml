@@ -51,6 +51,7 @@ services:
       - ./packages/api/prisma.config.ts:/app/packages/api/prisma.config.ts
       - ./packages/api/package.json:/app/packages/api/package.json
       - ./packages/api/tsconfig.json:/app/packages/api/tsconfig.json
+      - ./packages/api/nest-cli.json:/app/packages/api/nest-cli.json
       - ./packages/shared/src:/app/packages/shared/src
       - ./packages/shared/package.json:/app/packages/shared/package.json
       - ./packages/shared/tsconfig.json:/app/packages/shared/tsconfig.json

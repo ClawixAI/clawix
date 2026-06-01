@@ -427,6 +427,49 @@ describe('SessionManagerService', () => {
       });
     });
 
+    it('persists per-message hiddenInHistory from opts (aligned by index)', async () => {
+      mockPrisma.sessionMessage.count.mockResolvedValue(0);
+      const mockCreate = vi
+        .fn()
+        .mockResolvedValueOnce({ id: 'id-1' })
+        .mockResolvedValueOnce({ id: 'id-2' });
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const fakeTx = { sessionMessage: { create: mockCreate } };
+        return fn(fakeTx);
+      });
+
+      await service.saveMessages(
+        'session-1',
+        [
+          { role: 'assistant', content: 'intermediate step' },
+          { role: 'assistant', content: 'final reply' },
+        ],
+        { hiddenInHistory: [true, false] },
+      );
+
+      expect(mockCreate).toHaveBeenNthCalledWith(1, {
+        data: expect.objectContaining({ content: 'intermediate step', hiddenInHistory: true }),
+      });
+      expect(mockCreate).toHaveBeenNthCalledWith(2, {
+        data: expect.objectContaining({ content: 'final reply', hiddenInHistory: false }),
+      });
+    });
+
+    it('defaults hiddenInHistory to false when opts omitted', async () => {
+      mockPrisma.sessionMessage.count.mockResolvedValue(0);
+      const mockCreate = vi.fn().mockResolvedValueOnce({ id: 'id-1' });
+      mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const fakeTx = { sessionMessage: { create: mockCreate } };
+        return fn(fakeTx);
+      });
+
+      await service.saveMessages('session-1', [{ role: 'user', content: 'Hello' }]);
+
+      expect(mockCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({ hiddenInHistory: false }),
+      });
+    });
+
     it('sets senderId to undefined when not provided', async () => {
       mockPrisma.sessionMessage.count.mockResolvedValue(0);
       const mockCreate = vi.fn().mockResolvedValueOnce({ id: 'id-1' });

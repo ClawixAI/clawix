@@ -50,7 +50,9 @@ export async function apiFetch<T>(
       credentials: 'include',
       signal: controller.signal,
       headers: {
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        // Let the browser set multipart Content-Type (with boundary) for
+        // FormData bodies; only force JSON for other non-empty bodies.
+        ...(body && !(body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...(headers as Record<string, string>),
       },

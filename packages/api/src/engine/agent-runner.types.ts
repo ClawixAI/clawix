@@ -47,7 +47,13 @@ export interface RunOptions {
    * caps total cost across primary + sub-agents.
    */
   readonly budgetTracker?: BudgetTracker;
-  /** Wall-clock timeout for the entire agent run in milliseconds. Default: 300000 (5 min). */
+  /**
+   * Wall-clock timeout for the entire agent run in milliseconds. When the
+   * reasoning loop exceeds this, it aborts in-flight work and returns with
+   * `hitTimeout`. Omitted for primary runs (no default — the stale-run reaper
+   * is their backstop); for sub-agents the TaskExecutorService always supplies
+   * a value resolved from the user's policy (`Policy.maxSubAgentRunMs`).
+   */
   readonly timeoutMs?: number;
   /** Caller-supplied persistence backend. When provided, agent-runner does NOT
    *  create or resume a Session — all transcript persistence flows through the store. */

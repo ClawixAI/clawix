@@ -46,11 +46,11 @@ export function buildHelmetOptions(): FastifyHelmetOptions {
 }
 
 /**
- * Build CORS options from environment.
- * Reads CORS_ALLOWED_ORIGINS (comma-separated).
- * Rejects wildcard '*' when credentials are enabled.
+ * Parse CORS_ALLOWED_ORIGINS (comma-separated) into a trimmed, non-empty list.
+ * Rejects wildcard '*' since credentials are enabled. Shared by the HTTP CORS
+ * layer and the WebSocket gateway's Origin check so both use one allowlist.
  */
-export function buildCorsOptions() {
+export function getAllowedOrigins(): string[] {
   const raw = process.env['CORS_ALLOWED_ORIGINS'] ?? 'http://localhost:3000';
   const origins = raw
     .split(',')
@@ -60,6 +60,17 @@ export function buildCorsOptions() {
   if (origins.includes('*')) {
     throw new Error("CORS_ALLOWED_ORIGINS must not contain '*' when credentials are enabled");
   }
+
+  return origins;
+}
+
+/**
+ * Build CORS options from environment.
+ * Reads CORS_ALLOWED_ORIGINS (comma-separated).
+ * Rejects wildcard '*' when credentials are enabled.
+ */
+export function buildCorsOptions() {
+  const origins = getAllowedOrigins();
 
   return {
     origin: origins,

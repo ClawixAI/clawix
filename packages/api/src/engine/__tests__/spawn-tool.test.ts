@@ -194,6 +194,7 @@ describe('spawn tool — task executor integration', () => {
       input: 'Summarize this',
       userId: 'user-1',
       sessionId: 'session-abc',
+      displayName: 'summarizer',
     });
   });
 

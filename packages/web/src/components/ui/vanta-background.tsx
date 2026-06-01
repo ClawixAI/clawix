@@ -130,11 +130,31 @@ export function VantaBackground({ effect, children, className }: VantaBackground
       }, 250);
     }
 
-    void createEffect();
+    // Respect reduced-motion: skip the WebGL/p5 background entirely.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    // Defer the heavy three.js / p5 dynamic import + WebGL init until the
+    // browser is idle so this decorative work never competes with first paint,
+    // hydration, or the route entrance animation. In dev this also pushes
+    // Next's on-demand compile of three/p5 off the critical first-load path.
+    let idleHandle: number | undefined;
+    let usedIdleCallback = false;
+    const scheduleInit = () => void createEffect();
+    if (typeof window.requestIdleCallback === 'function') {
+      usedIdleCallback = true;
+      idleHandle = window.requestIdleCallback(scheduleInit, { timeout: 2000 });
+    } else {
+      idleHandle = window.setTimeout(scheduleInit, 200);
+    }
+
     window.addEventListener('resize', handleResize);
 
     return () => {
       cancelled = true;
+      if (idleHandle !== undefined) {
+        if (usedIdleCallback) window.cancelIdleCallback(idleHandle);
+        else clearTimeout(idleHandle);
+      }
       if (resizeTimer) clearTimeout(resizeTimer);
       window.removeEventListener('resize', handleResize);
       destroyEffect();

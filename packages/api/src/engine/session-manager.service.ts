@@ -5,6 +5,7 @@ import type { ChatMessage } from '@clawix/shared';
 import type { Session } from '../generated/prisma/client.js';
 import { SessionRepository } from '../db/session.repository.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import type { SaveMessagesOptions } from './message-store/message-store.js';
 
 const logger = createLogger('engine:session-manager');
 
@@ -120,6 +121,7 @@ export class SessionManagerService {
   async saveMessages(
     sessionId: string,
     messages: readonly ChatMessage[],
+    opts?: SaveMessagesOptions,
   ): Promise<readonly string[]> {
     const currentCount = await this.prisma.sessionMessage.count({
       where: { sessionId, archivedAt: null },
@@ -140,6 +142,7 @@ export class SessionManagerService {
             toolCallId: msg.toolCallId,
             toolCalls: msg.toolCalls ? JSON.parse(JSON.stringify(msg.toolCalls)) : undefined,
             ordering: currentCount + i,
+            hiddenInHistory: opts?.hiddenInHistory?.[i] ?? false,
           },
         });
         createdIds.push(created.id);

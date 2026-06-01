@@ -299,12 +299,25 @@ export function ChatInput({
                   return;
                 }
               }
-              // Input history: ArrowUp/Down when not in slash menu.
-              // After programmatically restoring a history entry, schedule an
-              // autoResize on the next tick so the textarea grows/shrinks to
-              // match — onChange does not fire for setValue() and stale heights
-              // truncate long entries.
+              // Input history: ArrowUp/Down when not in slash menu. Only
+              // hijack the arrow when the caret sits at the absolute editable
+              // edge — start of the text for ArrowUp, end for ArrowDown — with a
+              // collapsed selection, so any in-draft edit (including soft-wrapped
+              // long lines that contain no '\n') moves the caret between rows as
+              // normal. We gate on caret *offset*, not logical-line detection:
+              // a CSS-wrapped line has no newline, so a '\n' scan would treat
+              // every wrapped row as the first/last line and wrongly recall
+              // history (#157). After restoring an entry we move the caret to
+              // that same edge (start for ArrowUp, end for ArrowDown) so repeated
+              // presses keep chaining through history, and schedule an autoResize
+              // on the next tick so the textarea grows/shrinks to match — onChange
+              // does not fire for setValue() and stale heights truncate long
+              // entries.
               if (e.key === 'ArrowUp' && !showCommands && inputHistory.length > 0) {
+                const el = e.currentTarget;
+                const caretAtStart =
+                  el.selectionStart === el.selectionEnd && el.selectionStart === 0;
+                if (!caretAtStart) return;
                 if (historyIndexRef.current === -1) {
                   savedInputRef.current = value;
                 }
@@ -312,12 +325,20 @@ export function ChatInput({
                 if (nextIndex !== historyIndexRef.current || historyIndexRef.current === -1) {
                   historyIndexRef.current = nextIndex;
                   setValue(inputHistory[nextIndex]!);
-                  setTimeout(autoResize, 0);
+                  setTimeout(() => {
+                    autoResize();
+                    const ta = textareaRef.current;
+                    if (ta) ta.selectionStart = ta.selectionEnd = 0;
+                  }, 0);
                   e.preventDefault();
                 }
                 return;
               }
               if (e.key === 'ArrowDown' && !showCommands && historyIndexRef.current >= 0) {
+                const el = e.currentTarget;
+                const caretAtEnd =
+                  el.selectionStart === el.selectionEnd && el.selectionStart === el.value.length;
+                if (!caretAtEnd) return;
                 e.preventDefault();
                 const nextIndex = historyIndexRef.current - 1;
                 historyIndexRef.current = nextIndex;
@@ -326,7 +347,11 @@ export function ChatInput({
                 } else {
                   setValue(inputHistory[nextIndex]!);
                 }
-                setTimeout(autoResize, 0);
+                setTimeout(() => {
+                  autoResize();
+                  const ta = textareaRef.current;
+                  if (ta) ta.selectionStart = ta.selectionEnd = ta.value.length;
+                }, 0);
                 return;
               }
               if (e.key === 'Enter' && !e.shiftKey) {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { IncomingMessage } from 'node:http';
-import { WebChatGateway } from '../web.gateway.js';
+import { WebChatGateway, isWsOriginAllowed } from '../web.gateway.js';
 
 // Mock logger
 vi.mock('@clawix/shared', async (importOriginal) => {
@@ -60,6 +60,24 @@ describe('WebChatGateway', () => {
       mockHttpAdapterHost as never,
     );
     gateway.setAdapter(mockAdapter as never);
+  });
+
+  describe('isWsOriginAllowed', () => {
+    const allowed = ['http://localhost:3000', 'https://app.example.com'];
+
+    it('allows an origin present in the allowlist', () => {
+      expect(isWsOriginAllowed('http://localhost:3000', allowed)).toBe(true);
+      expect(isWsOriginAllowed('https://app.example.com', allowed)).toBe(true);
+    });
+
+    it('rejects an origin not in the allowlist (cross-site)', () => {
+      expect(isWsOriginAllowed('https://evil.example.com', allowed)).toBe(false);
+    });
+
+    it('allows a missing or empty Origin header (non-browser clients)', () => {
+      expect(isWsOriginAllowed(undefined, allowed)).toBe(true);
+      expect(isWsOriginAllowed('', allowed)).toBe(true);
+    });
   });
 
   describe('handleConnection — valid JWT', () => {

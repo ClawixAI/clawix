@@ -1,11 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockCreate = vi.fn();
+const mockStream = vi.fn();
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn().mockImplementation(() => ({
-    messages: { create: mockCreate },
+    messages: { create: mockCreate, stream: mockStream },
   })),
 }));
+
+/**
+ * Set up `messages.stream()` to return a MessageStream whose `finalMessage()`
+ * resolves to `message`. Mirrors the SDK's streaming helper: the request is
+ * sent as SSE and `finalMessage()` resolves once the stream completes.
+ */
+function streamResolving(message: unknown): void {
+  mockStream.mockReturnValueOnce({
+    finalMessage: vi.fn().mockResolvedValue(message),
+  });
+}
 
 vi.mock('@clawix/shared', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@clawix/shared')>();
@@ -25,6 +37,7 @@ import { AnthropicProvider } from '../anthropic-provider.js';
 describe('AnthropicProvider', () => {
   beforeEach(() => {
     mockCreate.mockReset();
+    mockStream.mockReset();
   });
 
   it('has name "anthropic"', () => {
@@ -32,8 +45,41 @@ describe('AnthropicProvider', () => {
     expect(provider.name).toBe('anthropic');
   });
 
+  it('uses the streaming API so the request is incremental, not a blocking non-streaming call', async () => {
+    streamResolving({
+      content: [{ type: 'text', text: 'streamed' }],
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 3, output_tokens: 2 },
+    });
+
+    const provider = new AnthropicProvider('test-key');
+    const result = await provider.chat([{ role: 'user', content: 'Hi' }]);
+
+    // The blocking `messages.create` path must not be used — it holds the
+    // socket with zero bytes until the whole completion lands, which is what
+    // makes long turns look hung.
+    expect(mockStream).toHaveBeenCalledTimes(1);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(result.content).toBe('streamed');
+  });
+
+  it('forwards the abort signal to the streaming request', async () => {
+    streamResolving({
+      content: [{ type: 'text', text: 'ok' }],
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    const controller = new AbortController();
+
+    const provider = new AnthropicProvider('test-key');
+    await provider.chat([{ role: 'user', content: 'Hi' }], { abortSignal: controller.signal });
+
+    const requestOptions = mockStream.mock.calls[0]![1];
+    expect(requestOptions?.signal).toBe(controller.signal);
+  });
+
   it('sends a basic chat and returns normalized LLMResponse', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'Hello!' }],
       stop_reason: 'end_turn',
       usage: { input_tokens: 10, output_tokens: 5 },
@@ -50,7 +96,7 @@ describe('AnthropicProvider', () => {
   });
 
   it('maps tool_use stop reason and extracts tool calls', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [
         {
           type: 'tool_use',
@@ -83,7 +129,7 @@ describe('AnthropicProvider', () => {
   });
 
   it('extracts system message and passes as top-level param', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'Response' }],
       stop_reason: 'end_turn',
       usage: { input_tokens: 30, output_tokens: 10 },
@@ -95,7 +141,7 @@ describe('AnthropicProvider', () => {
       { role: 'user', content: 'Hello' },
     ]);
 
-    const callArgs = mockCreate.mock.calls[0]![0];
+    const callArgs = mockStream.mock.calls[0]![0];
     // With caching enabled (default), system is a content-block array
     expect(callArgs.system).toEqual([
       { type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } },
@@ -104,7 +150,7 @@ describe('AnthropicProvider', () => {
   });
 
   it('maps max_tokens stop reason to max_tokens finish reason', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'Truncated...' }],
       stop_reason: 'max_tokens',
       usage: { input_tokens: 10, output_tokens: 4096 },
@@ -116,7 +162,7 @@ describe('AnthropicProvider', () => {
   });
 
   it('surfaces cache token fields from the response', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'cached response' }],
       stop_reason: 'end_turn',
       usage: {
@@ -136,7 +182,7 @@ describe('AnthropicProvider', () => {
   });
 
   it('omits cache token fields when the SDK does not return them', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'no cache response' }],
       stop_reason: 'end_turn',
       usage: { input_tokens: 10, output_tokens: 5 },
@@ -154,10 +200,11 @@ describe('AnthropicProvider', () => {
 describe('AnthropicProvider — prompt caching', () => {
   beforeEach(() => {
     mockCreate.mockReset();
+    mockStream.mockReset();
   });
 
   it('marks the system block with cache_control by default', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'ok' }],
       stop_reason: 'end_turn',
       usage: { input_tokens: 5, output_tokens: 5 },
@@ -169,7 +216,7 @@ describe('AnthropicProvider — prompt caching', () => {
       { role: 'user', content: 'Hi' },
     ]);
 
-    const args = mockCreate.mock.calls[0]![0];
+    const args = mockStream.mock.calls[0]![0];
     expect(args.system).toEqual([
       {
         type: 'text',
@@ -180,7 +227,7 @@ describe('AnthropicProvider — prompt caching', () => {
   });
 
   it('marks the last tool with cache_control by default', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'ok' }],
       stop_reason: 'end_turn',
       usage: { input_tokens: 5, output_tokens: 5 },
@@ -194,7 +241,7 @@ describe('AnthropicProvider — prompt caching', () => {
       ],
     });
 
-    const args = mockCreate.mock.calls[0]![0];
+    const args = mockStream.mock.calls[0]![0];
     expect(args.tools).toHaveLength(2);
     expect(args.tools[0]).not.toHaveProperty('cache_control');
     expect(args.tools[1]).toMatchObject({
@@ -204,7 +251,7 @@ describe('AnthropicProvider — prompt caching', () => {
   });
 
   it('does not mark system or tools when enableCaching=false', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'ok' }],
       stop_reason: 'end_turn',
       usage: { input_tokens: 5, output_tokens: 5 },
@@ -221,14 +268,14 @@ describe('AnthropicProvider — prompt caching', () => {
       },
     );
 
-    const args = mockCreate.mock.calls[0]![0];
+    const args = mockStream.mock.calls[0]![0];
     // System is sent as a plain string (no content blocks) when caching is off
     expect(args.system).toBe('You are helpful.');
     expect(args.tools[0]).not.toHaveProperty('cache_control');
   });
 
   it('does not send cache_control on the user message', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'ok' }],
       stop_reason: 'end_turn',
       usage: { input_tokens: 5, output_tokens: 5 },
@@ -240,13 +287,13 @@ describe('AnthropicProvider — prompt caching', () => {
       { role: 'user', content: 'Timestamp 123: please respond' },
     ]);
 
-    const args = mockCreate.mock.calls[0]![0];
+    const args = mockStream.mock.calls[0]![0];
     expect(args.messages[0]).toEqual({ role: 'user', content: 'Timestamp 123: please respond' });
     expect(JSON.stringify(args.messages)).not.toContain('cache_control');
   });
 
   it('omits system content blocks entirely when there is no system message', async () => {
-    mockCreate.mockResolvedValueOnce({
+    streamResolving({
       content: [{ type: 'text', text: 'ok' }],
       stop_reason: 'end_turn',
       usage: { input_tokens: 5, output_tokens: 5 },
@@ -255,7 +302,7 @@ describe('AnthropicProvider — prompt caching', () => {
     const provider = new AnthropicProvider('test-key');
     await provider.chat([{ role: 'user', content: 'Hi' }]);
 
-    const args = mockCreate.mock.calls[0]![0];
+    const args = mockStream.mock.calls[0]![0];
     expect(args.system).toBeUndefined();
   });
 });

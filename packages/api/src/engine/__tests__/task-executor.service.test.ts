@@ -117,6 +117,7 @@ describe('TaskExecutorService', () => {
     subscribe: ReturnType<typeof vi.fn>;
   };
   let mockAgentDefRepo: { findById: ReturnType<typeof vi.fn> };
+  let mockAgentRunRegistry: { abort: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -158,6 +159,8 @@ describe('TaskExecutorService', () => {
       findById: vi.fn().mockResolvedValue({ id: 'agent-def-1', name: 'test-agent' }),
     };
 
+    mockAgentRunRegistry = { abort: vi.fn().mockReturnValue(true) };
+
     service = new TaskExecutorService(
       mockAgentRunner as unknown as AgentRunnerService,
       mockAgentRunRepo as unknown as AgentRunRepository,
@@ -165,6 +168,7 @@ describe('TaskExecutorService', () => {
       mockRedis as unknown as RedisService,
       mockPubsub as unknown as RedisPubSubService,
       mockAgentDefRepo as unknown as AgentDefinitionRepository,
+      mockAgentRunRegistry as unknown as import('../agent-run-registry.service.js').AgentRunRegistry,
     );
   });
 
@@ -415,6 +419,133 @@ describe('TaskExecutorService', () => {
       await new Promise((r) => setTimeout(r, 0));
 
       expect(service.activeCount).toBe(0);
+    });
+
+    it('passes the policy-resolved timeoutMs through to agentRunner.run', async () => {
+      service.submit('run-1', {
+        agentDefinitionId: 'agent-def-1',
+        input: 'Hello!',
+        userId: 'user-1',
+        sessionId: 'sess-1',
+        timeoutMs: 12345,
+      });
+
+      await Promise.resolve();
+
+      expect(mockAgentRunner.run).toHaveBeenCalledWith(
+        expect.objectContaining({ agentRunId: 'run-1', timeoutMs: 12345 }),
+      );
+    });
+
+    it('falls back to the default sub-agent timeout when none is supplied', async () => {
+      service.submit('run-1', {
+        agentDefinitionId: 'agent-def-1',
+        input: 'Hello!',
+        userId: 'user-1',
+        sessionId: 'sess-1',
+      });
+
+      await Promise.resolve();
+
+      expect(mockAgentRunner.run).toHaveBeenCalledWith(
+        expect.objectContaining({ agentRunId: 'run-1', timeoutMs: 300000 }),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------- //
+  //  describe('watchdog')                                            //
+  // ---------------------------------------------------------------- //
+
+  describe('watchdog', () => {
+    it('aborts a stuck sub-agent, reports failure to the parent, and frees the slot', async () => {
+      vi.useFakeTimers();
+      try {
+        const childRun = {
+          ...mockAgentRun,
+          id: 'run-stuck',
+          parentAgentRunId: 'run-parent',
+          agentDefinitionId: 'agent-def-1',
+        };
+        const parentRun = {
+          ...mockAgentRun,
+          id: 'run-parent',
+          sessionId: 'sess-parent',
+          parentAgentRunId: null,
+        };
+        mockAgentRunRepo.findById.mockResolvedValueOnce(childRun).mockResolvedValueOnce(parentRun);
+        // Run never settles — simulates a tool that ignores the abort signal.
+        mockAgentRunner.run.mockReturnValueOnce(new Promise<RunResult>(() => {}));
+
+        service.submit('run-stuck', {
+          agentDefinitionId: 'agent-def-1',
+          input: 'build an app',
+          userId: 'user-1',
+          sessionId: 'sess-parent',
+          timeoutMs: 1000,
+        });
+
+        expect(service.activeCount).toBe(1);
+
+        // Advance past timeoutMs (1000) + watchdog grace (30000).
+        await vi.advanceTimersByTimeAsync(31_001);
+
+        expect(mockAgentRunRegistry.abort).toHaveBeenCalledWith('run-stuck', 'watchdog_timeout');
+        expect(mockAgentRunRepo.update).toHaveBeenCalledWith(
+          'run-stuck',
+          expect.objectContaining({ status: 'failed' }),
+        );
+
+        const queueKey = `${KEY_PREFIXES.agentResults}sess-parent`;
+        expect(mockRedis.lpush).toHaveBeenCalledWith(queueKey, expect.any(String));
+        const published = JSON.parse(mockRedis.lpush.mock.calls[0]![1] as string) as {
+          status: string;
+        };
+        expect(published.status).toBe('failed');
+
+        expect(service.activeCount).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------- //
+  //  describe('progress forwarding')                                 //
+  // ---------------------------------------------------------------- //
+
+  describe('progress forwarding', () => {
+    it('forwards throttled progress to the parent channel', async () => {
+      // Run never settles so the captured onProgress stays callable.
+      mockAgentRunner.run.mockReturnValueOnce(new Promise<RunResult>(() => {}));
+
+      service.submit('run-1', {
+        agentDefinitionId: 'agent-def-1',
+        input: 'do work',
+        userId: 'user-1',
+        sessionId: 'sess-parent',
+        displayName: 'coder',
+      });
+
+      await Promise.resolve();
+
+      const call = mockAgentRunner.run.mock.calls[0]![0] as {
+        onProgress?: (hint: string) => void;
+      };
+      expect(typeof call.onProgress).toBe('function');
+
+      call.onProgress!('shell(npm install)');
+      call.onProgress!('shell(ls)'); // throttled — same tick
+      await Promise.resolve();
+
+      const progressPublishes = mockPubsub.publish.mock.calls.filter(
+        (c: unknown[]) => c[0] === PUBSUB_CHANNELS.channelResponseReady,
+      );
+      expect(progressPublishes).toHaveLength(1);
+      expect(progressPublishes[0]![1]).toEqual({
+        sessionId: 'sess-parent',
+        output: expect.stringContaining('coder is working'),
+      });
     });
   });
 
@@ -733,6 +864,7 @@ describe('TaskExecutorService', () => {
         mockRedis as unknown as RedisService,
         mockPubsub as unknown as RedisPubSubService,
         mockAgentDefRepo as unknown as AgentDefinitionRepository,
+        mockAgentRunRegistry as unknown as import('../agent-run-registry.service.js').AgentRunRegistry,
       );
 
       mockAgentRunRepo.findById.mockResolvedValue({

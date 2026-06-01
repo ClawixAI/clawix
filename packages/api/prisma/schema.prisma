@@ -43,6 +43,7 @@ model Policy {
   maxPythonTimeoutSecs         Int      @default(60)
   maxPythonCpuCores            Int      @default(1)
   maxConcurrentPythonRuns      Int      @default(2)
+  maxSubAgentRunMs             Int      @default(300000) // wall-clock cap per spawned sub-agent run (ms)
   isActive                     Boolean  @default(true)
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
@@ -347,6 +348,11 @@ model SessionMessage {
   ordering   Int
   createdAt  DateTime  @default(now())
   archivedAt DateTime?
+  // When true, this message is omitted from the chat-history display endpoint.
+  // Set on intermediate reasoning steps of a non-streamed run so reopened
+  // history mirrors the single combined reply the user saw live. The row is
+  // still persisted in full (needed to reconstruct conversation context).
+  hiddenInHistory Boolean @default(false)
 
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -517,9 +523,9 @@ model WikiShare {
   revokedAt  DateTime?
   isRevoked  Boolean     @default(false)
 
-  page        WikiPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  group       Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  sharedByUser User?   @relation("WikiSharedBy", fields: [sharedBy], references: [id], onDelete: SetNull)
+  page         WikiPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  group        Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sharedByUser User?    @relation("WikiSharedBy", fields: [sharedBy], references: [id], onDelete: SetNull)
 
   @@index([pageId, isRevoked])
   @@index([groupId, isRevoked])

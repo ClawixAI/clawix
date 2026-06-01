@@ -140,7 +140,7 @@ export class AnthropicProvider implements LLMProvider {
           )
         : baseTools;
 
-    const requestParams: Anthropic.MessageCreateParamsNonStreaming = {
+    const requestParams: Anthropic.MessageStreamParams = {
       model,
       max_tokens: maxTokens,
       messages: nonSystemMessages.map(toAnthropicMessage),
@@ -157,10 +157,18 @@ export class AnthropicProvider implements LLMProvider {
       ...(toolsForRequest ? { tools: toolsForRequest } : {}),
     };
 
-    const response = await this.client.messages.create(
+    // Use the streaming API even though we return a single assembled response.
+    // A non-streaming `messages.create` holds the HTTP connection with zero
+    // bytes until the entire completion is generated — for slow models or
+    // large outputs the turn can take minutes, during which the run looks
+    // hung (no tokens, no progress) and may be killed by the stale-run reaper.
+    // Streaming keeps the SSE socket flowing, so the request stays responsive
+    // and aborts promptly when the signal fires.
+    const stream = this.client.messages.stream(
       requestParams,
       options?.abortSignal ? { signal: options.abortSignal } : undefined,
     );
+    const response = await stream.finalMessage();
 
     let textContent = '';
     const toolCalls: ToolCallRequest[] = [];

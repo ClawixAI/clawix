@@ -1,6 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Children,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from 'react';
 import { ArrowDown, Bot, Check, Copy, Loader2, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -89,10 +98,14 @@ function UserMessage({
 }
 
 /** Dedent code blocks in raw markdown — strips common leading whitespace
- *  from the content inside fenced code blocks (``` ... ```). */
-function dedentCodeBlocks(md: string): string {
+ *  from the content inside top-level fenced code blocks (``` ... ```).
+ *  Only fences whose opening and closing markers sit at column 0 are touched:
+ *  fences nested in a list item or blockquote carry meaningful leading
+ *  indentation that the markdown parser uses for nesting, so dedenting their
+ *  bodies (without the markers) would desync the fence and corrupt the parse. */
+export function dedentCodeBlocks(md: string): string {
   return md.replace(
-    /(```\w*\n)([\s\S]*?)(```)/g,
+    /^(```\w*\n)([\s\S]*?)^(```)$/gm,
     (_match, open: string, body: string, close: string) => {
       const lines = body.split('\n');
       const nonEmpty = lines.filter((l) => l.trim().length > 0);
@@ -105,6 +118,64 @@ function dedentCodeBlocks(md: string): string {
   );
 }
 
+/** Recursively collect the plain-text content of a React node tree — used to
+ *  recover a fenced code block's raw text from ReactMarkdown's rendered
+ *  `<pre><code>…</code></pre>` so it can be copied to the clipboard. */
+export function reactNodeToText(node: ReactNode): string {
+  return Children.toArray(node)
+    .map((child) => {
+      if (typeof child === 'string') return child;
+      if (typeof child === 'number') return String(child);
+      if (isValidElement(child)) {
+        return reactNodeToText((child.props as { children?: ReactNode }).children);
+      }
+      return '';
+    })
+    .join('');
+}
+
+/** Copy button overlaid on a fenced code block; reveals on hover/focus. */
+function CodeCopyButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={copied ? 'Copied' : 'Copy code'}
+      className="absolute right-2 top-2 size-7 bg-background/60 opacity-0 backdrop-blur transition-opacity group-hover/code:opacity-100 focus-visible:opacity-100"
+      onClick={() => {
+        void copyToClipboard(content).then((ok) => {
+          if (ok) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } else {
+            toast.error('Could not copy to clipboard');
+          }
+        });
+      }}
+    >
+      {copied ? (
+        <Check className="size-3.5 text-emerald-500" />
+      ) : (
+        <Copy className="size-3.5 text-muted-foreground" />
+      )}
+    </Button>
+  );
+}
+
+/** ReactMarkdown `pre` override: wraps the code block so a copy button can be
+ *  overlaid outside the `<pre>`'s horizontal scroll area. */
+function CodeBlock({ children, ...props }: ComponentPropsWithoutRef<'pre'>) {
+  const code = reactNodeToText(children).replace(/\n$/, '');
+  return (
+    <div className="group/code relative">
+      <pre {...props}>{children}</pre>
+      {code.length > 0 && <CodeCopyButton content={code} />}
+    </div>
+  );
+}
+
 function AgentMessage({ content, createdAt }: { content: string; createdAt: string }) {
   return (
     <div className="flex flex-col gap-1">
@@ -113,7 +184,7 @@ function AgentMessage({ content, createdAt }: { content: string; createdAt: stri
           <Bot className="size-3.5" />
         </div>
         <div className="flex-1 text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none prose-p:my-1.5 prose-headings:my-3 prose-headings:font-semibold prose-h1:text-lg prose-h2:text-base prose-h3:text-sm prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-pre:my-2 prose-pre:bg-gray-100 prose-pre:dark:bg-muted prose-pre:rounded-lg prose-pre:p-4 prose-pre:overflow-x-auto prose-pre:text-xs prose-pre:whitespace-pre-wrap prose-pre:break-words prose-pre:text-gray-800 prose-pre:dark:text-gray-200 prose-code:bg-gray-100 prose-code:dark:bg-muted prose-code:text-gray-800 prose-code:dark:text-gray-200 prose-code:rounded prose-code:px-1.5 prose-code:py-0.5 prose-code:text-xs prose-code:font-mono prose-code:before:content-none prose-code:after:content-none [&_pre_code]:p-0 [&_pre_code]:bg-transparent prose-a:text-primary prose-a:underline prose-a:underline-offset-2 prose-blockquote:border-l-primary prose-blockquote:not-italic prose-hr:border-border prose-strong:font-semibold prose-table:text-xs prose-th:border prose-th:border-border prose-th:bg-muted/50 prose-th:px-3 prose-th:py-1.5 prose-th:text-left prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-1.5 prose-img:rounded-md">
-          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={{ pre: CodeBlock }}>
             {dedentCodeBlocks(content)}
           </ReactMarkdown>
         </div>

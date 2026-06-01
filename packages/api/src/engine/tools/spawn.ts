@@ -27,6 +27,10 @@ interface TaskSubmitter {
       readonly budgetTracker?: BudgetTracker;
       /** Parent abort signal forwarded for cancellation cascade. */
       readonly abortSignal?: AbortSignal;
+      /** Wall-clock cap for the sub-agent run (ms), resolved from the user's policy. */
+      readonly timeoutMs?: number;
+      /** Human-readable agent label, used for progress messages to the parent. */
+      readonly displayName?: string;
     },
   ): void;
 }
@@ -40,6 +44,8 @@ interface TaskSubmitter {
  * @param parentSessionId   - The session ID of the calling agent.
  * @param parentAgentRunId  - The AgentRun ID of the parent agent (used to deliver results back).
  * @param userId            - The ID of the user initiating the spawn.
+ * @param budgetTracker     - Optional shared budget tracker inherited by the sub-agent.
+ * @param subAgentTimeoutMs - Wall-clock cap (ms) for the spawned run, from the user's policy.
  */
 export function createSpawnTool(
   agentDefRepo: AgentDefinitionRepository,
@@ -49,6 +55,7 @@ export function createSpawnTool(
   parentAgentRunId: string,
   userId: string,
   budgetTracker?: BudgetTracker,
+  subAgentTimeoutMs?: number,
 ): Tool {
   return {
     name: 'spawn',
@@ -136,8 +143,10 @@ export function createSpawnTool(
           input: prompt,
           userId,
           sessionId: parentSessionId,
+          displayName,
           ...(budgetTracker ? { budgetTracker } : {}),
           ...(ctx?.abortSignal ? { abortSignal: ctx.abortSignal } : {}),
+          ...(subAgentTimeoutMs != null ? { timeoutMs: subAgentTimeoutMs } : {}),
         });
       }
 

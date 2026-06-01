@@ -20,9 +20,27 @@ describe('SessionMessageStore', () => {
     };
     const store = new SessionMessageStore(sessionManager as never, 'sess-1');
     const ids = await store.saveMessages([{ role: 'assistant', content: 'ok' }]);
-    expect(sessionManager.saveMessages).toHaveBeenCalledWith('sess-1', [
-      { role: 'assistant', content: 'ok' },
-    ]);
+    expect(sessionManager.saveMessages).toHaveBeenCalledWith(
+      'sess-1',
+      [{ role: 'assistant', content: 'ok' }],
+      undefined,
+    );
     expect(ids).toEqual(['id-1']);
+  });
+
+  it('saveMessages forwards the SaveMessagesOptions through to sessionManager', async () => {
+    const sessionManager = {
+      loadMessages: vi.fn(),
+      saveMessages: vi.fn().mockResolvedValue(['id-1']),
+    };
+    const store = new SessionMessageStore(sessionManager as never, 'sess-1');
+    await store.saveMessages([{ role: 'assistant', content: 'ok' }], {
+      hiddenInHistory: [true],
+    });
+    expect(sessionManager.saveMessages).toHaveBeenCalledWith(
+      'sess-1',
+      [{ role: 'assistant', content: 'ok' }],
+      { hiddenInHistory: [true] },
+    );
   });
 });
