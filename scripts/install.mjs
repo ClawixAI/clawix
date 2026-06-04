@@ -199,8 +199,9 @@ async function main() {
     console.log('  3) Z.AI Coding Plan    (default model: glm-4.7)');
     console.log('  4) Kimi Coding Plan    (model entered below)');
     console.log('  5) Google Gemini       (default model: gemini-3-flash-preview)');
+    console.log('  6) DeepSeek            (default model: deepseek-v4-flash)');
     console.log(
-      '  6) Custom              (any OpenAI-compatible endpoint — local LLM, OpenRouter, vLLM, etc.)',
+      '  7) Custom              (any OpenAI-compatible endpoint — local LLM, OpenRouter, vLLM, etc.)',
     );
 
     /**
@@ -239,9 +240,15 @@ async function main() {
         envKey: 'GEMINI_API_KEY',
         defaultModel: 'gemini-3-flash-preview',
       },
+      6: {
+        id: 'deepseek',
+        displayName: 'DeepSeek',
+        envKey: 'DEEPSEEK_API_KEY',
+        defaultModel: 'deepseek-v4-flash',
+      },
     };
-    const CUSTOM_CHOICE = 6;
-    const VALID_CHOICES = [1, 2, 3, 4, 5, 6];
+    const CUSTOM_CHOICE = 7;
+    const VALID_CHOICES = [1, 2, 3, 4, 5, 6, 7];
     const RESERVED_IDS = Object.values(CATALOG).map((c) => c.id);
 
     /** Parse "1,3,4" → unique ordered list of integers from `valid`. */

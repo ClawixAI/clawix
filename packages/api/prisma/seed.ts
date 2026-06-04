@@ -96,6 +96,12 @@ async function main(): Promise<void> {
       envKey: 'ZAI_CODING_API_KEY',
       baseUrl: 'https://api.z.ai/api/coding/paas/v4',
     },
+    {
+      provider: 'deepseek',
+      displayName: 'DeepSeek',
+      envKey: 'DEEPSEEK_API_KEY',
+      baseUrl: 'https://api.deepseek.com',
+    },
   ];
   const customName = process.env['CUSTOM_PROVIDER_NAME'];
   const customBase = process.env['CUSTOM_PROVIDER_BASE_URL'];

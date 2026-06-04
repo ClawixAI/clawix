@@ -352,6 +352,8 @@ describe('ProviderConfigService', () => {
       vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-seed');
       vi.stubEnv('OPENAI_API_KEY', 'sk-openai-seed');
       vi.stubEnv('ZAI_CODING_API_KEY', '');
+      vi.stubEnv('KIMI_CODE_API_KEY', '');
+      vi.stubEnv('DEEPSEEK_API_KEY', '');
 
       await service.seedFromEnv();
 
@@ -378,6 +380,32 @@ describe('ProviderConfigService', () => {
             displayName: 'OpenAI',
             apiKey: 'encrypted:sk-openai-seed',
             isDefault: false,
+          }),
+        }),
+      );
+    });
+
+    it('seeds the deepseek provider with its default base URL when DEEPSEEK_API_KEY is set', async () => {
+      prisma.providerConfig.count.mockResolvedValueOnce(0);
+      prisma.providerConfig.create.mockResolvedValue({});
+
+      vi.stubEnv('ANTHROPIC_API_KEY', '');
+      vi.stubEnv('OPENAI_API_KEY', '');
+      vi.stubEnv('ZAI_CODING_API_KEY', '');
+      vi.stubEnv('KIMI_CODE_API_KEY', '');
+      vi.stubEnv('DEEPSEEK_API_KEY', 'sk-deepseek-seed');
+
+      await service.seedFromEnv();
+
+      expect(prisma.providerConfig.create).toHaveBeenCalledTimes(1);
+      expect(prisma.providerConfig.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            provider: 'deepseek',
+            displayName: 'DeepSeek',
+            apiKey: 'encrypted:sk-deepseek-seed',
+            apiBaseUrl: 'https://api.deepseek.com',
+            isDefault: true,
           }),
         }),
       );

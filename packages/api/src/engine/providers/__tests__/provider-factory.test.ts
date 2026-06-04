@@ -31,6 +31,8 @@ vi.mock('@clawix/shared', async (importOriginal) => {
   };
 });
 
+import OpenAI from 'openai';
+
 import { createProvider } from '../provider-factory.js';
 import { OpenAIProvider } from '../openai-provider.js';
 import { AnthropicProvider } from '../anthropic-provider.js';
@@ -122,6 +124,26 @@ describe('createProvider', () => {
   it('creates an AnthropicProvider for "kimi-code" with custom baseURL', () => {
     const provider = createProvider('kimi-code', API_KEY, 'https://custom.kimi.com/v1');
     expect(provider).toBeInstanceOf(AnthropicProvider);
+  });
+
+  it('creates an OpenAIProvider for "deepseek" with default base URL', () => {
+    const OpenAIMock = vi.mocked(OpenAI);
+    OpenAIMock.mockClear();
+    const provider = createProvider('deepseek', API_KEY);
+    expect(provider).toBeInstanceOf(OpenAIProvider);
+    expect(OpenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({ baseURL: 'https://api.deepseek.com' }),
+    );
+  });
+
+  it('uses custom baseURL for deepseek when provided', () => {
+    const OpenAIMock = vi.mocked(OpenAI);
+    OpenAIMock.mockClear();
+    const provider = createProvider('deepseek', API_KEY, 'https://custom.deepseek.com/v1');
+    expect(provider).toBeInstanceOf(OpenAIProvider);
+    expect(OpenAIMock).toHaveBeenCalledWith(
+      expect.objectContaining({ baseURL: 'https://custom.deepseek.com/v1' }),
+    );
   });
 });
 

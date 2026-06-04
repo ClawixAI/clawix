@@ -12,11 +12,13 @@ import { isCodexModel } from './openai-responses-utils.js';
 
 const ZAI_CODING_DEFAULT_BASE_URL = 'https://api.z.ai/api/coding/paas/v4';
 const KIMI_CODE_DEFAULT_BASE_URL = 'https://api.kimi.com/coding';
+const DEEPSEEK_DEFAULT_BASE_URL = 'https://api.deepseek.com';
 
 /**
  * Instantiate an {@link LLMProvider} by provider name.
  *
- * Known providers: `'anthropic'`, `'gemini'`, `'openai'`, `'zai-coding'`.
+ * Known providers: `'anthropic'`, `'gemini'`, `'openai'`, `'zai-coding'`,
+ * `'kimi-code'`, `'deepseek'`.
  * Any other name is treated as an OpenAI-compatible custom provider
  * and requires a `baseURL`.
  *
@@ -42,6 +44,9 @@ export function createProvider(
 
     case 'zai-coding':
       return new OpenAIProvider(apiKey, baseURL ?? ZAI_CODING_DEFAULT_BASE_URL);
+
+    case 'deepseek':
+      return new OpenAIProvider(apiKey, baseURL ?? DEEPSEEK_DEFAULT_BASE_URL);
 
     case 'gemini':
       return new GeminiProvider(apiKey, baseURL);

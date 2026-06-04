@@ -121,6 +121,24 @@ const KIMI_CODE_SPEC: ProviderSpec = {
   pricing: null,
 };
 
+const DEEPSEEK_SPEC: ProviderSpec = {
+  name: 'deepseek',
+  displayName: 'DeepSeek',
+  modelPrefixes: ['deepseek-'],
+  envKey: 'DEEPSEEK_API_KEY',
+  defaultBaseUrl: 'https://api.deepseek.com',
+  defaultModel: 'deepseek-v4-flash',
+  supportsTools: true,
+  supportsThinking: false,
+  pricing: [
+    // Cache-miss input + output rates (USD/M tokens). estimateCost does not
+    // model DeepSeek's cache-hit discount. Source: DeepSeek pricing page
+    // (https://api-docs.deepseek.com/quick_start/pricing), fetched 2026-06-05.
+    { model: 'deepseek-v4-pro', inputPerMillion: 0.435, outputPerMillion: 0.87 },
+    { model: 'deepseek-v4-flash', inputPerMillion: 0.14, outputPerMillion: 0.28 },
+  ],
+};
+
 const CUSTOM_SPEC: ProviderSpec = {
   name: 'custom',
   displayName: 'Custom',
@@ -138,6 +156,7 @@ const PROVIDERS: readonly ProviderSpec[] = [
   ZAI_CODING_SPEC,
   KIMI_CODE_SPEC,
   GEMINI_SPEC,
+  DEEPSEEK_SPEC,
   CUSTOM_SPEC,
 ];
 

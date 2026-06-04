@@ -24,7 +24,7 @@ Most AI agent frameworks are either **toys** (single-process, no isolation, no a
 Clawix sits in between: **production-grade orchestration you own entirely.**
 
 - **Every agent runs in its own Docker container** -- no agent can read another's files, exhaust your host's memory, or escape its sandbox.
-- **Plug in any LLM** -- Claude and GPT-4 today, with Azure, DeepSeek, Gemini, and OpenRouter coming soon. Any OpenAI-compatible endpoint (Ollama, vLLM, etc.) works now via the custom provider.
+- **Plug in any LLM** -- Claude, GPT, DeepSeek, and Gemini today, with Azure and OpenRouter coming soon. Any OpenAI-compatible endpoint (Ollama, vLLM, etc.) works now via the custom provider.
 - **Built for teams** -- RBAC, token budgets, audit logs, and scoped memory mean you can hand agents to your whole org without losing sleep.
 - **Reach users where they are** -- Telegram, WhatsApp, Slack, and a built-in web dashboard. One agent, many channels.
 
@@ -55,7 +55,7 @@ Break complex tasks into sub-agent DAGs. The coordinator delegates, aggregates r
 
 ### Multi-Provider AI
 
-Anthropic and OpenAI out of the box, with Azure, DeepSeek, Gemini, and OpenRouter planned. Any OpenAI-compatible endpoint already works via the custom provider. Add new providers with a single config entry.
+Anthropic, OpenAI, DeepSeek, and Gemini out of the box, with Azure and OpenRouter planned. Any OpenAI-compatible endpoint already works via the custom provider. Add new providers with a single config entry.
 
 ### Scoped Memory System
 
@@ -167,6 +167,7 @@ PROVIDER_ENCRYPTION_KEY=$(openssl rand -hex 32)
 # AI providers (used by db:seed; also env fallback at runtime)
 ANTHROPIC_API_KEY=sk-ant-xxx        # Claude
 OPENAI_API_KEY=sk-xxx               # GPT (optional)
+DEEPSEEK_API_KEY=sk-xxx             # DeepSeek (optional)
 
 # Channels (optional -- used by db:seed to populate channel config)
 TELEGRAM_BOT_TOKEN=123456789:ABCdef...   # Telegram (from @BotFather)
@@ -204,7 +205,7 @@ pnpm run install:clawix
 The installer will:
 
 1. Check prerequisites (Node 20+, pnpm, Docker, Docker Compose)
-2. Ask for deployment mode (production / development), provider (OpenAI or Zai-Coding) + API key, admin email/password (production only), and optional Telegram bot token
+2. Ask for deployment mode (production / development), provider selection (Anthropic, OpenAI, Z.AI Coding, Kimi, Gemini, DeepSeek, or a custom OpenAI-compatible endpoint) + API key, admin email/password (production only), and optional Telegram bot token
 3. Generate `.env` with cryptographically random `JWT_SECRET`, `PROVIDER_ENCRYPTION_KEY`, `POSTGRES_PASSWORD` (file permissions set to `600`)
 4. Build `clawix-agent:latest` (agent image used for isolated per-task containers)
 5. Run `docker compose … up -d --build`
@@ -299,9 +300,9 @@ Built-in providers plus extensible registry -- add new ones with a single `Provi
 | **OpenAI**      | model starts with `gpt-`/`o1-`/`o3-`/`o4-` | General purpose       | Available |
 | **Z.AI Coding** | model starts with `glm-`                   | GLM models            | Available |
 | **Azure**       | config key `azure_openai`                  | Enterprise compliance | Planned   |
-| **DeepSeek**    | model starts with `deepseek-`              | Cost-effective        | Planned   |
-| **Gemini**      | model starts with `gemini-`                | Google ecosystem      | Planned   |
-| **Kimi**        | model starts with `moonshot-`              | Long-context tasks    | Planned   |
+| **DeepSeek**    | model starts with `deepseek-`              | Cost-effective        | Available |
+| **Gemini**      | model starts with `gemini-`                | Google ecosystem      | Available |
+| **Kimi**        | provider id `kimi-code`                    | Long-context tasks    | Available |
 | **OpenRouter**  | API key starts with `sk-or-`               | Provider gateway      | Planned   |
 | **Custom**      | any OpenAI-compatible endpoint             | Ollama, vLLM, etc.    | Available |
 
@@ -400,7 +401,7 @@ pnpm run db:studio        # Open Prisma Studio (GUI)
 
 - [x] Container-isolated agent execution
 - [x] Multi-provider AI support (Claude, GPT, OpenAI-compatible endpoints)
-- [ ] First-class Azure, DeepSeek, Gemini, Kimi, OpenRouter providers
+- [ ] First-class Azure, OpenRouter providers
 - [x] Warm container pool (~50ms cold start)
 - [x] Swarm orchestration with DAG dependencies
 - [x] Telegram channel integration

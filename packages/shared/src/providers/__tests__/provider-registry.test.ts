@@ -240,6 +240,42 @@ describe('Kimi Code provider spec', () => {
   });
 });
 
+describe('DeepSeek provider spec', () => {
+  it('is registered by name', () => {
+    const spec = findProviderByName('deepseek');
+    expect(spec).not.toBeNull();
+    expect(spec?.displayName).toBe('DeepSeek');
+    expect(spec?.envKey).toBe('DEEPSEEK_API_KEY');
+    expect(spec?.defaultBaseUrl).toBe('https://api.deepseek.com');
+    expect(spec?.defaultModel).toBe('deepseek-v4-flash');
+    expect(spec?.supportsTools).toBe(true);
+    expect(spec?.supportsThinking).toBe(false);
+  });
+
+  it('detects deepseek from the deepseek- model prefix', () => {
+    expect(findProviderByModel('deepseek-v4-flash')?.name).toBe('deepseek');
+    expect(findProviderByModel('deepseek-v4-pro')?.name).toBe('deepseek');
+  });
+
+  it('appears in listProviders()', () => {
+    expect(listProviders().some((p) => p.name === 'deepseek')).toBe(true);
+  });
+
+  it('estimates cost for deepseek-v4-flash', () => {
+    const cost = estimateCost('deepseek', 'deepseek-v4-flash', 1_000_000, 1_000_000);
+    expect(cost).toBeCloseTo(0.14 + 0.28, 5);
+  });
+
+  it('estimates cost for deepseek-v4-pro', () => {
+    const cost = estimateCost('deepseek', 'deepseek-v4-pro', 1_000_000, 1_000_000);
+    expect(cost).toBeCloseTo(0.435 + 0.87, 5);
+  });
+
+  it('returns null cost for a legacy/unknown deepseek model (no pricing entry)', () => {
+    expect(estimateCost('deepseek', 'deepseek-chat', 1_000, 1_000)).toBeNull();
+  });
+});
+
 describe('estimateCost', () => {
   it('should calculate cost for claude-opus-4', () => {
     // $15 per M input, $75 per M output
