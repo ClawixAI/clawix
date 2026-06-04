@@ -19,6 +19,7 @@ export type {
   InboundMessage,
   MessageHandler,
   OutboundMessage,
+  OutboundMessageMetadata,
 } from './channel.js';
 
 export type { CronSchedule, Task, TaskRun, TaskStatus } from './task.js';

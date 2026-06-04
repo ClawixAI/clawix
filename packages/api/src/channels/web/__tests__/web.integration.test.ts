@@ -75,7 +75,7 @@ describe('Web channel integration', () => {
         text: 'Nobody home',
         metadata: { messageId: 'msg-1', sessionId: 'sess-1' },
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe('msg-1');
   });
 
   it('ping responds with pong', async () => {

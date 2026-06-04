@@ -127,11 +127,13 @@ export function createWhatsAppAdapter(config: ChannelAdapterConfig): ChannelAdap
       if (current) await current.close();
     },
 
-    async sendMessage(message: OutboundMessage): Promise<void> {
+    // WhatsApp has no editable-message primitive here, so no stable id is
+    // reported; the return type satisfies the ChannelAdapter contract.
+    async sendMessage(message: OutboundMessage): Promise<string | undefined> {
       const conn = connection;
       if (!conn) {
         logger.warn({ recipientId: message.recipientId }, 'sendMessage before connect()');
-        return;
+        return undefined;
       }
       const chunks = splitMessage(message.text, SAFE_SPLIT_LENGTH);
       for (const chunk of chunks) {
@@ -148,6 +150,7 @@ export function createWhatsAppAdapter(config: ChannelAdapterConfig): ChannelAdap
           );
         }
       }
+      return undefined;
     },
 
     async sendTyping(recipientId: string): Promise<void> {

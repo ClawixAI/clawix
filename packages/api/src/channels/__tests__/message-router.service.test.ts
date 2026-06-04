@@ -119,6 +119,7 @@ describe('MessageRouterService', () => {
       text: 'Hello human',
       metadata: {
         messageId: 'msg-abc',
+        replyToMessageId: 'msg-1',
         sessionId: 'session-1',
       },
     });
@@ -189,6 +190,7 @@ describe('MessageRouterService', () => {
       text: 'Response',
       metadata: {
         messageId: 'run-xyz',
+        replyToMessageId: 'msg-1',
         sessionId: 'session-1',
       },
     });
@@ -288,6 +290,7 @@ describe('MessageRouterService', () => {
     expect(channel.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         text: expect.stringContaining('went wrong'),
+        metadata: expect.objectContaining({ replyToMessageId: 'msg-1' }),
       }),
     );
   });
@@ -686,6 +689,130 @@ describe('MessageRouterService', () => {
       const calls = (channel.sendMessage as ReturnType<typeof vi.fn>).mock.calls;
       expect(calls[0][0]).toMatchObject({ recipientId: '123456', text: 'Thinking…' });
       expect(calls[1][0]).toMatchObject({ recipientId: '123456', text: 'Dogs are loyal.' });
+    });
+
+    describe('edit-status-in-place', () => {
+      // A streaming run: one prose chunk, then three consecutive tool calls,
+      // then the final answer. Drives the status-consolidation path.
+      function streamThreeTools(): void {
+        mockAgentDefRepo.findById.mockResolvedValue({ id: 'agent-1', streamingEnabled: true });
+        mockChannelRepo.findById.mockResolvedValue({ id: 'channel-1', toolProgressMode: null });
+        mockAgentRunner.run.mockImplementation(
+          async (opts: { onEvent?: (e: unknown) => Promise<void> }) => {
+            if (opts.onEvent) {
+              await opts.onEvent({ type: 'assistant_chunk', content: 'Working.', isFinal: false });
+              await opts.onEvent({
+                type: 'tool_started',
+                name: 'web_search',
+                args: { query: 'a' },
+              });
+              await opts.onEvent({ type: 'tool_started', name: 'read_file', args: { path: 'b' } });
+              await opts.onEvent({ type: 'tool_started', name: 'shell_exec', args: { cmd: 'c' } });
+              await opts.onEvent({ type: 'assistant_chunk', content: 'Done.', isFinal: true });
+            }
+            return {
+              streamingUsed: true,
+              output: 'Done.',
+              agentRunId: 'run-1',
+              sessionId: 'session-1',
+              status: 'completed',
+              tokenUsage: { input: 10, output: 5 },
+            };
+          },
+        );
+      }
+
+      it('edits one status message in place across consecutive tool bubbles', async () => {
+        streamThreeTools();
+        const channel = mockChannel();
+        // First bubble send returns the status anchor id.
+        (channel.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue('status-1');
+        channel.editMessage = vi.fn().mockResolvedValue(undefined);
+
+        const router = createRouter();
+        await router.handleInbound(mockInbound(), channel);
+
+        // sendMessage: prose 'Working.', first tool bubble, final 'Done.' = 3.
+        const sends = (channel.sendMessage as ReturnType<typeof vi.fn>).mock.calls;
+        expect(sends).toHaveLength(3);
+        expect(sends[0][0].text).toBe('Working.');
+        expect(sends[1][0].text).toMatch(/^🔍 web_search:/);
+        expect(sends[2][0].text).toBe('Done.');
+
+        // The 2nd and 3rd tools edit the same status anchor instead of appending.
+        const edits = (channel.editMessage as ReturnType<typeof vi.fn>).mock.calls;
+        expect(edits).toHaveLength(2);
+        expect(edits[0]).toEqual(['123456', 'status-1', expect.stringMatching(/^📖 read_file:/)]);
+        expect(edits[1]).toEqual(['123456', 'status-1', expect.stringMatching(/^💻 shell_exec:/)]);
+      });
+
+      it('appends a new message per tool when the adapter has no editMessage', async () => {
+        streamThreeTools();
+        const channel = mockChannel(); // no editMessage
+        const router = createRouter();
+        await router.handleInbound(mockInbound(), channel);
+
+        // prose + 3 tool bubbles + final = 5 sends, no edits possible.
+        expect(channel.sendMessage).toHaveBeenCalledTimes(5);
+      });
+
+      it('opens a fresh status message after an interleaved assistant_chunk', async () => {
+        mockAgentDefRepo.findById.mockResolvedValue({ id: 'agent-1', streamingEnabled: true });
+        mockChannelRepo.findById.mockResolvedValue({ id: 'channel-1', toolProgressMode: null });
+        mockAgentRunner.run.mockImplementation(
+          async (opts: { onEvent?: (e: unknown) => Promise<void> }) => {
+            if (opts.onEvent) {
+              // Group 1: two tools.
+              await opts.onEvent({
+                type: 'tool_started',
+                name: 'web_search',
+                args: { query: 'a' },
+              });
+              await opts.onEvent({ type: 'tool_started', name: 'read_file', args: { path: 'b' } });
+              // Prose closes the group.
+              await opts.onEvent({ type: 'assistant_chunk', content: 'Midway.', isFinal: false });
+              // Group 2: one tool — must NOT edit group 1's anchor.
+              await opts.onEvent({ type: 'tool_started', name: 'shell_exec', args: { cmd: 'c' } });
+              await opts.onEvent({ type: 'assistant_chunk', content: 'Done.', isFinal: true });
+            }
+            return {
+              streamingUsed: true,
+              output: 'Done.',
+              agentRunId: 'run-1',
+              sessionId: 'session-1',
+              status: 'completed',
+              tokenUsage: { input: 10, output: 5 },
+            };
+          },
+        );
+
+        const channel = mockChannel();
+        (channel.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue('status-1');
+        channel.editMessage = vi.fn().mockResolvedValue(undefined);
+
+        const router = createRouter();
+        await router.handleInbound(mockInbound(), channel);
+
+        // Sends: group-1 first tool, 'Midway.', group-2 first tool (fresh), 'Done.' = 4.
+        expect(channel.sendMessage).toHaveBeenCalledTimes(4);
+        // Only the 2nd tool of group 1 was an edit; group 2's tool opened fresh.
+        expect(channel.editMessage).toHaveBeenCalledTimes(1);
+      });
+
+      it('falls back to a fresh send when editMessage rejects', async () => {
+        streamThreeTools();
+        const channel = mockChannel();
+        (channel.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue('status-1');
+        channel.editMessage = vi.fn().mockRejectedValue(new Error('edit failed'));
+
+        const router = createRouter();
+        await router.handleInbound(mockInbound(), channel);
+
+        // prose + tool-1 send, then tool-2 edit fails → fresh send, tool-3 edit
+        // fails → fresh send, + final = 5 sends. Both edits were attempted.
+        expect(channel.sendMessage).toHaveBeenCalledTimes(5);
+        expect(channel.editMessage).toHaveBeenCalledTimes(2);
+      });
     });
   });
 

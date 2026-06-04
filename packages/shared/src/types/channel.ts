@@ -30,11 +30,33 @@ export interface InboundMessage {
   readonly rawPayload?: unknown;
 }
 
+/**
+ * Recognised keys on an outbound message's `metadata`. Adapters read the keys
+ * they understand and ignore the rest, so the contract is additive — new keys
+ * never break an adapter that doesn't know about them. The index signature
+ * keeps it forward-compatible with ad-hoc keys.
+ */
+export interface OutboundMessageMetadata {
+  /** Stable id for the outbound message (web echo / de-dupe). */
+  readonly messageId?: string;
+  /** Session this message belongs to (web frames). */
+  readonly sessionId?: string;
+  /** Structured channel event (e.g. `session.reset`) for adapters that render it. */
+  readonly event?: string;
+  /**
+   * Inbound platform message id this outbound should thread/reply to. The
+   * Telegram adapter maps it to `reply_parameters.message_id`, gated by the
+   * channel's `reply_to_mode`. Adapters without native threading ignore it.
+   */
+  readonly replyToMessageId?: string;
+  readonly [key: string]: unknown;
+}
+
 /** Outbound message to send via a channel adapter. */
 export interface OutboundMessage {
   readonly recipientId: string;
   readonly text: string;
-  readonly metadata?: Readonly<Record<string, unknown>>;
+  readonly metadata?: OutboundMessageMetadata;
 }
 
 /** Message handler callback for inbound messages. */
@@ -51,7 +73,22 @@ export interface ChannelAdapter {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
 
-  sendMessage(message: OutboundMessage): Promise<void>;
+  /**
+   * Send a message to the recipient. Returns the platform message id of the
+   * sent message (the last chunk's id when the text is split), or `undefined`
+   * when the adapter has no stable id to report. Callers that want to later
+   * edit the message in place (e.g. tool-progress status) keep this id and
+   * pass it to {@link editMessage}.
+   */
+  sendMessage(message: OutboundMessage): Promise<string | undefined>;
+
+  /**
+   * Edit a previously sent message in place. Optional — only adapters whose
+   * platform supports editing implement it (e.g. Telegram `editMessageText`).
+   * Callers must fall back to {@link sendMessage} when this is absent.
+   */
+  editMessage?(recipientId: string, messageId: string, text: string): Promise<void>;
+
   sendTyping?(recipientId: string): Promise<void>;
   sendTypingStop?(recipientId: string): Promise<void>;
 

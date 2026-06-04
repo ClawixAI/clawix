@@ -59,6 +59,12 @@ export class MessageRouterService {
     const { senderId, senderName } = message;
     let text = message.text;
 
+    // Anchor the agent's response back to the user's inbound message so adapters
+    // that support threading (Telegram) can reply to it. The adapter decides
+    // whether/how to thread per its `reply_to_mode`; adapters without threading
+    // ignore this metadata key.
+    const replyToMessageId = message.channelMessageId;
+
     // 1. Look up user by channel-appropriate method
     const user = await this.lookupUser(message.channelType, senderId);
 
@@ -153,14 +159,24 @@ export class MessageRouterService {
       );
       const bubbleState: BubbleState = { lastToolName: null };
 
+      // Edit-status-in-place: consecutive tool bubbles within one reasoning
+      // beat are consolidated into a single message that is edited as each
+      // tool fires (instead of appending a new bubble per tool). The anchor
+      // resets on every assistant_chunk so each tool group opens a fresh
+      // status message below the prose. Adapters without `editMessage` (web,
+      // whatsapp) transparently fall back to appending a new message.
+      let statusMessageId: string | undefined;
+
       const onEvent = agentDef.streamingEnabled
         ? async (e: ReasoningEvent): Promise<void> => {
             if (e.type === 'assistant_chunk') {
               if (e.content.trim().length === 0) return;
+              // Prose is a distinct beat — close the current status group.
+              statusMessageId = undefined;
               await channel.sendMessage({
                 recipientId: senderId,
                 text: e.content,
-                metadata: { messageId: randomUUID() },
+                metadata: { messageId: randomUUID(), replyToMessageId },
               });
             } else if (e.type === 'tool_started') {
               const bubble = formatToolBubble(
@@ -168,13 +184,26 @@ export class MessageRouterService {
                 toolProgressMode,
                 bubbleState,
               );
-              if (bubble) {
-                await channel.sendMessage({
-                  recipientId: senderId,
-                  text: bubble,
-                  metadata: { messageId: randomUUID() },
-                });
+              if (!bubble) return;
+
+              // Edit the open status message in place when we can; otherwise
+              // (first bubble of the group, or edit failed/unsupported) send a
+              // fresh message and remember its id for subsequent edits.
+              if (statusMessageId !== undefined && channel.editMessage) {
+                try {
+                  await channel.editMessage(senderId, statusMessageId, bubble);
+                  return;
+                } catch {
+                  // Fall through to a fresh send and re-anchor below.
+                  statusMessageId = undefined;
+                }
               }
+
+              statusMessageId = await channel.sendMessage({
+                recipientId: senderId,
+                text: bubble,
+                metadata: { messageId: randomUUID(), replyToMessageId },
+              });
             }
           }
         : undefined;
@@ -201,6 +230,7 @@ export class MessageRouterService {
           text: responseText,
           metadata: {
             messageId: result.responseMessageId ?? result.agentRunId,
+            replyToMessageId,
             ...(result.sessionId ? { sessionId: result.sessionId } : {}),
           },
         });
@@ -236,6 +266,7 @@ export class MessageRouterService {
         await channel.sendMessage({
           recipientId: senderId,
           text: classified.text,
+          metadata: { replyToMessageId },
         });
       }
 

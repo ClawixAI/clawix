@@ -178,14 +178,14 @@ describe('createWebAdapter', () => {
       expect(closedSocket.send).not.toHaveBeenCalled();
     });
 
-    it('does not throw when recipient has no connections', async () => {
+    it('does not throw when recipient has no connections (returns the message id)', async () => {
       await expect(
         adapter.sendMessage({
           recipientId: 'nobody',
           text: 'Hi',
           metadata: { messageId: 'm1', sessionId: 's1' },
         }),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe('m1');
     });
   });
 

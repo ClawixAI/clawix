@@ -18,6 +18,51 @@ import {
 
 const logger = createLogger('channels:telegram');
 
+/**
+ * Outbound reply-threading mode (mirrors Hermes `reply_to_mode`):
+ *   "off"   — never thread; replies are sent as standalone messages.
+ *   "first" — thread only the first message of a response to the user's
+ *             original message (default).
+ *   "all"   — thread every message of a response to the original.
+ */
+type ReplyToMode = 'off' | 'first' | 'all';
+
+const REPLY_TO_MODES: readonly ReplyToMode[] = ['off', 'first', 'all'];
+
+function resolveReplyToMode(value: unknown): ReplyToMode {
+  return typeof value === 'string' && (REPLY_TO_MODES as readonly string[]).includes(value)
+    ? (value as ReplyToMode)
+    : 'first';
+}
+
+/**
+ * Decide whether the chunk at `chunkIndex` of a single outbound response should
+ * thread to the user's original message. `chunkIndex` is the index within one
+ * `sendMessage` call's split chunks; the router supplies the anchor on every
+ * response send, so `"first"` threads the lead chunk of each call.
+ */
+function shouldThreadReply(mode: ReplyToMode, chunkIndex: number): boolean {
+  switch (mode) {
+    case 'off':
+      return false;
+    case 'all':
+      return true;
+    case 'first':
+    default:
+      return chunkIndex === 0;
+  }
+}
+
+/** Parse the inbound reply-anchor from outbound metadata into a numeric id. */
+function parseReplyAnchor(metadata: OutboundMessage['metadata']): number | null {
+  const raw = metadata?.replyToMessageId;
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 const extractReplyContext = (message: Message): InboundMessage['replyCtx'] => {
   if (!message?.reply_to_message || !message.reply_to_message.text) {
     return undefined;
@@ -45,6 +90,7 @@ export function createTelegramAdapter(config: ChannelAdapterConfig): ChannelAdap
   }
 
   const mode = (config.config['mode'] as string | undefined) ?? 'polling';
+  const replyToMode = resolveReplyToMode(config.config['reply_to_mode']);
   const bot = new Bot(botToken);
   let messageHandler: MessageHandler | null = null;
 
@@ -123,32 +169,107 @@ export function createTelegramAdapter(config: ChannelAdapterConfig): ChannelAdap
       await bot.stop();
     },
 
-    async sendMessage(message: OutboundMessage): Promise<void> {
+    async sendMessage(message: OutboundMessage): Promise<string | undefined> {
       const chatId = message.recipientId;
       const chunks = splitMessage(message.text, SAFE_SPLIT_LENGTH);
 
       if (chunks.length === 0) {
-        return;
+        return undefined;
       }
 
-      for (const chunk of chunks) {
+      const replyAnchor = parseReplyAnchor(message.metadata);
+
+      // Per-chunk send options. When this chunk should thread to the user's
+      // original message, attach `reply_parameters`; otherwise return undefined
+      // so the plain-text path stays argument-identical to a non-threaded send.
+      // `allow_sending_without_reply` makes Telegram deliver the message anyway
+      // if the anchor was deleted — server-side resilience instead of brittle
+      // error-string matching.
+      const optionsForChunk = (chunkIndex: number): Record<string, unknown> | undefined =>
+        replyAnchor !== null && shouldThreadReply(replyToMode, chunkIndex)
+          ? {
+              reply_parameters: {
+                message_id: replyAnchor,
+                allow_sending_without_reply: true,
+              },
+            }
+          : undefined;
+
+      // Track the last sent message id so callers can edit it in place (e.g.
+      // consolidating tool-progress bubbles). Single-line bubbles are always
+      // one chunk, so this is exactly the message to edit.
+      let lastMessageId: number | undefined;
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]!;
         const formatted = formatMarkdownV2(chunk);
+        const replyOptions = optionsForChunk(i);
 
         if (formatted.length > TELEGRAM_MAX_MESSAGE_LENGTH) {
           logger.warn(
             { chatId, rawLen: chunk.length, formattedLen: formatted.length },
             'MarkdownV2 expansion exceeded Telegram limit, sending chunk as plain text',
           );
-          await bot.api.sendMessage(chatId, chunk);
+          const sent = await bot.api.sendMessage(chatId, chunk, replyOptions);
+          lastMessageId = sent.message_id;
           continue;
         }
 
         try {
-          await bot.api.sendMessage(chatId, formatted, { parse_mode: 'MarkdownV2' });
+          const sent = await bot.api.sendMessage(chatId, formatted, {
+            ...replyOptions,
+            parse_mode: 'MarkdownV2',
+          });
+          lastMessageId = sent.message_id;
         } catch {
           logger.warn({ chatId }, 'MarkdownV2 send failed, retrying as plain text');
-          await bot.api.sendMessage(chatId, chunk);
+          const sent = await bot.api.sendMessage(chatId, chunk, replyOptions);
+          lastMessageId = sent.message_id;
         }
+      }
+
+      return lastMessageId === undefined ? undefined : String(lastMessageId);
+    },
+
+    async editMessage(recipientId: string, messageId: string, text: string): Promise<void> {
+      const chatId = recipientId;
+      const id = Number(messageId);
+      if (!Number.isInteger(id)) {
+        return;
+      }
+
+      const formatted = formatMarkdownV2(text);
+
+      // An edit targets a single existing message, so — unlike sendMessage — it
+      // cannot split overflowing text across messages.
+      if (formatted.length > TELEGRAM_MAX_MESSAGE_LENGTH) {
+        if (text.length > TELEGRAM_MAX_MESSAGE_LENGTH) {
+          // Even the raw form is over the cap: no edit can represent it. Fail
+          // fast so the caller falls back to a fresh (splitting) send instead
+          // of making doomed API calls.
+          throw new Error('edit text exceeds Telegram message length limit');
+        }
+        // Only the MarkdownV2 expansion overflows — edit as plain text directly
+        // (mirrors sendMessage's too-long-after-escaping fallback).
+        logger.warn(
+          { chatId, messageId, rawLen: text.length, formattedLen: formatted.length },
+          'MarkdownV2 edit expansion exceeded Telegram limit, editing as plain text',
+        );
+        await bot.api.editMessageText(chatId, id, text);
+        return;
+      }
+
+      try {
+        await bot.api.editMessageText(chatId, id, formatted, { parse_mode: 'MarkdownV2' });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        // Editing to identical content is a Telegram no-op error, not a failure.
+        if (msg.includes('message is not modified')) {
+          return;
+        }
+        // MarkdownV2 parse failure → retry as plain text, mirroring sendMessage.
+        logger.warn({ chatId, messageId }, 'MarkdownV2 edit failed, retrying as plain text');
+        await bot.api.editMessageText(chatId, id, text);
       }
     },
 

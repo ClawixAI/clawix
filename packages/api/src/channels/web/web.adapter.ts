@@ -94,10 +94,10 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
       connections.clear();
     },
 
-    async sendMessage(message: OutboundMessage): Promise<void> {
-      const messageId = (message.metadata?.['messageId'] as string | undefined) ?? '';
-      const sessionId = (message.metadata?.['sessionId'] as string | undefined) ?? '';
-      const event = message.metadata?.['event'] as string | undefined;
+    async sendMessage(message: OutboundMessage): Promise<string | undefined> {
+      const messageId = (message.metadata?.messageId as string | undefined) ?? '';
+      const sessionId = (message.metadata?.sessionId as string | undefined) ?? '';
+      const event = message.metadata?.event as string | undefined;
 
       logger.info(
         { recipientId: message.recipientId, messageId, sessionId, event },
@@ -130,6 +130,8 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
           }),
         );
       }
+
+      return messageId === '' ? undefined : messageId;
     },
 
     async sendError(recipientId: string, code: string, message: string): Promise<void> {
