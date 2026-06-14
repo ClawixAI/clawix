@@ -26,6 +26,7 @@ interface CreateAgentDefinitionData {
 
 type UpdateAgentDefinitionData = Partial<CreateAgentDefinitionData> & {
   readonly isActive?: boolean;
+  readonly toolConfig?: Record<string, unknown>;
 };
 
 @Injectable()
@@ -211,6 +212,14 @@ export class AgentDefinitionRepository {
     return buildPaginatedResponse(data, total, pagination);
   }
 
+  /**
+   * Count the agent definitions created by a given user. Used to enforce the
+   * per-policy `maxAgents` limit at creation time.
+   */
+  async countByCreator(userId: string): Promise<number> {
+    return this.prisma.agentDefinition.count({ where: { createdById: userId } });
+  }
+
   async create(data: CreateAgentDefinitionData): Promise<AgentDefinition> {
     try {
       return await this.prisma.agentDefinition.create({
@@ -257,6 +266,9 @@ export class AgentDefinitionRepository {
             : {}),
           ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
           ...(data.isOfficial !== undefined ? { isOfficial: data.isOfficial } : {}),
+          ...(data.toolConfig !== undefined
+            ? { toolConfig: data.toolConfig as Prisma.InputJsonValue }
+            : {}),
         },
       });
     } catch (error: unknown) {

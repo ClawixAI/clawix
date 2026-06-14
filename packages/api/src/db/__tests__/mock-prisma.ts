@@ -43,6 +43,10 @@ export function createMockPrismaService() {
     wikiPage: createModelMock(),
     wikiShare: createModelMock(),
     wikiLink: createModelMock(),
+    mcpServer: createModelMock(),
+    mcpConnection: createModelMock(),
+    mcpTool: createModelMock(),
+    mcpOAuthToken: createModelMock(),
     // Execute each operation in the transaction array sequentially.
     $transaction: vi.fn(async (ops: unknown[]) => {
       const results: unknown[] = [];

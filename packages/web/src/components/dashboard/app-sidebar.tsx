@@ -17,6 +17,8 @@ import {
   LogOut,
   MessageSquare,
   Moon,
+  Plug,
+  PlugZap,
   Radio,
   ScrollText,
   Settings2,
@@ -103,6 +105,7 @@ const governanceItems: readonly NavItem[] = [
   { title: 'Dashboard', href: '/dashboard', icon: BookOpen },
   { title: 'Token Usage', href: '/governance/tokens', icon: Coins },
   { title: 'Audit Logs', href: '/governance/audit', icon: ScrollText },
+  { title: 'MCP Governance', href: '/governance/mcp', icon: PlugZap, adminOnly: true },
 ];
 
 export function AppSidebar() {
@@ -244,6 +247,19 @@ export function AppSidebar() {
                 <Link href="/wiki">
                   <BookOpen />
                   <span>Wiki</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive('/mcp-servers')}
+                tooltip="MCP Servers"
+                className={navButtonClass}
+              >
+                <Link href="/mcp-servers">
+                  <Plug />
+                  <span>MCP Servers</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

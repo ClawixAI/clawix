@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,12 @@ import {
 import { FieldError } from '@/components/ui/field-error';
 import { agentFormSchema, parseForm, type FieldErrors } from '@/lib/validation';
 import { ProviderModelFields, agentFormInput, useProviders } from './agent-form-fields';
+import { AgentMcpTools } from './agent-mcp-tools';
+import {
+  bindingsFromToolConfig,
+  mergeMcpIntoToolConfig,
+  type McpSelections,
+} from './merge-tool-config';
 import type { ApiAgent } from './agents-list';
 
 // ------------------------------------------------------------------ //
@@ -197,6 +203,13 @@ export function EditAgentDialog({
   const providers = useProviders();
   const [streamingEnabled, setStreamingEnabled] = useState(agent?.streamingEnabled ?? false);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const savedBindings = bindingsFromToolConfig(agent?.toolConfig);
+  const [mcpSelections, setMcpSelections] = useState<McpSelections>(savedBindings);
+
+  // Reset MCP selections when a different agent is opened
+  useEffect(() => {
+    setMcpSelections(bindingsFromToolConfig(agent?.toolConfig));
+  }, [agent?.id]); // intentionally omit agent?.toolConfig — reset only when a different agent opens
 
   if (!agent) return null;
 
@@ -212,6 +225,10 @@ export function EditAgentDialog({
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
             fd.set('streamingEnabled', String(streamingEnabled));
+            fd.set(
+              'toolConfig',
+              JSON.stringify(mergeMcpIntoToolConfig(agent.toolConfig, mcpSelections)),
+            );
             const parsed = parseForm(agentFormSchema, agentFormInput(fd));
             if (!parsed.success) {
               setErrors(parsed.fieldErrors);
@@ -340,6 +357,12 @@ export function EditAgentDialog({
               onCheckedChange={setStreamingEnabled}
             />
           </div>
+
+          <AgentMcpTools
+            saved={savedBindings}
+            selections={mcpSelections}
+            onChange={setMcpSelections}
+          />
 
           <DialogFooter>
             <Button

@@ -9,14 +9,12 @@ import {
 } from '@nestjs/common';
 
 import { UserAgentRepository } from '../db/user-agent.repository.js';
+import { UserRepository } from '../db/user.repository.js';
+import { PolicyRepository } from '../db/policy.repository.js';
 import { resolveWorkspacePaths } from '../engine/workspace-resolver.js';
 import { ScopedFs } from '../workspace/scoped-fs.js';
 import { parseFrontmatter } from '../engine/skill-loader.service.js';
-import {
-  SKILL_NAME_PATTERN,
-  MAX_SKILL_NAME_LENGTH,
-  DEFAULT_MAX_SKILLS_PER_USER,
-} from '../engine/skill-loader.types.js';
+import { SKILL_NAME_PATTERN, MAX_SKILL_NAME_LENGTH } from '../engine/skill-loader.types.js';
 import type { CreateSkillInput, SkillReadResult } from '@clawix/shared';
 
 const SKILL_TEMPLATE = (name: string, description: string) =>
@@ -41,8 +39,16 @@ version: 1.0.0
 export class SkillsService {
   constructor(
     private readonly userAgentRepo: UserAgentRepository,
-    private readonly maxSkillsPerUser: number = DEFAULT_MAX_SKILLS_PER_USER,
+    private readonly userRepo: UserRepository,
+    private readonly policyRepo: PolicyRepository,
   ) {}
+
+  /** Resolve the user's per-policy skill cap (`Policy.maxSkills`). */
+  private async resolveMaxSkills(userId: string): Promise<number> {
+    const user = await this.userRepo.findById(userId);
+    const policy = await this.policyRepo.findById(user.policyId);
+    return policy.maxSkills;
+  }
 
   private validateName(name: string): void {
     if (name.length === 0 || name.length > MAX_SKILL_NAME_LENGTH) {
@@ -66,6 +72,7 @@ export class SkillsService {
 
   async create(userId: string, input: CreateSkillInput): Promise<void> {
     this.validateName(input.name);
+    const maxSkills = await this.resolveMaxSkills(userId);
     const { sfs, basePath } = await this.getScopedFs(userId);
 
     const existing = await fs.readdir(basePath, { withFileTypes: true }).catch(() => []);
@@ -73,8 +80,8 @@ export class SkillsService {
     if (existingDirs.includes(input.name)) {
       throw new ConflictException(`Skill "${input.name}" already exists`);
     }
-    if (existingDirs.length >= this.maxSkillsPerUser) {
-      throw new BadRequestException(`Maximum ${this.maxSkillsPerUser} skills reached`);
+    if (existingDirs.length >= maxSkills) {
+      throw new BadRequestException(`Maximum ${maxSkills} skills reached`);
     }
 
     await sfs.mkdir(`/${input.name}`);

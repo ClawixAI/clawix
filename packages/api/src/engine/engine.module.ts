@@ -5,6 +5,7 @@ import { Module, type OnModuleInit, type OnModuleDestroy } from '@nestjs/common'
 import { createLogger } from '@clawix/shared';
 
 import { DbModule } from '../db/index.js';
+import { McpModule } from '../mcp/mcp.module.js';
 import { SystemSettingsModule } from '../system-settings/system-settings.module.js';
 import { ProviderConfigModule } from '../provider-config/provider-config.module.js';
 import { AgentRunnerService } from './agent-runner.service.js';
@@ -48,7 +49,7 @@ import { WikiBootstrapService } from './wiki/wiki-bootstrap.service.js';
 import { SessionSearchService } from './session-recall/session-search.service.js';
 
 @Module({
-  imports: [DbModule, SystemSettingsModule, ProviderConfigModule],
+  imports: [DbModule, McpModule, SystemSettingsModule, ProviderConfigModule],
   providers: [
     AgentRunnerService,
     ContextBuilderService,

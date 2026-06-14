@@ -22,6 +22,7 @@ import { HealthModule } from './health/index.js';
 import { AppExceptionFilter } from './filters/app-exception.filter.js';
 import { GroupsModule } from './groups/groups.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { McpModule } from './mcp/mcp.module.js';
 import { WikiModule } from './wiki/wiki.module.js';
 import { MessagesModule } from './messages/index.js';
 import { ProfileModule } from './profile/index.js';
@@ -60,6 +61,7 @@ import { WorkspaceModule } from './workspace/index.js';
     ChatModule,
     GroupsModule,
     NotificationsModule,
+    McpModule,
     WikiModule,
     MessagesModule,
     TokensModule,

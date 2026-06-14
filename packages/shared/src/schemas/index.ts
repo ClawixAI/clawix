@@ -153,3 +153,21 @@ export {
   wikiGraphQuerySchema,
   type WikiGraphQuery,
 } from './wiki.schema.js';
+
+export {
+  mcpTransportSchema,
+  mcpAuthTypeSchema,
+  importMcpServerSchema,
+  updateMcpServerSchema,
+  connectMcpSchema,
+  updateMcpConnectionSchema,
+  mcpBindingsSchema,
+  setMcpTiersSchema,
+  type ImportMcpServerInput,
+  type UpdateMcpServerInput,
+  type ConnectMcpInput,
+  type UpdateMcpConnectionInput,
+  type McpBindings,
+  type McpToolTiers,
+  type SetMcpTiersInput,
+} from './mcp.schema.js';

@@ -72,6 +72,14 @@ export class GroupRepository {
     return buildPaginatedResponse(data, total, pagination);
   }
 
+  /**
+   * Count the groups a user currently owns (created and not soft-deleted).
+   * Used to enforce the per-policy `maxGroupsOwned` limit at creation time.
+   */
+  async countOwnedByUser(userId: string): Promise<number> {
+    return this.prisma.group.count({ where: { createdById: userId, deletedAt: null } });
+  }
+
   async create(data: {
     readonly name: string;
     readonly description?: string;

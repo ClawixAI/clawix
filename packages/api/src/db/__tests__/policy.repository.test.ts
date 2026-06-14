@@ -129,6 +129,17 @@ describe('PolicyRepository', () => {
       });
     });
 
+    it('should persist allowMcp through the whitelist', async () => {
+      mockPrisma.policy.update.mockResolvedValue({ ...mockPolicy, allowMcp: true });
+
+      await repo.update('policy-1', { allowMcp: true });
+
+      expect(mockPrisma.policy.update).toHaveBeenCalledWith({
+        where: { id: 'policy-1' },
+        data: { allowMcp: true },
+      });
+    });
+
     it('should throw NotFoundError when updating non-existent policy', async () => {
       mockPrisma.policy.update.mockRejectedValue({ code: 'P2025' });
 

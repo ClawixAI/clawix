@@ -348,4 +348,21 @@ describe('RedisService', () => {
       expect(result).toBe(false);
     });
   });
+
+  describe('acquireLock', () => {
+    it('returns true when SET NX succeeds', async () => {
+      mockClient.set.mockResolvedValue('OK');
+      expect(await service.acquireLock('k', 5)).toBe(true);
+      expect(mockClient.set).toHaveBeenCalledWith('k', '1', 'EX', 5, 'NX');
+    });
+    it('returns false when key already held', async () => {
+      mockClient.set.mockResolvedValue(null);
+      expect(await service.acquireLock('k', 5)).toBe(false);
+    });
+    it('releaseLock deletes the key', async () => {
+      mockClient.del.mockResolvedValue(1);
+      await service.releaseLock('k');
+      expect(mockClient.del).toHaveBeenCalledWith('k');
+    });
+  });
 });

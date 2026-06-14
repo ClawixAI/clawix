@@ -207,6 +207,7 @@ export class AdminService {
       readonly maxTokensPerCronRun?: number | null;
       readonly features?: Record<string, unknown>;
       readonly isActive?: boolean;
+      readonly allowMcp?: boolean;
     },
   ): Promise<Policy> {
     return this.policyRepo.update(id, {

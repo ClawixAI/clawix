@@ -22,3 +22,10 @@ export { WikiLinkRepository } from './wiki-link.repository.js';
 export { WikiShareRepository } from './wiki-share.repository.js';
 export { WikiSearchRepository } from './wiki-search.repository.js';
 export type { WikiSearchHit, SearchOptions } from './wiki-search.repository.js';
+export { McpServerRepository } from './mcp-server.repository.js';
+export type {
+  CreateMcpServerData,
+  CatalogToolData,
+  McpConnectionWithTools,
+  McpServerForRun,
+} from './mcp-server.repository.js';

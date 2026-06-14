@@ -56,6 +56,13 @@ function policyFormInput(form: FormData) {
 const emptyToNull = (v: number | '' | undefined): number | null =>
   v === '' || v === undefined ? null : v;
 
+/**
+ * Convert a USD dollar amount from the form into integer cents for the API
+ * (`maxTokenBudget` is stored in cents). Empty → null (unlimited).
+ */
+const dollarsToCents = (v: number | '' | undefined): number | null =>
+  v === '' || v === undefined ? null : Math.round(v * 100);
+
 /** Build the API payload from validated values + the checkbox/provider fields. */
 function policyPayload(
   parsed: PolicyFormValues,
@@ -70,7 +77,7 @@ function policyPayload(
   return {
     name: parsed.name,
     description: parsed.description && parsed.description.length > 0 ? parsed.description : null,
-    maxTokenBudget: emptyToNull(parsed.maxTokenBudget),
+    maxTokenBudget: dollarsToCents(parsed.maxTokenBudget),
     maxAgents: parsed.maxAgents,
     maxSkills: parsed.maxSkills,
     maxGroupsOwned: parsed.maxGroupsOwned,
@@ -79,6 +86,7 @@ function policyPayload(
     maxScheduledTasks: parsed.maxScheduledTasks,
     minCronIntervalSecs: parsed.minCronIntervalSecs,
     maxTokensPerCronRun: emptyToNull(parsed.maxTokensPerCronRun),
+    allowMcp: form.get('allowMcp') === 'on',
   };
 }
 
@@ -292,18 +300,21 @@ function PolicyFormFields({
 
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="policy-maxTokenBudget">Token Budget (cents/mo)</Label>
+          <Label htmlFor="policy-maxTokenBudget">Token Budget (USD / mo)</Label>
           <Input
             id="policy-maxTokenBudget"
             name="maxTokenBudget"
             type="number"
             min="0"
+            step="0.01"
             placeholder="Empty = unlimited"
-            defaultValue={policy?.maxTokenBudget ?? ''}
+            defaultValue={policy?.maxTokenBudget != null ? policy.maxTokenBudget / 100 : ''}
             aria-invalid={errors?.['maxTokenBudget'] ? true : undefined}
           />
           <FieldError message={errors?.['maxTokenBudget']} />
-          <p className="text-xs text-muted-foreground">In USD cents. Leave empty for unlimited.</p>
+          <p className="text-xs text-muted-foreground">
+            In USD dollars. Leave empty for unlimited.
+          </p>
         </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor="policy-maxAgents">Max Agents</Label>
@@ -392,6 +403,23 @@ function PolicyFormFields({
           />
           Enable cron scheduling
         </label>
+      </div>
+
+      {/* MCP Servers */}
+      <div className="flex flex-col gap-2">
+        <Label>MCP Servers</Label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="allowMcp"
+            className="size-4 rounded border"
+            defaultChecked={policy?.allowMcp ?? false}
+          />
+          Allow MCP servers
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Users on this policy can connect imported MCP servers and bind their tools to agents.
+        </p>
       </div>
 
       <div className="grid grid-cols-3 gap-4">

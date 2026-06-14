@@ -13,6 +13,7 @@ export const createPolicySchema = z.object({
   minCronIntervalSecs: z.number().int().min(60).default(300),
   maxTokensPerCronRun: z.number().int().positive().nullable().optional(),
   features: z.record(z.unknown()).default({}),
+  allowMcp: z.boolean().default(false),
 });
 
 export const updatePolicySchema = createPolicySchema.partial();

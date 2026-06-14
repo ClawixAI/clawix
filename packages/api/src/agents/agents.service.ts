@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 
 import type {
   CreateAgentDefinitionInput,
@@ -11,6 +11,8 @@ import type { AgentDefinition, AgentRun } from '../generated/prisma/client.js';
 import { AgentDefinitionRepository } from '../db/agent-definition.repository.js';
 import { AgentRunRepository } from '../db/agent-run.repository.js';
 import { UserAgentRepository } from '../db/user-agent.repository.js';
+import { UserRepository } from '../db/user.repository.js';
+import { PolicyRepository } from '../db/policy.repository.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NotificationFanoutService } from '../notifications/notifications.fanout.js';
 
@@ -20,6 +22,8 @@ export class AgentsService {
     private readonly agentDefRepo: AgentDefinitionRepository,
     private readonly agentRunRepo: AgentRunRepository,
     private readonly userAgentRepo: UserAgentRepository,
+    private readonly userRepo: UserRepository,
+    private readonly policyRepo: PolicyRepository,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationFanoutService,
   ) {}
@@ -58,7 +62,27 @@ export class AgentsService {
     // Only admins may create Public (official) agents; force false otherwise
     // so non-admins can't escalate by setting the flag in the request body.
     const isOfficial = userRole === 'admin' ? (input.isOfficial ?? false) : false;
+    // Enforce the per-policy agent quota for regular users. Admins (who create
+    // official/template agents) are exempt.
+    if (createdById && userRole !== 'admin') {
+      await this.enforceAgentLimit(createdById);
+    }
     return this.agentDefRepo.create({ ...input, createdById, isOfficial });
+  }
+
+  /**
+   * Throw `BadRequestException` if the user already owns the maximum number of
+   * agents permitted by their policy (`Policy.maxAgents`).
+   */
+  private async enforceAgentLimit(userId: string): Promise<void> {
+    const user = await this.userRepo.findById(userId);
+    const policy = await this.policyRepo.findById(user.policyId);
+    const count = await this.agentDefRepo.countByCreator(userId);
+    if (count >= policy.maxAgents) {
+      throw new BadRequestException(
+        `Agent limit reached: your plan allows at most ${policy.maxAgents} agents`,
+      );
+    }
   }
 
   async updateAgent(

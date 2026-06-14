@@ -37,6 +37,15 @@ export interface Tool {
   readonly name: string;
   readonly description: string;
   readonly parameters: ParamSchema;
+
+  /**
+   * When true, the registry passes params to execute() verbatim — no casting,
+   * no schema validation, no unknown-key stripping. For tools whose schema is
+   * owned by an external system (e.g. MCP servers) that validates its own
+   * input. Output post-processing (truncation, error hints) still applies.
+   */
+  readonly rawParams?: boolean;
+
   execute(params: Record<string, unknown>, ctx?: ToolExecuteContext): Promise<ToolResult>;
 }
 

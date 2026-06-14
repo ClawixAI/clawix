@@ -86,6 +86,16 @@ services:
       # WhatsApp Baileys auth state — written under the persistent /data mount
       # so the QR pairing survives container restarts.
       WHATSAPP_AUTH_DIR: /data/whatsapp-auth
+      # ---- MCP per-user OAuth (authType=oauth servers) ----
+      # MCP_OAUTH_CALLBACK_URL: the OAuth redirect_uri — your PUBLIC API URL +
+      #   /mcp/oauth/callback (must be https in prod and registered verbatim on
+      #   the provider's OAuth client), e.g. https://api.example.com/mcp/oauth/callback
+      # WEB_BASE_URL: dashboard base used for the post-callback redirect.
+      # MCP_INTERNAL_ALLOWLIST: comma-separated host:port of internal MCP
+      #   sidecars to allow past the SSRF guard, e.g. clawix-gworkspace:8000
+      MCP_OAUTH_CALLBACK_URL: ${MCP_OAUTH_CALLBACK_URL:-}
+      WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:3000}
+      MCP_INTERNAL_ALLOWLIST: ${MCP_INTERNAL_ALLOWLIST:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
@@ -187,6 +197,27 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  # ---- Google Workspace MCP sidecar (OAuth authType=oauth) — optional ----
+  # Self-hosted taylorwilsdon/google_workspace_mcp in bearer-proxy mode: clawix
+  # does the per-user Google OAuth and forwards each user's access token; this
+  # server validates it via Google userinfo and acts as that user. Uncomment,
+  # then set MCP_INTERNAL_ALLOWLIST=clawix-gworkspace:8000 + MCP_OAUTH_CALLBACK_URL
+  # on the api service, and import http://clawix-gworkspace:8000/mcp/ as authType=oauth.
+  # clawix-gworkspace:
+  #   image: ghcr.io/taylorwilsdon/google_workspace_mcp:latest
+  #   container_name: clawix-gworkspace
+  #   restart: unless-stopped
+  #   environment:
+  #     MCP_ENABLE_OAUTH21: 'true'
+  #     EXTERNAL_OAUTH21_PROVIDER: 'true' # clawix issues/forwards the Google token
+  #     WORKSPACE_MCP_STATELESS_MODE: 'true' # no per-user session on the sidecar
+  #     GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:?same client id clawix uses}
+  #     FASTMCP_SERVER_AUTH_GOOGLE_JWT_SIGNING_KEY: ${GWORKSPACE_JWT_SIGNING_KEY:?random secret}
+  #     WORKSPACE_MCP_PORT: '8000'
+  #   command: ['--transport', 'streamable-http', '--tools', 'gmail', 'drive', 'docs', 'sheets']
+  #   networks:
+  #     - clawix-internal
 
 volumes:
   postgres_data:

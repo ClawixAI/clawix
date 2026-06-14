@@ -83,6 +83,16 @@ function formatCost(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+/**
+ * Format a USD amount for the budget strip. Small amounts (< $1) keep
+ * sub-cent precision so accruing usage against a tiny budget (e.g. a $0.01
+ * cap) is still visible instead of rounding to $0.00.
+ */
+function formatUsd(n: number): string {
+  if (n !== 0 && Math.abs(n) < 1) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
+
 function formatCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -547,14 +557,16 @@ export default function TokenUsagePage() {
     void fetchData();
   }, [fetchData]);
 
-  const budgetTokens = summary?.budget.maxTokenBudget;
+  // The policy budget is denominated in USD (stored as cents on the policy,
+  // exposed here as `budgetUsd`). Enforcement compares accrued *cost*, not raw
+  // token count, against it — so the strip must be monetary end-to-end. The
+  // token count is still surfaced as a subtitle on "Cost Used".
+  const unlimited = summary?.budget.unlimited ?? false;
+  const budgetUsd = summary?.budget.budgetUsd ?? null;
+  const usedUsd = summary?.usage.totalEstimatedCostUsd ?? 0;
   const usedTokens = summary?.usage.totalTokens ?? 0;
-  const remainingTokens =
-    budgetTokens !== null && budgetTokens !== undefined ? budgetTokens - usedTokens : null;
-  const utilization = budgetTokens ? ((usedTokens / budgetTokens) * 100).toFixed(1) : null;
-
-  const utilPct =
-    budgetTokens != null && budgetTokens > 0 ? (usedTokens / budgetTokens) * 100 : null;
+  const remainingUsd = budgetUsd !== null && budgetUsd !== undefined ? budgetUsd - usedUsd : null;
+  const utilPct = budgetUsd != null && budgetUsd > 0 ? (usedUsd / budgetUsd) * 100 : null;
   const stats: {
     eyebrow: string;
     value: string;
@@ -564,27 +576,27 @@ export default function TokenUsagePage() {
   }[] = [
     {
       eyebrow: 'Monthly Budget',
-      value: summary?.budget.unlimited ? '∞' : formatNumber(budgetTokens ?? 0),
-      unit: summary?.budget.unlimited ? 'unlimited' : 'tokens',
-      tone: summary?.budget.unlimited ? 'positive' : 'neutral',
+      value: unlimited ? '∞' : formatUsd(budgetUsd ?? 0),
+      unit: unlimited ? 'unlimited' : 'USD / mo',
+      tone: unlimited ? 'positive' : 'neutral',
     },
     {
-      eyebrow: 'Used',
-      value: formatNumber(usedTokens),
-      unit: 'tokens',
+      eyebrow: 'Cost Used',
+      value: formatUsd(usedUsd),
+      unit: `${formatNumber(usedTokens)} tokens`,
       fillPct: utilPct,
       tone: utilPct != null && utilPct > 100 ? 'critical' : 'primary',
     },
     {
       eyebrow: 'Remaining',
-      value: remainingTokens !== null ? formatNumber(remainingTokens) : 'N/A',
-      unit: remainingTokens !== null ? 'tokens' : '',
-      tone: remainingTokens != null && remainingTokens < 0 ? 'critical' : 'positive',
+      value: unlimited ? '∞' : remainingUsd !== null ? formatUsd(remainingUsd) : 'N/A',
+      unit: unlimited ? 'unlimited' : remainingUsd !== null ? 'USD' : '',
+      tone: remainingUsd != null && remainingUsd < 0 ? 'critical' : 'positive',
     },
     {
       eyebrow: 'Utilization',
-      value: utilization ? `${utilization}%` : 'N/A',
-      unit: utilization ? 'of budget' : '',
+      value: utilPct != null ? `${utilPct.toFixed(1)}%` : 'N/A',
+      unit: utilPct != null ? 'of budget' : '',
       fillPct: utilPct,
       tone: utilPct != null && utilPct > 100 ? 'critical' : 'primary',
     },

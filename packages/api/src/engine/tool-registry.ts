@@ -250,6 +250,13 @@ export class ToolRegistry {
       return { output: `Tool not found: ${toolName}`, isError: true };
     }
 
+    // rawParams tools own their schema (e.g. MCP servers validate their own
+    // input). Pass params verbatim — no cast, no validate, no key stripping —
+    // but keep the run + output post-processing identical to the normal path.
+    if (tool.rawParams) {
+      return this.runAndPostProcess(tool, { ...params }, ctx);
+    }
+
     // Cast first, then validate
     const castedParams = castObject(params, tool.parameters);
     const errors = validateObject(castedParams, tool.parameters, '');
@@ -262,9 +269,22 @@ export class ToolRegistry {
       };
     }
 
+    const safeParams = stripUnknownKeys(castedParams, tool.parameters);
+    return this.runAndPostProcess(tool, safeParams, ctx);
+  }
+
+  /**
+   * Run a tool and apply output post-processing (truncation + error hints).
+   * Shared by the strict and rawParams branches of execute() so both paths
+   * format results identically.
+   */
+  private async runAndPostProcess(
+    tool: Tool,
+    params: Record<string, unknown>,
+    ctx?: ToolExecuteContext,
+  ): Promise<ToolResult> {
     try {
-      const safeParams = stripUnknownKeys(castedParams, tool.parameters);
-      const result = await tool.execute(safeParams, ctx);
+      const result = await tool.execute(params, ctx);
       const output = this.truncate(result.output);
 
       if (result.isError) {
@@ -277,7 +297,7 @@ export class ToolRegistry {
       return { output, isError: false };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.error({ tool: toolName, error: message }, 'Tool execution failed');
+      logger.error({ tool: tool.name, error: message }, 'Tool execution failed');
       return {
         output: `${message}\n\n[Analyze the error above and try a different approach.]`,
         isError: true,

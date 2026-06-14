@@ -56,6 +56,7 @@ export interface ApiPolicy {
   features: Record<string, unknown>;
   isActive: boolean;
   createdAt: string;
+  allowMcp: boolean;
 }
 
 interface PaginatedPolicies {

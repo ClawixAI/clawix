@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mcpBindingsSchema } from './mcp.schema.js';
 
 export const agentRoleEnum = z.enum(['primary', 'worker']);
 
@@ -44,9 +45,17 @@ export const createAgentDefinitionSchema = z.object({
   isOfficial: z.boolean().default(false),
 });
 
+/**
+ * Validates the `toolConfig` JSON blob on agent update.
+ * The `mcp` key is validated against `mcpBindingsSchema` when present (TOFU
+ * enforcement: wildcards rejected, explicit arrays only).  Any other keys
+ * (e.g. browser config) are passed through unchanged via `.passthrough()`.
+ */
+const toolConfigSchema = z.object({ mcp: mcpBindingsSchema.optional() }).passthrough().optional();
+
 export const updateAgentDefinitionSchema = createAgentDefinitionSchema
   .partial()
-  .extend({ isActive: z.boolean().optional() });
+  .extend({ isActive: z.boolean().optional(), toolConfig: toolConfigSchema });
 
 export type CreateAgentDefinitionInput = z.infer<typeof createAgentDefinitionSchema>;
 export type UpdateAgentDefinitionInput = z.infer<typeof updateAgentDefinitionSchema>;

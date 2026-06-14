@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as dns from 'dns';
 import { createBrowserNavigateTool } from './browser-navigate.js';
 import { BrowserSessionManager } from '../browser-session-manager.js';
 import { BrowserProviderRegistry } from '../browser-provider-registry.js';
@@ -13,6 +14,16 @@ describe('browser_navigate', () => {
   let ctx: RunContext;
 
   beforeEach(() => {
+    // The SSRF guard in validateUrl() resolves the hostname via a real
+    // dns.promises.lookup(). Left live, this unit test depends on network DNS
+    // and starves past the default 5s test timeout under the full parallel
+    // suite. Stub it to a stable public IP so the test exercises only the
+    // session-acquisition wiring it actually cares about.
+    vi.spyOn(dns.promises, 'lookup').mockResolvedValue({
+      address: '93.184.216.34',
+      family: 4,
+    } as never);
+
     provider = new MockBrowserProvider();
     Object.defineProperty(provider, 'name', { value: 'local' });
     const registry = new BrowserProviderRegistry();
@@ -22,6 +33,10 @@ describe('browser_navigate', () => {
     const sem = new BrowserSessionSemaphore({ getQuota: () => 5, queueTimeoutMs: 100 });
     mgr = new BrowserSessionManager(registry, sem);
     ctx = stubRunContext({ runId: 'run-A', userId: 'user-A' });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('rejects missing url parameter', async () => {

@@ -27,6 +27,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { ProviderModelFields, agentFormInput, useProviders } from '../agent-form-fields';
+import { AgentMcpTools } from '../agent-mcp-tools';
+import {
+  bindingsFromToolConfig,
+  mergeMcpIntoToolConfig,
+  type McpSelections,
+} from '../merge-tool-config';
 import { selectBoundAgentIds, type UserAgentBinding } from './bound-agents';
 import {
   Table,
@@ -79,6 +85,7 @@ interface AgentDefinition {
   skillIds: string[];
   maxTokensPerRun: number;
   containerConfig: Record<string, unknown>;
+  toolConfig?: Record<string, unknown>;
   isActive: boolean;
   streamingEnabled: boolean;
   isOfficial: boolean;
@@ -306,6 +313,13 @@ function EditAgentDialog({
   const providers = useProviders();
   const [streamingEnabled, setStreamingEnabled] = useState(agent?.streamingEnabled ?? false);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const savedBindings = bindingsFromToolConfig(agent?.toolConfig);
+  const [mcpSelections, setMcpSelections] = useState<McpSelections>(savedBindings);
+
+  // Reset MCP selections when a different agent is opened
+  useEffect(() => {
+    setMcpSelections(bindingsFromToolConfig(agent?.toolConfig));
+  }, [agent?.id]); // intentionally omit agent?.toolConfig — reset only when a different agent opens
 
   if (!agent) return null;
 
@@ -321,6 +335,10 @@ function EditAgentDialog({
             e.preventDefault();
             const fd = new FormData(e.currentTarget);
             fd.set('streamingEnabled', String(streamingEnabled));
+            fd.set(
+              'toolConfig',
+              JSON.stringify(mergeMcpIntoToolConfig(agent.toolConfig, mcpSelections)),
+            );
             const parsed = parseForm(agentFormSchema, agentFormInput(fd));
             if (!parsed.success) {
               setErrors(parsed.fieldErrors);
@@ -434,6 +452,12 @@ function EditAgentDialog({
               onCheckedChange={setStreamingEnabled}
             />
           </div>
+
+          <AgentMcpTools
+            saved={savedBindings}
+            selections={mcpSelections}
+            onChange={setMcpSelections}
+          />
 
           <DialogFooter>
             <Button
@@ -1340,6 +1364,9 @@ export default function UserAgentsPage() {
           apiBaseUrl: form.get('apiBaseUrl') || undefined,
           maxTokensPerRun: Number(formString(form, 'maxTokensPerRun')),
           streamingEnabled: form.get('streamingEnabled') === 'true',
+          toolConfig: form.get('toolConfig')
+            ? (JSON.parse(formString(form, 'toolConfig')) as Record<string, unknown>)
+            : undefined,
         }),
       });
       setEditAgent(null);

@@ -41,6 +41,10 @@ services:
     working_dir: /app
     ports:
       - '3001:3001'
+    # Reach a Google Workspace MCP sidecar running on the host (uvx, port 8000)
+    # as http://host.docker.internal:8000 (paired with MCP_INTERNAL_ALLOWLIST).
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data
@@ -81,6 +85,12 @@ services:
       SKILLS_CUSTOM_HOST_DIR: ${CLAWIX_HOST_SKILLS_DIR:-${PWD}/skills/custom}
       # Public memory lives under the persistent /data bind mount so it
       # survives `docker compose down` and image rebuilds.
+      # ---- MCP OAuth (set when using authType=oauth MCP servers) ----
+      MCP_OAUTH_CALLBACK_URL: http://localhost:3001/mcp/oauth/callback
+      WEB_BASE_URL: http://localhost:3000
+      # Google Workspace MCP sidecar runs on the HOST (uvx, port 8000), reached
+      # from this container via host.docker.internal (see extra_hosts below).
+      MCP_INTERNAL_ALLOWLIST: host.docker.internal:8000
     command: >
       sh -c "apt-get update && apt-get install -y --no-install-recommends docker.io && rm -rf /var/lib/apt/lists/* &&
              corepack enable &&
@@ -198,6 +208,22 @@ services:
     networks:
       - clawix-browser-egress
       - clawix-browser-net
+
+  # ---- Optional: Google Workspace MCP sidecar (OAuth bearer-proxy mode) ----
+  # Uncomment this service and set MCP_OAUTH_CALLBACK_URL + MCP_INTERNAL_ALLOWLIST
+  # on api-server above, then import the server in Admin → MCP with authType=oauth.
+  # clawix-gworkspace:
+  #   image: ghcr.io/taylorwilsdon/google_workspace_mcp:latest
+  #   environment:
+  #     MCP_ENABLE_OAUTH21: 'true'
+  #     EXTERNAL_OAUTH21_PROVIDER: 'true'
+  #     WORKSPACE_MCP_STATELESS_MODE: 'true'
+  #     GOOGLE_OAUTH_CLIENT_ID: '<your-google-oauth-client-id>'
+  #     FASTMCP_SERVER_AUTH_GOOGLE_JWT_SIGNING_KEY: '<any-random-secret>'
+  #     WORKSPACE_MCP_PORT: '8000'
+  #   command: ['--transport', 'streamable-http', '--tools', 'gmail', 'drive', 'docs', 'sheets']
+  #   networks:
+  #     - clawix-internal
 
 volumes:
   postgres_data:

@@ -45,6 +45,7 @@ export interface ApiAgent {
   skillIds: string[];
   maxTokensPerRun: number;
   containerConfig: Record<string, unknown>;
+  toolConfig?: Record<string, unknown>;
   isActive: boolean;
   streamingEnabled: boolean;
   isOfficial: boolean;
@@ -240,6 +241,9 @@ export function AgentsList() {
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean),
+          toolConfig: form.get('toolConfig')
+            ? (JSON.parse(formString(form, 'toolConfig')) as Record<string, unknown>)
+            : undefined,
         }),
       });
       setEditAgent(null);

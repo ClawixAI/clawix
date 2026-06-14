@@ -16,7 +16,7 @@
  *  10. Resolve API key from env vars
  *  11. Create LLMProvider via createProvider — recovery is handled inside ReasoningLoop
  *  12. Start container
- *  13. Create ToolRegistry + registerBuiltinTools + register spawn tool
+ *  13. Create ToolRegistry + registerBuiltinTools + register spawn/cron/browser/python/MCP tools
  *  14. Create ReasoningLoop
  *  15. Run loop (with effectiveSignal so parent cancellations propagate)
  *  16. Save loop-generated messages (assistant + tool responses)
@@ -104,9 +104,17 @@ import { WikiLinkRepository } from '../db/wiki-link.repository.js';
 import { WikiShareRepository } from '../db/wiki-share.repository.js';
 import { WikiSearchRepository } from '../db/wiki-search.repository.js';
 import { AuditLogRepository } from '../db/audit-log.repository.js';
+import { McpServerRepository, type McpServerForRun } from '../db/mcp-server.repository.js';
+import { NotificationRepository } from '../db/notification.repository.js';
+import { McpClientService } from '../mcp/mcp-client.service.js';
+import { McpTokenManager } from '../mcp/mcp-token-manager.service.js';
+import { McpRunConnections } from './tools/mcp/mcp-run-connections.js';
+import { registerMcpTools } from './tools/mcp/mcp-tool.factory.js';
 import { registerWikiTools } from './tools/wiki/register.js';
 import { registerSessionTools } from './tools/session/register.js';
 import { SessionSearchService } from './session-recall/session-search.service.js';
+import { mcpBindingsSchema, type McpBindings } from '@clawix/shared';
+import { bindingsFromTiers } from './tools/mcp/bindings-from-tiers.js';
 
 const logger = createLogger('engine:agent-runner');
 
@@ -173,6 +181,10 @@ export class AgentRunnerService {
     private readonly wikiSearchRepo: WikiSearchRepository,
     private readonly auditLogRepo: AuditLogRepository,
     private readonly sessionSearchService: SessionSearchService,
+    private readonly mcpServerRepo: McpServerRepository,
+    private readonly notificationRepo: NotificationRepository,
+    private readonly mcpClientService: McpClientService,
+    private readonly mcpTokenManager: McpTokenManager,
   ) {}
 
   /** Lazy accessor to break circular dependency with TaskExecutorService. */
@@ -303,6 +315,8 @@ export class AgentRunnerService {
     let containerId: string | null = null;
     // Pool is only meaningful when a session exists to key the warm container.
     const usePool = !isSubAgent && session !== null;
+    // Hoisted so the finally block can close any opened MCP connections.
+    let mcpConnections: McpRunConnections | undefined;
 
     try {
       // Step 7: Load message history (sub-agents start with a clean slate)
@@ -586,6 +600,49 @@ export class AgentRunnerService {
         );
       }
 
+      // Step 13d: Wire MCP tools (gated by policy.allowMcp + per-agent bindings).
+      // Registration is zero-network: wrappers come from the cached McpTool
+      // catalog + the caller's McpConnection; connections open lazily on the
+      // first actual call.
+      mcpConnections = new McpRunConnections(this.mcpClientService, undefined, {
+        tokenManager: this.mcpTokenManager,
+        userId,
+      });
+      if (policy.allowMcp) {
+        // Override: an explicit per-agent allowlist wins (TOFU, power users /
+        // narrow sub-agents). Empty/absent binding → auto path: every server
+        // the user has an active connection to contributes its `recommended`
+        // tier, so public agents get the user's curated tools with no Save.
+        const override = mcpBindingsSchema.safeParse(
+          ((agentDef.toolConfig ?? {}) as { mcp?: unknown }).mcp ?? {},
+        );
+
+        let mcpServers: readonly McpServerForRun[];
+        let bindings: McpBindings;
+        if (override.success && override.data.servers.length > 0) {
+          mcpServers = await this.mcpServerRepo.findServersForRun(
+            override.data.servers.map((b) => b.serverId),
+            userId,
+          );
+          bindings = override.data;
+        } else {
+          mcpServers = await this.mcpServerRepo.findEnabledServersForUser(userId);
+          bindings = bindingsFromTiers(mcpServers);
+        }
+
+        if (bindings.servers.length > 0) {
+          await registerMcpTools(registry, {
+            servers: mcpServers,
+            bindings,
+            connections: mcpConnections,
+            audit: this.auditLogRepo,
+            notifications: this.notificationRepo,
+            userId,
+            agentRunId: agentRun.id,
+          });
+        }
+      }
+
       // Step 14: Create ReasoningLoop
       const loop = new ReasoningLoop(provider, registry, this.compressor, {
         provider: agentDef.provider,
@@ -801,6 +858,9 @@ export class AgentRunnerService {
 
       throw err;
     } finally {
+      if (mcpConnections) {
+        await mcpConnections.closeAll().catch(() => undefined);
+      }
       if (!usePool && containerId !== null) {
         await this.containerRunner.stop(containerId);
       } else if (usePool) {

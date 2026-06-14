@@ -187,6 +187,17 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return result === 'OK';
   }
 
+  /** Best-effort distributed lock: SET key 1 EX ttl NX. Returns true if acquired. */
+  async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+    const res = await this.client.set(key, '1', 'EX', ttlSeconds, 'NX');
+    return res === 'OK';
+  }
+
+  /** Release a lock acquired via acquireLock. */
+  async releaseLock(key: string): Promise<void> {
+    await this.client.del(key);
+  }
+
   /** Returns the underlying ioredis client for advanced operations. Use sparingly. */
   getClient(): Redis {
     return this.client;

@@ -13,6 +13,19 @@ describe('GroupRepository extensions', () => {
     repo = new GroupRepository(mockPrisma as unknown as PrismaService);
   });
 
+  describe('countOwnedByUser', () => {
+    it('counts non-deleted groups created by the user', async () => {
+      mockPrisma.group.count.mockResolvedValue(4);
+
+      const result = await repo.countOwnedByUser('u1');
+
+      expect(result).toBe(4);
+      expect(mockPrisma.group.count).toHaveBeenCalledWith({
+        where: { createdById: 'u1', deletedAt: null },
+      });
+    });
+  });
+
   describe('listMembershipsForUser', () => {
     it('returns memberships for the user joined with the group', async () => {
       const rows = [

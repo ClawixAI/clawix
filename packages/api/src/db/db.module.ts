@@ -22,6 +22,7 @@ import { WikiLinkRepository } from './wiki-link.repository.js';
 import { WikiShareRepository } from './wiki-share.repository.js';
 import { WikiSearchRepository } from './wiki-search.repository.js';
 import { SessionMessageSearchRepository } from './session-message-search.repository.js';
+import { McpServerRepository } from './mcp-server.repository.js';
 
 const repositories = [
   PolicyRepository,
@@ -46,6 +47,7 @@ const repositories = [
   WikiShareRepository,
   WikiSearchRepository,
   SessionMessageSearchRepository,
+  McpServerRepository,
 ];
 
 @Global()

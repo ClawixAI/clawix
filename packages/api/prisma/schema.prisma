@@ -44,6 +44,7 @@ model Policy {
   maxPythonCpuCores            Int      @default(1)
   maxConcurrentPythonRuns      Int      @default(2)
   maxSubAgentRunMs             Int      @default(300000) // wall-clock cap per spawned sub-agent run (ms)
+  allowMcp                     Boolean  @default(false)
   isActive                     Boolean  @default(true)
   createdAt                    DateTime @default(now())
   updatedAt                    DateTime @updatedAt
@@ -87,6 +88,7 @@ model User {
   groupInvitesReceived    GroupInvite[]     @relation("GroupInviteInvitee")
   groupInvitesSent        GroupInvite[]     @relation("GroupInviteInvitedBy")
   wikiSharesAuthored      WikiShare[]       @relation("WikiSharedBy")
+  mcpConnections          McpConnection[]
 }
 
 // ============================================================================
@@ -124,11 +126,11 @@ model AgentDefinition {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  agentRuns  AgentRun[]
-  sessions   Session[]
-  userAgents UserAgent[]
-  tasks      Task[]
-  createdBy  User?       @relation("CreatedAgentDefinitions", fields: [createdById], references: [id], onDelete: SetNull)
+  agentRuns       AgentRun[]
+  sessions        Session[]
+  userAgents      UserAgent[]
+  tasks           Task[]
+  createdBy       User?               @relation("CreatedAgentDefinitions", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([isActive])
   @@index([role, isActive])
@@ -539,6 +541,7 @@ enum NotificationType {
   GROUP_INVITE
   GROUP_INVITE_RESPONSE
   PRIMARY_AGENT_ASSIGNED
+  MCP_SERVER_ATTENTION
 }
 
 model Notification {
@@ -566,4 +569,106 @@ model SystemSettings {
   settings  Json     @default("{}")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// MCP (Model Context Protocol) Adapter
+// ============================================================================
+
+enum McpTransport {
+  http
+  sse
+}
+
+enum McpAuthType {
+  none
+  header
+  oauth // reserved for v2 (OAuth phase) — not accepted by v1 API
+}
+
+enum McpConnectionStatus {
+  active
+  disabled // user-set, user-reversible
+  error
+  reauth_required // v2 (OAuth) — reserved
+}
+
+/// Admin-imported, org-global MCP server definition (metadata only).
+model McpServer {
+  id                  String       @id @default(cuid())
+  slug                String       @unique // tool-name namespace: mcp__<slug>__<tool>
+  name                String
+  enabled             Boolean      @default(true) // admin kill switch (org-wide)
+  transportType       McpTransport @default(http)
+  url                 String
+  authType            McpAuthType  @default(none)
+  authHeaderName      String? // e.g. "Authorization"
+  credentialFormat    String? // UI hint, e.g. "Bearer {token}"
+  // OAuth config (authType=oauth) — admin sets these at import; client secret encrypted.
+  oauthAuthorizeUrl    String?
+  oauthTokenUrl        String?
+  oauthScopes          String?
+  oauthClientId        String?
+  oauthClientSecretEnc String?
+  // Spec-native discovery (RFC 9728/8414/7591). When oauthAutoDiscover is true the
+  // authorize/token URLs + scopes (+ a DCR-registered client) are discovered from
+  // the server on first connect and cached into the columns above; oauthResource is
+  // the RFC 8707 canonical resource indicator; oauthDiscoveredAt marks the cache.
+  oauthAutoDiscover    Boolean      @default(false)
+  oauthResource        String?
+  oauthDiscoveredAt    DateTime?
+  setupInstructionsMd String       @default("")
+  createdByUserId     String
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  connections McpConnection[]
+}
+
+/// Per-connection, per-user cached tool catalog (discovered with the user's token).
+model McpTool {
+  id              String        @id @default(cuid())
+  mcpConnectionId String
+  connection      McpConnection @relation(fields: [mcpConnectionId], references: [id], onDelete: Cascade)
+  name            String
+  description     String
+  inputSchema     Json
+  scanFlagged     Boolean       @default(false) // description failed prompt-injection scan
+  scanReason      String?
+  createdAt       DateTime      @default(now())
+
+  @@unique([mcpConnectionId, name])
+}
+
+/// A user's personal link to an imported server, holding THEIR credential + catalog.
+model McpConnection {
+  id               String              @id @default(cuid())
+  mcpServerId      String
+  server           McpServer           @relation(fields: [mcpServerId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialEnc    String? // AES-256-GCM; null for authType=none servers
+  status           McpConnectionStatus @default(active)
+  lastError        String?
+  lastDiscoveredAt DateTime?
+  tiers            Json? // { recommended: string[], optional: string[], off: string[] } — null until set
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  tools      McpTool[]
+  oauthToken McpOAuthToken?
+
+  @@unique([mcpServerId, userId])
+  @@index([userId])
+}
+
+/// Per-connection encrypted OAuth tokens (authType=oauth). One row per connection.
+model McpOAuthToken {
+  mcpConnectionId String        @id
+  connection      McpConnection @relation(fields: [mcpConnectionId], references: [id], onDelete: Cascade)
+  accessTokenEnc  String
+  refreshTokenEnc String?
+  expiresAt       DateTime
+  scope           String
+  lastRefreshedAt DateTime?
 }

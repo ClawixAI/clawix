@@ -71,3 +71,45 @@ describe('validateUrl — internal allowlist', () => {
     );
   });
 });
+
+describe('validateUrl allowlistEnv option', () => {
+  afterEach(() => {
+    delete process.env['MCP_INTERNAL_ALLOWLIST'];
+    delete process.env['BROWSER_INTERNAL_ALLOWLIST'];
+  });
+
+  it('allows a private host listed in MCP_INTERNAL_ALLOWLIST', async () => {
+    process.env['MCP_INTERNAL_ALLOWLIST'] = 'localhost:3141';
+    // Override DNS to return loopback for localhost.
+    const dns = await import('dns');
+    vi.mocked(dns.promises.lookup).mockResolvedValueOnce({ address: '127.0.0.1', family: 4 });
+
+    const result = await validateUrl('http://localhost:3141/mcp', {
+      allowlistEnv: 'MCP_INTERNAL_ALLOWLIST',
+    });
+    expect(result.hostname).toBe('localhost');
+  });
+
+  it('still blocks private hosts not in the MCP allowlist', async () => {
+    process.env['MCP_INTERNAL_ALLOWLIST'] = 'other.internal';
+    // Override DNS to return loopback for localhost.
+    const dns = await import('dns');
+    vi.mocked(dns.promises.lookup).mockResolvedValueOnce({ address: '127.0.0.1', family: 4 });
+
+    await expect(
+      validateUrl('http://localhost:3141/mcp', { allowlistEnv: 'MCP_INTERNAL_ALLOWLIST' }),
+    ).rejects.toThrow();
+  });
+
+  it('does not consult BROWSER_INTERNAL_ALLOWLIST when allowlistEnv is MCP', async () => {
+    process.env['BROWSER_INTERNAL_ALLOWLIST'] = 'localhost:3141';
+    // Override DNS to return loopback for localhost.
+    const dns = await import('dns');
+    vi.mocked(dns.promises.lookup).mockResolvedValueOnce({ address: '127.0.0.1', family: 4 });
+
+    await expect(
+      validateUrl('http://localhost:3141/mcp', { allowlistEnv: 'MCP_INTERNAL_ALLOWLIST' }),
+    ).rejects.toThrow();
+    // BROWSER_INTERNAL_ALLOWLIST cleanup is handled by afterEach
+  });
+});

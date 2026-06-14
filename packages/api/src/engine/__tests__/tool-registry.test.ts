@@ -428,6 +428,96 @@ describe('ToolRegistry — execute', () => {
   });
 });
 
+describe('ToolRegistry — execute with rawParams', () => {
+  it('passes params verbatim: unknown keys preserved, no coercion', async () => {
+    const registry = new ToolRegistry();
+    let received: Record<string, unknown> = {};
+    registry.register({
+      name: 'raw',
+      description: 'raw passthrough',
+      parameters: {
+        type: 'object',
+        properties: { flag: { type: 'boolean' }, count: { type: 'integer' } },
+      },
+      rawParams: true,
+      async execute(params) {
+        received = params;
+        return { output: 'ok', isError: false };
+      },
+    });
+
+    const result = await registry.execute('raw', {
+      flag: 'true', // would normally coerce to boolean true
+      count: '5', // would normally coerce to int 5
+      extra: 'kept', // would normally be stripped (not in schema)
+    });
+
+    expect(result.isError).toBe(false);
+    expect(received).toEqual({ flag: 'true', count: '5', extra: 'kept' });
+  });
+
+  it('does not reject schema-violating args — execute still runs', async () => {
+    const registry = new ToolRegistry();
+    let executed = false;
+    registry.register({
+      name: 'raw',
+      description: 'raw',
+      parameters: {
+        type: 'object',
+        properties: { name: { type: 'string' } },
+        required: ['name'],
+      },
+      rawParams: true,
+      async execute() {
+        executed = true;
+        return { output: 'ok', isError: false };
+      },
+    });
+
+    // 'name' is required + must be a string; pass a number and omit nothing —
+    // strict validation would reject, rawParams must let it through.
+    const result = await registry.execute('raw', { name: 123 });
+    expect(executed).toBe(true);
+    expect(result.isError).toBe(false);
+    expect(result.output).not.toContain('Invalid type');
+  });
+
+  it('still truncates output over maxOutputChars', async () => {
+    const registry = new ToolRegistry(50);
+    registry.register({
+      name: 'rawbig',
+      description: 'raw big',
+      parameters: { type: 'object' },
+      rawParams: true,
+      async execute() {
+        return { output: 'x'.repeat(20_000), isError: false };
+      },
+    });
+
+    const result = await registry.execute('rawbig', {});
+    expect(result.output.length).toBeLessThan(20_000);
+    expect(result.output).toContain('... (truncated)');
+  });
+
+  it('still appends the error hint to error results', async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'rawfail',
+      description: 'raw fail',
+      parameters: { type: 'object' },
+      rawParams: true,
+      async execute() {
+        return { output: 'boom', isError: true };
+      },
+    });
+
+    const result = await registry.execute('rawfail', {});
+    expect(result.isError).toBe(true);
+    expect(result.output).toContain('boom');
+    expect(result.output).toContain('[Analyze the error above and try a different approach.]');
+  });
+});
+
 describe('execute with abortSignal context', () => {
   it('forwards ctx.abortSignal to the tool', async () => {
     const registry = new ToolRegistry();

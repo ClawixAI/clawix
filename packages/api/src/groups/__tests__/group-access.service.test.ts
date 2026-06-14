@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ForbiddenException, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 
 import { GroupAccessService } from '../group-access.service.js';
 import type { GroupRepository } from '../../db/group.repository.js';
@@ -7,6 +12,7 @@ import type { GroupInviteRepository } from '../../db/group-invite.repository.js'
 import type { NotificationFanoutService } from '../../notifications/notifications.fanout.js';
 import type { AuditLogRepository } from '../../db/audit-log.repository.js';
 import type { UserRepository } from '../../db/user.repository.js';
+import type { PolicyRepository } from '../../db/policy.repository.js';
 
 function makeRepos() {
   const groupRepo = {
@@ -21,6 +27,7 @@ function makeRepos() {
     listMembers: vi.fn(),
     isOwner: vi.fn(),
     listMembershipsForUser: vi.fn(),
+    countOwnedByUser: vi.fn().mockResolvedValue(0),
   };
   const inviteRepo = {
     create: vi.fn(),
@@ -33,9 +40,10 @@ function makeRepos() {
   };
   const notifications = { create: vi.fn() };
   const auditRepo = { create: vi.fn() };
-  const userRepo = { findById: vi.fn() };
+  const userRepo = { findById: vi.fn().mockResolvedValue({ id: 'u1', policyId: 'policy-1' }) };
+  const policyRepo = { findById: vi.fn().mockResolvedValue({ id: 'policy-1', maxGroupsOwned: 5 }) };
 
-  return { groupRepo, inviteRepo, notifications, auditRepo, userRepo };
+  return { groupRepo, inviteRepo, notifications, auditRepo, userRepo, policyRepo };
 }
 
 function makeService(r: ReturnType<typeof makeRepos>) {
@@ -45,6 +53,7 @@ function makeService(r: ReturnType<typeof makeRepos>) {
     r.notifications as unknown as NotificationFanoutService,
     r.auditRepo as unknown as AuditLogRepository,
     r.userRepo as unknown as UserRepository,
+    r.policyRepo as unknown as PolicyRepository,
   );
 }
 
@@ -72,6 +81,16 @@ describe('GroupAccessService', () => {
         expect.objectContaining({ userId: 'u1', action: 'group.create', resourceId: 'g1' }),
       );
       expect(result.id).toBe('g1');
+    });
+
+    it('rejects with BadRequestException when the user is at their owned-group limit', async () => {
+      r.policyRepo.findById.mockResolvedValue({ id: 'policy-1', maxGroupsOwned: 2 });
+      r.groupRepo.countOwnedByUser.mockResolvedValue(2);
+
+      await expect(svc.createGroup('u1', { name: 'Alpha' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(r.groupRepo.create).not.toHaveBeenCalled();
     });
   });
 

@@ -19,6 +19,7 @@ interface CreatePolicyData {
   readonly minCronIntervalSecs?: number;
   readonly maxTokensPerCronRun?: number | null;
   readonly features?: Prisma.InputJsonValue;
+  readonly allowMcp?: boolean;
 }
 
 type UpdatePolicyData = Partial<CreatePolicyData> & {
@@ -90,6 +91,7 @@ export class PolicyRepository {
             ? { maxTokensPerCronRun: data.maxTokensPerCronRun }
             : {}),
           ...(data.features !== undefined ? { features: data.features } : {}),
+          ...(data.allowMcp !== undefined ? { allowMcp: data.allowMcp } : {}),
         },
       });
     } catch (error: unknown) {
@@ -123,6 +125,7 @@ export class PolicyRepository {
             : {}),
           ...(data.features !== undefined ? { features: data.features } : {}),
           ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+          ...(data.allowMcp !== undefined ? { allowMcp: data.allowMcp } : {}),
         },
       });
     } catch (error: unknown) {

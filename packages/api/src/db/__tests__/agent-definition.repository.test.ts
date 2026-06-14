@@ -75,6 +75,19 @@ describe('AgentDefinitionRepository', () => {
     });
   });
 
+  describe('countByCreator', () => {
+    it('counts agent definitions owned by the given user', async () => {
+      mockPrisma.agentDefinition.count.mockResolvedValue(3);
+
+      const result = await repo.countByCreator('user-1');
+
+      expect(result).toBe(3);
+      expect(mockPrisma.agentDefinition.count).toHaveBeenCalledWith({
+        where: { createdById: 'user-1' },
+      });
+    });
+  });
+
   describe('create', () => {
     it('should create an agent definition', async () => {
       mockPrisma.agentDefinition.create.mockResolvedValue(mockAgent);

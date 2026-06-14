@@ -42,13 +42,15 @@ interface AllowEntry {
 }
 
 /**
- * Parse the BROWSER_INTERNAL_ALLOWLIST environment variable.
+ * Parse an internal-allowlist environment variable.
  *
  * Format: comma-separated list of `host` or `host:port` entries.
  * Example: "admin.internal,grafana.internal:3000"
+ *
+ * @param envName - Name of the environment variable to read (e.g. `BROWSER_INTERNAL_ALLOWLIST`).
  */
-function parseAllowlist(): readonly AllowEntry[] {
-  const raw = process.env['BROWSER_INTERNAL_ALLOWLIST'] ?? '';
+function parseAllowlist(envName: string): readonly AllowEntry[] {
+  const raw = process.env[envName] ?? '';
   if (!raw.trim()) return [];
   return raw
     .split(',')
@@ -64,15 +66,43 @@ function parseAllowlist(): readonly AllowEntry[] {
 }
 
 /**
- * Return true when hostname:port matches an entry in BROWSER_INTERNAL_ALLOWLIST.
+ * Return true when hostname:port matches an entry in the given allowlist env var.
  *
  * Matching is exact-host (case-insensitive), port-aware, no wildcards.
  * A port-less allowlist entry matches any port on that host.
+ *
+ * @param hostname - Hostname to check.
+ * @param port - Port number to check.
+ * @param envName - Name of the environment variable holding the allowlist.
  */
-function isAllowlisted(hostname: string, port: number): boolean {
-  const entries = parseAllowlist();
+function isAllowlisted(hostname: string, port: number, envName: string): boolean {
+  const entries = parseAllowlist(envName);
   const lowerHost = hostname.toLowerCase();
   return entries.some((e) => e.host === lowerHost && (e.port === null || e.port === port));
+}
+
+/**
+ * Public check: is `hostname:port` present in the given internal-allowlist env
+ * var? Callers (e.g. MCP OAuth discovery) use this to permit an internal http
+ * sidecar past an otherwise https-only rule. Same matching as the SSRF
+ * short-circuit: exact host (case-insensitive), port-aware, no wildcards.
+ */
+export function isHostAllowlisted(hostname: string, port: number, envName: string): boolean {
+  return isAllowlisted(hostname, port, envName);
+}
+
+/** Options for {@link validateUrl}. */
+export interface ValidateUrlOptions {
+  /**
+   * Name of the environment variable holding the internal-host allowlist.
+   *
+   * Hosts listed in this variable bypass the private-IP block, enabling
+   * access to internal services. Defaults to `BROWSER_INTERNAL_ALLOWLIST`
+   * so existing callers (web-fetch, browser-navigate, browser-cdp) are
+   * unaffected. Pass a different env name (e.g. `MCP_INTERNAL_ALLOWLIST`)
+   * when using the guard in other contexts.
+   */
+  readonly allowlistEnv?: string;
 }
 
 /**
@@ -82,13 +112,15 @@ function isAllowlisted(hostname: string, port: number): boolean {
  * 2. Allows about:blank; rejects all other about: URLs.
  * 3. Rejects non-http/https schemes.
  * 4. Resolves hostname to IP via DNS.
- * 5. Short-circuits private-IP check when host:port is in BROWSER_INTERNAL_ALLOWLIST.
+ * 5. Short-circuits private-IP check when host:port is in the allowlist env var
+ *    (controlled by `opts.allowlistEnv`, default `BROWSER_INTERNAL_ALLOWLIST`).
  * 6. Checks resolved IP against blocked ranges.
  * 7. Returns resolved IP for use in the actual request (prevents DNS rebinding).
  *
  * @throws Error if the URL is invalid, uses a blocked scheme, or resolves to a blocked IP.
  */
-export async function validateUrl(url: string): Promise<ValidatedUrl> {
+export async function validateUrl(url: string, opts?: ValidateUrlOptions): Promise<ValidatedUrl> {
+  const allowlistEnv = opts?.allowlistEnv ?? 'BROWSER_INTERNAL_ALLOWLIST';
   // Step 1: Parse and validate scheme
   let parsed: URL;
   try {
@@ -135,7 +167,7 @@ export async function validateUrl(url: string): Promise<ValidatedUrl> {
   const port = parsed.port ? Number(parsed.port) : defaultPort;
 
   // Step 6: Short-circuit private-IP check when host:port is explicitly allowlisted.
-  if (isAllowlisted(parsed.hostname, port)) {
+  if (isAllowlisted(parsed.hostname, port, allowlistEnv)) {
     logger.debug(
       { url, resolvedIp: address, port },
       'SSRF allowlist: bypassing private-IP check for allowlisted host',

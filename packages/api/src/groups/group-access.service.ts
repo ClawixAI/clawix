@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -10,6 +11,7 @@ import { GroupRepository } from '../db/group.repository.js';
 import { GroupInviteRepository } from '../db/group-invite.repository.js';
 import { AuditLogRepository } from '../db/audit-log.repository.js';
 import { UserRepository } from '../db/user.repository.js';
+import { PolicyRepository } from '../db/policy.repository.js';
 import { NotificationFanoutService } from '../notifications/notifications.fanout.js';
 
 interface CreateGroupInput {
@@ -44,9 +46,12 @@ export class GroupAccessService {
     private readonly notifications: NotificationFanoutService,
     private readonly auditRepo: AuditLogRepository,
     private readonly userRepo: UserRepository,
+    private readonly policyRepo: PolicyRepository,
   ) {}
 
   async createGroup(userId: string, input: CreateGroupInput): Promise<Group> {
+    await this.enforceGroupLimit(userId);
+
     const group = await this.groupRepo.create({
       name: input.name,
       description: input.description ?? undefined,
@@ -62,6 +67,21 @@ export class GroupAccessService {
     });
 
     return group;
+  }
+
+  /**
+   * Throw `BadRequestException` if the user already owns the maximum number of
+   * groups permitted by their policy (`Policy.maxGroupsOwned`).
+   */
+  private async enforceGroupLimit(userId: string): Promise<void> {
+    const user = await this.userRepo.findById(userId);
+    const policy = await this.policyRepo.findById(user.policyId);
+    const owned = await this.groupRepo.countOwnedByUser(userId);
+    if (owned >= policy.maxGroupsOwned) {
+      throw new BadRequestException(
+        `Group limit reached: your plan allows owning at most ${policy.maxGroupsOwned} groups`,
+      );
+    }
   }
 
   async updateGroup(groupId: string, userId: string, input: UpdateGroupInput): Promise<Group> {

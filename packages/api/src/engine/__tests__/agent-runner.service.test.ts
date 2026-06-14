@@ -48,6 +48,10 @@ vi.mock('../tools/browser/tools/index.js', () => ({
   registerBrowserTools: vi.fn(),
 }));
 
+vi.mock('../tools/mcp/mcp-tool.factory.js', () => ({
+  registerMcpTools: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../tools/browser/vision-config-resolver.js', () => ({
   resolveVisionConfig: vi.fn().mockResolvedValue({
     available: true,
@@ -99,6 +103,7 @@ import { createProvider } from '../providers/provider-factory.js';
 import { ReasoningLoop } from '../reasoning-loop.js';
 import { registerBuiltinTools } from '../tools/index.js';
 import { createSpawnTool } from '../tools/spawn.js';
+import { registerMcpTools } from '../tools/mcp/mcp-tool.factory.js';
 import type { ContextBuilderService } from '../context-builder.service.js';
 import type { SearchProviderRegistry } from '../tools/web/search-provider.js';
 import type { AgentRunRegistry } from '../agent-run-registry.service.js';
@@ -199,6 +204,7 @@ const mockPolicy = {
   allowBrowserCdp: false,
   maxConcurrentBrowserSessions: 2,
   maxSubAgentRunMs: 300000,
+  allowMcp: false,
   isActive: true,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -388,6 +394,34 @@ function buildMocks() {
     abortAllForUser: vi.fn(),
   };
 
+  const mockMcpServerRepo: {
+    findServersForRun: ReturnType<typeof vi.fn>;
+    findEnabledServersForUser: ReturnType<typeof vi.fn>;
+  } = {
+    findServersForRun: vi.fn().mockResolvedValue([]),
+    findEnabledServersForUser: vi.fn().mockResolvedValue([]),
+  };
+
+  const mockNotificationRepo: {
+    create: ReturnType<typeof vi.fn>;
+    hasUnreadMcpAttention: ReturnType<typeof vi.fn>;
+  } = {
+    create: vi.fn().mockResolvedValue(undefined),
+    hasUnreadMcpAttention: vi.fn().mockResolvedValue(false),
+  };
+
+  const mockMcpClientService: {
+    connect: ReturnType<typeof vi.fn>;
+  } = {
+    connect: vi.fn(),
+  };
+
+  const mockMcpTokenManager: {
+    getAccessToken: ReturnType<typeof vi.fn>;
+  } = {
+    getAccessToken: vi.fn().mockResolvedValue('tok'),
+  };
+
   return {
     mockSessionManager,
     mockContainerRunner,
@@ -408,7 +442,77 @@ function buildMocks() {
     mockSystemSettings,
     mockPrisma,
     mockAgentRunRegistry,
+    mockMcpServerRepo,
+    mockNotificationRepo,
+    mockMcpClientService,
+    mockMcpTokenManager,
   };
+}
+
+/**
+ * Construct an AgentRunnerService with all 41 constructor deps in the EXACT
+ * order declared in agent-runner.service.ts. Centralized so the three test
+ * suites can't drift — and so newly-added deps land at their real positions
+ * (positions 28-37 were previously omitted-as-undefined; 38-41 are the MCP
+ * deps that MUST be at the tail, not masquerading as python deps).
+ */
+function buildService(mocks: ReturnType<typeof buildMocks>): AgentRunnerService {
+  return new AgentRunnerService(
+    // 1-11
+    mocks.mockSessionManager as unknown as SessionManagerService,
+    mocks.mockContainerRunner as unknown as ContainerRunner,
+    mocks.mockContainerPool as unknown as ContainerPoolService,
+    mocks.mockTokenCounter as unknown as TokenCounterService,
+    mocks.mockAgentRunRepo as unknown as AgentRunRepository,
+    mocks.mockAgentDefRepo as unknown as AgentDefinitionRepository,
+    mocks.mockUserRepo as unknown as UserRepository,
+    mocks.mockUserAgentRepo as unknown as UserAgentRepository,
+    mocks.mockMemoryConsolidation as unknown as MemoryConsolidationService,
+    mocks.mockContextBuilder as unknown as ContextBuilderService,
+    {} as unknown as SearchProviderRegistry,
+    // 12-19
+    { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
+    mocks.mockPrisma as unknown as import('../../prisma/prisma.service.js').PrismaService,
+    mocks.mockWorkspaceSeeder as unknown as import('../workspace-seeder.service.js').WorkspaceSeederService,
+    mocks.mockPolicyRepo as unknown as import('../../db/policy.repository.js').PolicyRepository,
+    {} as unknown as import('../../db/channel.repository.js').ChannelRepository,
+    mocks.mockTaskRepo as unknown as import('../../db/task.repository.js').TaskRepository,
+    mocks.mockCronGuardService as unknown as import('../cron-guard.service.js').CronGuardService,
+    mocks.mockProviderConfig as unknown as import('../../provider-config/provider-config.service.js').ProviderConfigService,
+    // 20-23
+    {
+      findByTaskIdWithLimit: vi.fn().mockResolvedValue([]),
+    } as unknown as import('../../db/task-run.repository.js').TaskRunRepository,
+    {
+      findByTaskRunId: vi.fn().mockResolvedValue([]),
+    } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
+    mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
+    { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
+    // 24-26: browser*
+    { releaseIfActive: vi.fn().mockResolvedValue(undefined) } as any,
+    { getActive: vi.fn().mockReturnValue(null) } as any,
+    { read: vi.fn().mockReturnValue(2), warm: vi.fn().mockResolvedValue(undefined) } as any,
+    // 27: agentRunRegistry
+    mocks.mockAgentRunRegistry as unknown as AgentRunRegistry,
+    // 28-31: python* (gated off in tests; unused → empty stubs)
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    // 32-35: wiki* (registerWikiTools is real, but takes objects it doesn't call here)
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    // 36-37: auditLogRepo, sessionSearchService
+    {} as any,
+    {} as any,
+    // 38-41: MCP deps (the tail — must be here, not at python positions)
+    mocks.mockMcpServerRepo as any,
+    mocks.mockNotificationRepo as any,
+    mocks.mockMcpClientService as any,
+    mocks.mockMcpTokenManager as any,
+  );
 }
 
 // ------------------------------------------------------------------ //
@@ -433,39 +537,7 @@ describe('AgentRunnerService', () => {
     // Set up mock provider factory
     vi.mocked(createProvider).mockReturnValue(mockProvider);
 
-    service = new AgentRunnerService(
-      mocks.mockSessionManager as unknown as SessionManagerService,
-      mocks.mockContainerRunner as unknown as ContainerRunner,
-      mocks.mockContainerPool as unknown as ContainerPoolService,
-      mocks.mockTokenCounter as unknown as TokenCounterService,
-      mocks.mockAgentRunRepo as unknown as AgentRunRepository,
-      mocks.mockAgentDefRepo as unknown as AgentDefinitionRepository,
-      mocks.mockUserRepo as unknown as UserRepository,
-      mocks.mockUserAgentRepo as unknown as UserAgentRepository,
-      mocks.mockMemoryConsolidation as unknown as MemoryConsolidationService,
-      mocks.mockContextBuilder as unknown as ContextBuilderService,
-      {} as unknown as SearchProviderRegistry,
-      { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
-      mocks.mockPrisma as unknown as import('../../prisma/prisma.service.js').PrismaService,
-      mocks.mockWorkspaceSeeder as unknown as import('../workspace-seeder.service.js').WorkspaceSeederService,
-      mocks.mockPolicyRepo as unknown as import('../../db/policy.repository.js').PolicyRepository,
-      {} as unknown as import('../../db/channel.repository.js').ChannelRepository,
-      mocks.mockTaskRepo as unknown as import('../../db/task.repository.js').TaskRepository,
-      mocks.mockCronGuardService as unknown as import('../cron-guard.service.js').CronGuardService,
-      mocks.mockProviderConfig as unknown as import('../../provider-config/provider-config.service.js').ProviderConfigService,
-      {
-        findByTaskIdWithLimit: vi.fn().mockResolvedValue([]),
-      } as unknown as import('../../db/task-run.repository.js').TaskRunRepository,
-      {
-        findByTaskRunId: vi.fn().mockResolvedValue([]),
-      } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
-      mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
-      { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
-      { releaseIfActive: vi.fn().mockResolvedValue(undefined) } as any,
-      { getActive: vi.fn().mockReturnValue(null) } as any,
-      { read: vi.fn().mockReturnValue(2), warm: vi.fn().mockResolvedValue(undefined) } as any,
-      mocks.mockAgentRunRegistry as unknown as AgentRunRegistry,
-    );
+    service = buildService(mocks);
   });
 
   afterEach(() => {
@@ -1045,6 +1117,100 @@ describe('AgentRunnerService', () => {
   });
 
   // ---------------------------------------------------------------- //
+  //  MCP tool wiring (step 13d)                                       //
+  // ---------------------------------------------------------------- //
+
+  describe('MCP tool wiring', () => {
+    it('resolves bound servers for the caller and registers MCP tools when policy.allowMcp is true', async () => {
+      // Gate on: policy allows MCP + agentDef binds one server/tool.
+      mocks.mockPolicyRepo.findById.mockResolvedValue({ ...mockPolicy, allowMcp: true });
+      mocks.mockAgentDefRepo.findById.mockResolvedValue({
+        ...mockAgentDef,
+        toolConfig: { mcp: { servers: [{ serverId: 'srv1', enabledTools: ['search'] }] } },
+      } as unknown as typeof mockAgentDef);
+
+      await service.run(defaultOptions);
+
+      // Proves the dep is injected at the correct constructor position AND the
+      // gating logic forwards (serverIds, userId) to the repo.
+      expect(mocks.mockMcpServerRepo.findServersForRun).toHaveBeenCalledWith(['srv1'], 'user-1');
+      // Proves the factory is invoked exactly once for the bound config.
+      expect(vi.mocked(registerMcpTools)).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not resolve servers or register MCP tools when policy.allowMcp is false', async () => {
+      // mockPolicy.allowMcp is false by default; agentDef still binds a server.
+      mocks.mockAgentDefRepo.findById.mockResolvedValue({
+        ...mockAgentDef,
+        toolConfig: { mcp: { servers: [{ serverId: 'srv1', enabledTools: ['search'] }] } },
+      } as unknown as typeof mockAgentDef);
+
+      await service.run(defaultOptions);
+
+      expect(mocks.mockMcpServerRepo.findServersForRun).not.toHaveBeenCalled();
+      expect(vi.mocked(registerMcpTools)).not.toHaveBeenCalled();
+    });
+
+    it('auto-binds the recommended tier when the agent has no explicit binding', async () => {
+      mocks.mockPolicyRepo.findById.mockResolvedValue({ ...mockPolicy, allowMcp: true });
+      mocks.mockAgentDefRepo.findById.mockResolvedValue({
+        ...mockAgentDef,
+        toolConfig: {}, // no mcp binding → auto path
+      } as unknown as typeof mockAgentDef);
+      mocks.mockMcpServerRepo.findEnabledServersForUser.mockResolvedValue([
+        {
+          id: 'srv1',
+          enabled: true,
+          slug: 'gh',
+          connections: [
+            {
+              status: 'active',
+              tiers: { recommended: ['search'], optional: [], off: [] },
+              tools: [],
+            },
+          ],
+        },
+      ]);
+
+      await service.run(defaultOptions);
+
+      expect(mocks.mockMcpServerRepo.findEnabledServersForUser).toHaveBeenCalledWith('user-1');
+      expect(mocks.mockMcpServerRepo.findServersForRun).not.toHaveBeenCalled();
+      expect(vi.mocked(registerMcpTools)).toHaveBeenCalledTimes(1);
+    });
+
+    it('prefers the explicit per-agent binding over the auto path', async () => {
+      mocks.mockPolicyRepo.findById.mockResolvedValue({ ...mockPolicy, allowMcp: true });
+      mocks.mockAgentDefRepo.findById.mockResolvedValue({
+        ...mockAgentDef,
+        toolConfig: { mcp: { servers: [{ serverId: 'srv1', enabledTools: ['search'] }] } },
+      } as unknown as typeof mockAgentDef);
+
+      await service.run(defaultOptions);
+
+      expect(mocks.mockMcpServerRepo.findServersForRun).toHaveBeenCalledWith(['srv1'], 'user-1');
+      expect(mocks.mockMcpServerRepo.findEnabledServersForUser).not.toHaveBeenCalled();
+      expect(vi.mocked(registerMcpTools)).toHaveBeenCalledTimes(1);
+    });
+
+    it('auto path registers nothing when no connection has a recommended tier', async () => {
+      mocks.mockPolicyRepo.findById.mockResolvedValue({ ...mockPolicy, allowMcp: true });
+      mocks.mockAgentDefRepo.findById.mockResolvedValue({
+        ...mockAgentDef,
+        toolConfig: {},
+      } as unknown as typeof mockAgentDef);
+      mocks.mockMcpServerRepo.findEnabledServersForUser.mockResolvedValue([
+        { id: 'srv1', enabled: true, slug: 'gh', connections: [] },
+      ]);
+
+      await service.run(defaultOptions);
+
+      expect(mocks.mockMcpServerRepo.findEnabledServersForUser).toHaveBeenCalledWith('user-1');
+      expect(vi.mocked(registerMcpTools)).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------- //
   //  Cancellation tests                                               //
   // ---------------------------------------------------------------- //
 
@@ -1146,39 +1312,7 @@ describe('AgentRunnerService — with messageStore', () => {
     vi.mocked(ReasoningLoop).mockImplementation(() => mockLoopInstance as unknown as ReasoningLoop);
     vi.mocked(createProvider).mockReturnValue(mockProvider);
 
-    service = new AgentRunnerService(
-      mocks.mockSessionManager as unknown as SessionManagerService,
-      mocks.mockContainerRunner as unknown as ContainerRunner,
-      mocks.mockContainerPool as unknown as ContainerPoolService,
-      mocks.mockTokenCounter as unknown as TokenCounterService,
-      mocks.mockAgentRunRepo as unknown as AgentRunRepository,
-      mocks.mockAgentDefRepo as unknown as AgentDefinitionRepository,
-      mocks.mockUserRepo as unknown as UserRepository,
-      mocks.mockUserAgentRepo as unknown as UserAgentRepository,
-      mocks.mockMemoryConsolidation as unknown as MemoryConsolidationService,
-      mocks.mockContextBuilder as unknown as ContextBuilderService,
-      {} as unknown as SearchProviderRegistry,
-      { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
-      mocks.mockPrisma as unknown as import('../../prisma/prisma.service.js').PrismaService,
-      mocks.mockWorkspaceSeeder as unknown as import('../workspace-seeder.service.js').WorkspaceSeederService,
-      mocks.mockPolicyRepo as unknown as import('../../db/policy.repository.js').PolicyRepository,
-      {} as unknown as import('../../db/channel.repository.js').ChannelRepository,
-      mocks.mockTaskRepo as unknown as import('../../db/task.repository.js').TaskRepository,
-      mocks.mockCronGuardService as unknown as import('../cron-guard.service.js').CronGuardService,
-      mocks.mockProviderConfig as unknown as import('../../provider-config/provider-config.service.js').ProviderConfigService,
-      {
-        findByTaskIdWithLimit: vi.fn().mockResolvedValue([]),
-      } as unknown as import('../../db/task-run.repository.js').TaskRunRepository,
-      {
-        findByTaskRunId: vi.fn().mockResolvedValue([]),
-      } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
-      mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
-      { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
-      { releaseIfActive: vi.fn().mockResolvedValue(undefined) } as any,
-      { getActive: vi.fn().mockReturnValue(null) } as any,
-      { read: vi.fn().mockReturnValue(2), warm: vi.fn().mockResolvedValue(undefined) } as any,
-      mocks.mockAgentRunRegistry as unknown as AgentRunRegistry,
-    );
+    service = buildService(mocks);
   });
 
   afterEach(() => {
@@ -1227,39 +1361,7 @@ describe('AgentRunnerService — recovery integration', () => {
     vi.mocked(ReasoningLoop).mockImplementation(() => mockLoopInstance as unknown as ReasoningLoop);
     vi.mocked(createProvider).mockReturnValue(mockProvider);
 
-    service = new AgentRunnerService(
-      mocks.mockSessionManager as unknown as SessionManagerService,
-      mocks.mockContainerRunner as unknown as ContainerRunner,
-      mocks.mockContainerPool as unknown as ContainerPoolService,
-      mocks.mockTokenCounter as unknown as TokenCounterService,
-      mocks.mockAgentRunRepo as unknown as AgentRunRepository,
-      mocks.mockAgentDefRepo as unknown as AgentDefinitionRepository,
-      mocks.mockUserRepo as unknown as UserRepository,
-      mocks.mockUserAgentRepo as unknown as UserAgentRepository,
-      mocks.mockMemoryConsolidation as unknown as MemoryConsolidationService,
-      mocks.mockContextBuilder as unknown as ContextBuilderService,
-      {} as unknown as SearchProviderRegistry,
-      { get: () => mocks.mockTaskExecutor } as unknown as import('@nestjs/core').ModuleRef,
-      mocks.mockPrisma as unknown as import('../../prisma/prisma.service.js').PrismaService,
-      mocks.mockWorkspaceSeeder as unknown as import('../workspace-seeder.service.js').WorkspaceSeederService,
-      mocks.mockPolicyRepo as unknown as import('../../db/policy.repository.js').PolicyRepository,
-      {} as unknown as import('../../db/channel.repository.js').ChannelRepository,
-      mocks.mockTaskRepo as unknown as import('../../db/task.repository.js').TaskRepository,
-      mocks.mockCronGuardService as unknown as import('../cron-guard.service.js').CronGuardService,
-      mocks.mockProviderConfig as unknown as import('../../provider-config/provider-config.service.js').ProviderConfigService,
-      {
-        findByTaskIdWithLimit: vi.fn().mockResolvedValue([]),
-      } as unknown as import('../../db/task-run.repository.js').TaskRunRepository,
-      {
-        findByTaskRunId: vi.fn().mockResolvedValue([]),
-      } as unknown as import('../../db/task-run-message.repository.js').TaskRunMessageRepository,
-      mocks.mockSystemSettings as unknown as import('../../system-settings/system-settings.service.js').SystemSettingsService,
-      { compress: vi.fn() } as unknown as import('../compressor.js').CompressorService,
-      { releaseIfActive: vi.fn().mockResolvedValue(undefined) } as any,
-      { getActive: vi.fn().mockReturnValue(null) } as any,
-      { read: vi.fn().mockReturnValue(2), warm: vi.fn().mockResolvedValue(undefined) } as any,
-      mocks.mockAgentRunRegistry as unknown as AgentRunRegistry,
-    );
+    service = buildService(mocks);
   });
 
   afterEach(() => {

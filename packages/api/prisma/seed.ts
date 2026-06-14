@@ -56,8 +56,6 @@ async function main(): Promise<void> {
   // Delete in reverse dependency order; ON DELETE CASCADE handles children.
   console.log('  Cleaning previous seed data...');
   await prisma.auditLog.deleteMany({});
-  await prisma.memoryShare.deleteMany({});
-  await prisma.memoryItem.deleteMany({});
   await prisma.group.deleteMany({});
   await prisma.session.deleteMany({});
   await prisma.userAgent.deleteMany({});
@@ -157,6 +155,7 @@ async function main(): Promise<void> {
       maxPythonCpuCores: 1,
       maxConcurrentPythonRuns: 2,
       maxSubAgentRunMs: 300000, // 5 min
+      allowMcp: false,
     },
   });
   console.log(`  Policy: ${standardPolicy.name}`);
@@ -191,6 +190,7 @@ async function main(): Promise<void> {
       maxPythonCpuCores: 2,
       maxConcurrentPythonRuns: 3,
       maxSubAgentRunMs: 480000, // 8 min
+      allowMcp: true,
     },
   });
   console.log(`  Policy: ${extendedPolicy.name}`);
@@ -225,6 +225,7 @@ async function main(): Promise<void> {
       maxPythonCpuCores: 4,
       maxConcurrentPythonRuns: 5,
       maxSubAgentRunMs: 540000, // 9 min (kept under the 10-min stale-run reaper)
+      allowMcp: true,
     },
   });
   console.log(`  Policy: ${unrestrictedPolicy.name}`);
@@ -463,29 +464,6 @@ async function main(): Promise<void> {
     },
   });
   console.log(`  Group: ${engineeringGroup.name} (2 members)`);
-
-  // --- Memory Items ---
-  const memoryItem = await prisma.memoryItem.create({
-    data: {
-      ownerId: admin.id,
-      content: {
-        type: 'preference',
-        text: 'Always use TypeScript strict mode. Prefer functional patterns over classes.',
-      },
-      tags: ['coding-standards', 'typescript'],
-    },
-  });
-
-  // Share with engineering group
-  await prisma.memoryShare.create({
-    data: {
-      memoryItemId: memoryItem.id,
-      sharedBy: admin.id,
-      targetType: 'GROUP',
-      groupId: engineeringGroup.id,
-    },
-  });
-  console.log('  Memory: 1 item shared with Engineering group');
 
   // --- Audit Log entry ---
   await prisma.auditLog.create({

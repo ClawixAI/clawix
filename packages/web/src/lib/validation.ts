@@ -67,6 +67,25 @@ const intMin = (label: string, min: number) =>
 const optionalIntMin = (label: string, min: number) =>
   z.union([z.literal(''), intMin(label, min)]).optional();
 
+/**
+ * Empty string (→ unlimited/null) or a non-negative USD dollar amount with at
+ * most 2 decimal places (cents). The caller converts the parsed dollars to
+ * integer cents before sending to the API.
+ */
+const optionalUsd = (label: string) =>
+  z
+    .union([
+      z.literal(''),
+      z.coerce
+        .number({ invalid_type_error: `${label} must be a number` })
+        .min(0, `${label} must be at least 0`)
+        .refine(
+          (n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-9,
+          `${label} can have at most 2 decimal places`,
+        ),
+    ])
+    .optional();
+
 // ------------------------------------------------------------------ //
 //  Agent                                                              //
 // ------------------------------------------------------------------ //
@@ -111,7 +130,7 @@ export const providerEditSchema = z.object({
 export const policyFormSchema = z.object({
   name: requiredText('Name', 60),
   description: optionalText('Description', 200),
-  maxTokenBudget: optionalIntMin('Token budget', 0),
+  maxTokenBudget: optionalUsd('Token budget'),
   maxAgents: intMin('Max agents', 1),
   maxSkills: intMin('Max skills', 1),
   maxGroupsOwned: intMin('Max groups owned', 1),

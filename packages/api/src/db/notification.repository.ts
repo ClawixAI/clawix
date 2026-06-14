@@ -68,4 +68,18 @@ export class NotificationRepository {
     });
     return result.count;
   }
+
+  /** True when an unread MCP_SERVER_ATTENTION notification already exists for this server. */
+  async hasUnreadMcpAttention(recipientId: string, serverId: string): Promise<boolean> {
+    const found = await this.prisma.notification.findFirst({
+      where: {
+        recipientId,
+        type: 'MCP_SERVER_ATTENTION',
+        isRead: false,
+        payload: { path: ['serverId'], equals: serverId },
+      },
+      select: { id: true },
+    });
+    return found !== null;
+  }
 }
