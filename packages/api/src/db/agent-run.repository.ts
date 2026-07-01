@@ -128,6 +128,27 @@ export class AgentRunRepository {
     });
   }
 
+  /**
+   * Sum the input+output tokens already recorded across every run in a session.
+   *
+   * Used on crash recovery to seed a fresh shared {@link BudgetTracker} so
+   * recovered sibling runs resume from the swarm's cumulative spend instead of
+   * each getting a full new allowance. tokenUsage is a JSON blob, so the sum is
+   * computed in memory — acceptable on the rare recovery path.
+   */
+  async sumSessionTokenUsage(sessionId: string): Promise<number> {
+    const runs = await this.prisma.agentRun.findMany({
+      where: { sessionId },
+      select: { tokenUsage: true },
+    });
+
+    return runs.reduce((total, run) => {
+      const usage = run.tokenUsage as { inputTokens?: number; outputTokens?: number } | null;
+      if (usage === null || typeof usage !== 'object') return total;
+      return total + (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
+    }, 0);
+  }
+
   async create(data: CreateAgentRunInput): Promise<AgentRun> {
     try {
       return await this.prisma.agentRun.create({

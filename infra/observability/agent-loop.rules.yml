@@ -1,0 +1,82 @@
+# Prometheus alerting rules for agent-loop stability.
+#
+# Metrics are emitted by the sub-agent executor (TaskExecutorService) and the
+# stale-run reaper (StaleRunReaperService), defined in
+# packages/api/src/engine/agent-loop-metrics.ts.
+#
+# PREREQUISITE: these rules assume the API's prom-client default registry is
+# scraped at a `/metrics` endpoint. That scrape endpoint is not wired yet — add
+# it (and a Prometheus scrape_config for the api-server target) before loading
+# these rules, otherwise every expression evaluates against no data.
+#
+# Load via prometheus.yml:
+#   rule_files:
+#     - /etc/prometheus/rules/agent-loop.rules.yml
+
+groups:
+  - name: clawix-agent-loop
+    rules:
+      # The executor's active slots have been pinned at the configured ceiling
+      # for a sustained period. Under normal load slots free as runs settle; a
+      # persistent peg is the signature of a slot leak (a run that never calls
+      # finalize) or a systemic hang wedging the whole executor.
+      - alert: AgentExecutorSlotsPegged
+        expr: clawix_agent_active_slots >= clawix_agent_max_concurrent
+        for: 10m
+        labels:
+          severity: critical
+          component: agent-executor
+        annotations:
+          summary: 'Sub-agent executor slots pegged at the concurrency ceiling'
+          description: >
+            clawix_agent_active_slots has equalled clawix_agent_max_concurrent
+            for 10m. New sub-agents cannot start. Suspect a slot leak (a run that
+            never finalizes) or a systemic hang. Check watchdog/reaper fire rates
+            and recent sub-agent runs stuck in 'running'.
+
+      # Tasks are backing up in the pending queue with no drain progress. Either
+      # sustained overload or the executor is wedged (see the peg alert above).
+      - alert: AgentPendingQueueBacklog
+        expr: clawix_agent_pending_queue > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: agent-executor
+        annotations:
+          summary: 'Sub-agent tasks queued without draining'
+          description: >
+            clawix_agent_pending_queue has stayed above zero for 15m. Sub-agent
+            work is not draining — check for a slot peg or raise
+            MAX_CONCURRENT_AGENTS.
+
+      # The executor watchdog is the backstop for runs that ignore their own
+      # timeout. Occasional fires are expected; a sustained rate means sub-agents
+      # routinely aren't honoring the abort signal (a misbehaving tool).
+      - alert: AgentWatchdogFiringHigh
+        expr: rate(clawix_agent_watchdog_fired_total[15m]) * 900 > 5
+        for: 15m
+        labels:
+          severity: warning
+          component: agent-executor
+        annotations:
+          summary: 'Executor watchdog firing frequently'
+          description: >
+            More than 5 sub-agent runs in 15m were force-aborted by the watchdog
+            (never settled within timeout + grace). A tool is likely ignoring the
+            abort signal. Investigate which sub-agents are timing out.
+
+      # The stale-run reaper is the last-resort backstop (orphans, lost
+      # controllers on restart, primary runs with no loop timeout). Any sustained
+      # fire rate means runs are regularly slipping past the watchdog.
+      - alert: AgentReaperFiringHigh
+        expr: rate(clawix_agent_reaper_reaped_total[15m]) * 900 > 3
+        for: 15m
+        labels:
+          severity: warning
+          component: agent-reaper
+        annotations:
+          summary: 'Stale-run reaper force-failing runs regularly'
+          description: >
+            More than 3 runs in 15m reached the stale-run reaper (the last-resort
+            10-minute backstop). Runs are slipping past the executor watchdog —
+            check for orphaned runs or process restarts dropping controllers.

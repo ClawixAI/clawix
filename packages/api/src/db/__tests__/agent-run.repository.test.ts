@@ -45,6 +45,40 @@ describe('AgentRunRepository', () => {
     });
   });
 
+  describe('sumSessionTokenUsage', () => {
+    it('sums input+output tokens across every run in the session', async () => {
+      mockPrisma.agentRun.findMany.mockResolvedValue([
+        { tokenUsage: { inputTokens: 100, outputTokens: 50 } },
+        { tokenUsage: { inputTokens: 200, outputTokens: 25 } },
+        { tokenUsage: {} }, // pending sibling — contributes nothing
+      ]);
+
+      const total = await repository.sumSessionTokenUsage('session-1');
+
+      expect(total).toBe(375);
+      expect(mockPrisma.agentRun.findMany).toHaveBeenCalledWith({
+        where: { sessionId: 'session-1' },
+        select: { tokenUsage: true },
+      });
+    });
+
+    it('returns 0 when the session has no runs', async () => {
+      mockPrisma.agentRun.findMany.mockResolvedValue([]);
+
+      expect(await repository.sumSessionTokenUsage('session-x')).toBe(0);
+    });
+
+    it('tolerates malformed or null tokenUsage blobs', async () => {
+      mockPrisma.agentRun.findMany.mockResolvedValue([
+        { tokenUsage: null },
+        { tokenUsage: 'garbage' },
+        { tokenUsage: { inputTokens: 10 } }, // missing outputTokens
+      ]);
+
+      expect(await repository.sumSessionTokenUsage('session-1')).toBe(10);
+    });
+  });
+
   describe('findAll', () => {
     it('should return paginated results', async () => {
       mockPrisma.agentRun.findMany.mockResolvedValue([mockAgentRun]);

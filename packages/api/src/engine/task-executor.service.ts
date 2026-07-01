@@ -28,6 +28,15 @@ import {
 } from '../cache/cache.constants.js';
 import { AgentDefinitionRepository } from '../db/agent-definition.repository.js';
 import { AgentRunRegistry } from './agent-run-registry.service.js';
+import {
+  agentActiveSlots,
+  agentPendingQueue,
+  agentMaxConcurrent,
+  agentWatchdogFiredTotal,
+} from './agent-loop-metrics.js';
+
+/** A pending AgentRun row as returned by the recovery query. */
+type RecoverableRun = Awaited<ReturnType<AgentRunRepository['findAllByStatus']>>[number];
 
 const logger = createLogger('engine:task-executor');
 
@@ -132,6 +141,14 @@ export class TaskExecutorService implements OnModuleInit {
     this.maxPending = parseInt(process.env['MAX_PENDING_AGENTS'] ?? '100', 10);
     const rawReinvocations = parseInt(process.env['MAX_REINVOCATIONS'] ?? '10', 10);
     this.maxReinvocations = rawReinvocations > 0 ? rawReinvocations : 10;
+    agentMaxConcurrent.set(this.maxConcurrent);
+    this.syncSlotGauges();
+  }
+
+  /** Publish the current slot occupancy to Prometheus. Called on every count change. */
+  private syncSlotGauges(): void {
+    agentActiveSlots.set(this.activeCount_);
+    agentPendingQueue.set(this.pendingQueue.length);
   }
 
   // ---------------------------------------------------------------- //
@@ -182,6 +199,7 @@ export class TaskExecutorService implements OnModuleInit {
 
       logger.debug({ agentRunId }, 'Queuing task (concurrency limit reached)');
       this.pendingQueue.push({ agentRunId, options });
+      this.syncSlotGauges();
       return;
     }
 
@@ -214,38 +232,30 @@ export class TaskExecutorService implements OnModuleInit {
       if (pendingRuns.length > 0) {
         logger.info({ count: pendingRuns.length }, 'Recovering pending AgentRuns on startup');
 
+        // Group by session so all recovered siblings of one swarm share a
+        // single BudgetTracker instance, seeded with the swarm's already-
+        // recorded spend. Without this each orphan would get a fresh full
+        // allowance and the swarm could collectively blow past its cap.
+        const bySession = new Map<string, RecoverableRun[]>();
         for (const run of pendingRuns) {
+          if (!run.sessionId) {
+            // Cron runs have no session and no swarm to share a budget with.
+            logger.warn({ agentRunId: run.id }, 'Skipping recovery for sessionless AgentRun');
+            continue;
+          }
+          const group = bySession.get(run.sessionId);
+          if (group) group.push(run);
+          else bySession.set(run.sessionId, [run]);
+        }
+
+        for (const [sessionId, runs] of bySession) {
           try {
-            // Skip recovery for cron runs that have no session
-            if (!run.sessionId) {
-              logger.warn({ agentRunId: run.id }, 'Skipping recovery for sessionless AgentRun');
-              continue;
-            }
-
-            const session = await this.sessionRepo.findById(run.sessionId);
-
-            // Reconstruct a fresh tracker from the persisted cap. The
-            // parent's cumulative `used` is lost on crash, so each recovered
-            // orphan effectively gets a full new allowance — bounded, but
-            // total spend across siblings of a crashed run can exceed the
-            // original cap. Acceptable for the rare recovery path.
-            const recoveredTracker =
-              run.tokenBudget != null
-                ? new BudgetTracker(run.tokenBudget, run.tokenGracePercent ?? 10)
-                : undefined;
-
-            this.submit(run.id, {
-              agentDefinitionId: run.agentDefinitionId,
-              input: run.input,
-              userId: session.userId,
-              sessionId: run.sessionId,
-              ...(recoveredTracker ? { budgetTracker: recoveredTracker } : {}),
-            });
+            await this.recoverSessionGroup(sessionId, runs);
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
             logger.error(
-              { agentRunId: run.id, error: message },
-              'Failed to recover pending AgentRun',
+              { sessionId, error: message },
+              'Failed to recover pending AgentRun session group',
             );
           }
         }
@@ -267,6 +277,53 @@ export class TaskExecutorService implements OnModuleInit {
     await this.recoverProcessingResults();
   }
 
+  /**
+   * Recover all pending runs belonging to one session (one swarm). Rebuilds a
+   * single shared {@link BudgetTracker} seeded with the tokens the swarm already
+   * spent before the crash, then re-submits every run against that shared
+   * tracker so their combined post-recovery spend stays within the original cap.
+   *
+   * Throws if the session lookup fails; the caller catches and skips the WHOLE
+   * group. That broad skip is intentional — a missing session means there is no
+   * userId to run under, so none of the swarm's runs are recoverable anyway.
+   */
+  private async recoverSessionGroup(
+    sessionId: string,
+    runs: readonly RecoverableRun[],
+  ): Promise<void> {
+    const session = await this.sessionRepo.findById(sessionId);
+
+    // The budget cap is shared across the whole swarm — every spawned child
+    // inherits the parent's cap (see spawn.ts), so all budgeted siblings carry
+    // the same tokenBudget/tokenGracePercent. We therefore take the cap from the
+    // first run that persisted one and apply it to the shared tracker. A null
+    // cap means no enforcement — no tracker.
+    const budgeted = runs.find((r) => r.tokenBudget != null);
+    let sharedTracker: BudgetTracker | undefined;
+    if (budgeted?.tokenBudget != null) {
+      const alreadySpent = await this.agentRunRepo.sumSessionTokenUsage(sessionId);
+      sharedTracker = new BudgetTracker(
+        budgeted.tokenBudget,
+        budgeted.tokenGracePercent ?? 10,
+        alreadySpent,
+      );
+      logger.info(
+        { sessionId, budget: budgeted.tokenBudget, alreadySpent, recovered: runs.length },
+        'Rebuilt shared swarm budget tracker seeded with prior spend',
+      );
+    }
+
+    for (const run of runs) {
+      this.submit(run.id, {
+        agentDefinitionId: run.agentDefinitionId,
+        input: run.input,
+        userId: session.userId,
+        sessionId,
+        ...(sharedTracker ? { budgetTracker: sharedTracker } : {}),
+      });
+    }
+  }
+
   // ---------------------------------------------------------------- //
   //  Private methods                                                 //
   // ---------------------------------------------------------------- //
@@ -283,6 +340,7 @@ export class TaskExecutorService implements OnModuleInit {
       // Fire-and-forget; errors handled inside executeTask
       void this.executeTask(item);
     }
+    this.syncSlotGauges();
   }
 
   /**
@@ -317,6 +375,7 @@ export class TaskExecutorService implements OnModuleInit {
     const watchdog = setTimeout(() => {
       if (settled) return;
       settled = true;
+      agentWatchdogFiredTotal.inc();
       logger.error(
         { agentRunId, timeoutMs },
         'Sub-agent watchdog fired — run did not settle; aborting and failing',
