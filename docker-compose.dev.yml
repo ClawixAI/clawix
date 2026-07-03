@@ -91,6 +91,16 @@ services:
       # Google Workspace MCP sidecar runs on the HOST (uvx, port 8000), reached
       # from this container via host.docker.internal (see extra_hosts below).
       MCP_INTERNAL_ALLOWLIST: host.docker.internal:8000
+      # Prometheus scrape endpoint — OFF by default. Uncomment METRICS_ENABLED
+      # to turn it on; it then serves GET /metrics on a DEDICATED port (never
+      # added to `ports:`, reachable only inside Docker networks). Default bind
+      # is loopback (METRICS_BIND_IP unset -> 127.0.0.1). To scrape from a
+      # networked Prometheus on clawix-internal, set METRICS_BIND_IP to this
+      # container's internal IP (airtight) or 0.0.0.0 (also reachable from
+      # clawix-browser-egress — documented residual). See prometheus.yml and
+      # docs/GETTING_STARTED.md → "Metrics & Observability".
+      # METRICS_ENABLED: 'true'
+      METRICS_PORT: '9091'
     command: >
       sh -c "apt-get update && apt-get install -y --no-install-recommends docker.io && rm -rf /var/lib/apt/lists/* &&
              corepack enable &&

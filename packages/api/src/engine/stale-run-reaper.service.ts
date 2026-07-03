@@ -4,6 +4,7 @@ import { createLogger } from '@clawix/shared';
 
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AgentRunRegistry } from './agent-run-registry.service.js';
+import { agentReaperReapedTotal } from './agent-loop-metrics.js';
 
 const logger = createLogger('engine:stale-run-reaper');
 
@@ -69,6 +70,7 @@ export class StaleRunReaperService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (result.count > 0) {
+      agentReaperReapedTotal.inc(result.count);
       logger.warn({ count: result.count }, 'Reaped stale agent runs');
     }
 

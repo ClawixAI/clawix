@@ -22,10 +22,20 @@ export class BudgetTracker {
   readonly graceLimit: number | null;
   readonly gracePercent: number;
 
-  constructor(budget: number | null, gracePercent: number) {
+  /**
+   * @param budget       Soft token budget, or null for no enforcement.
+   * @param gracePercent Extra headroom over `budget` before the hard stop.
+   * @param initialUsed  Cumulative tokens already spent before this tracker
+   *                     existed. Non-zero only on crash recovery, where the
+   *                     spend of a swarm's already-completed runs is replayed
+   *                     into a fresh shared tracker so recovered siblings don't
+   *                     each get a full new allowance.
+   */
+  constructor(budget: number | null, gracePercent: number, initialUsed = 0) {
     this.budget = budget;
     this.gracePercent = gracePercent;
     this.graceLimit = budget === null ? null : Math.ceil(budget * (1 + gracePercent / 100));
+    this.used_ = initialUsed;
   }
 
   /** Total tokens consumed across all recorded calls. */

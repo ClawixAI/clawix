@@ -22,6 +22,7 @@ vi.mock('@clawix/shared', async (importOriginal) => {
 // ------------------------------------------------------------------ //
 
 import { TaskExecutorService } from '../task-executor.service.js';
+import { BudgetTracker } from '../budget-tracker.js';
 import type { AgentRunnerService } from '../agent-runner.service.js';
 import type { AgentRunRepository } from '../../db/agent-run.repository.js';
 import type { SessionRepository } from '../../db/session.repository.js';
@@ -98,6 +99,7 @@ describe('TaskExecutorService', () => {
     findAllByStatus: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
     findById: ReturnType<typeof vi.fn>;
+    sumSessionTokenUsage: ReturnType<typeof vi.fn>;
   };
   let mockSessionRepo: { findById: ReturnType<typeof vi.fn> };
   let mockRedis: {
@@ -118,6 +120,7 @@ describe('TaskExecutorService', () => {
   };
   let mockAgentDefRepo: { findById: ReturnType<typeof vi.fn> };
   let mockAgentRunRegistry: { abort: ReturnType<typeof vi.fn> };
+  let mockRunActivity: { snapshot: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -131,6 +134,7 @@ describe('TaskExecutorService', () => {
       findAllByStatus: vi.fn().mockResolvedValue([]),
       update: vi.fn().mockResolvedValue({ ...mockAgentRun }),
       findById: vi.fn().mockResolvedValue(mockAgentRun),
+      sumSessionTokenUsage: vi.fn().mockResolvedValue(0),
     };
 
     mockSessionRepo = {
@@ -160,6 +164,7 @@ describe('TaskExecutorService', () => {
     };
 
     mockAgentRunRegistry = { abort: vi.fn().mockReturnValue(true) };
+    mockRunActivity = { snapshot: vi.fn().mockReturnValue(undefined) };
 
     service = new TaskExecutorService(
       mockAgentRunner as unknown as AgentRunnerService,
@@ -169,6 +174,7 @@ describe('TaskExecutorService', () => {
       mockPubsub as unknown as RedisPubSubService,
       mockAgentDefRepo as unknown as AgentDefinitionRepository,
       mockAgentRunRegistry as unknown as import('../agent-run-registry.service.js').AgentRunRegistry,
+      mockRunActivity as unknown as import('../run-activity.registry.js').RunActivityRegistry,
     );
   });
 
@@ -508,6 +514,177 @@ describe('TaskExecutorService', () => {
         vi.useRealTimers();
       }
     });
+
+    it('consults the run-activity snapshot to enrich the watchdog failure log', async () => {
+      vi.useFakeTimers();
+      try {
+        const childRun = {
+          ...mockAgentRun,
+          id: 'run-stuck',
+          parentAgentRunId: 'run-parent',
+          agentDefinitionId: 'agent-def-1',
+        };
+        const parentRun = {
+          ...mockAgentRun,
+          id: 'run-parent',
+          sessionId: 'sess-parent',
+          parentAgentRunId: null,
+        };
+        mockAgentRunRepo.findById.mockResolvedValueOnce(childRun).mockResolvedValueOnce(parentRun);
+        mockRunActivity.snapshot.mockReturnValue({
+          agentName: 'worker',
+          sessionId: 'sess-parent',
+          parentAgentRunId: 'run-parent',
+          iteration: 4,
+          currentToolName: 'shell',
+          currentToolStartedAt: 123,
+        });
+        // Run never settles — simulates a tool that ignores the abort signal.
+        mockAgentRunner.run.mockReturnValueOnce(new Promise<RunResult>(() => {}));
+
+        service.submit('run-stuck', {
+          agentDefinitionId: 'agent-def-1',
+          input: 'build an app',
+          userId: 'user-1',
+          sessionId: 'sess-parent',
+          timeoutMs: 1000,
+        });
+
+        await vi.advanceTimersByTimeAsync(31_001);
+
+        // The watchdog reads the run's last-known activity so the death-log can
+        // name the tool the run was stuck in, not just "timed out".
+        expect(mockRunActivity.snapshot).toHaveBeenCalledWith('run-stuck');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------- //
+  //  describe('watchdog races')                                      //
+  // ---------------------------------------------------------------- //
+
+  describe('watchdog races', () => {
+    // The `settled` latch (task-executor.service.ts:318/350/357) is the subtle
+    // invariant: exactly one of {watchdog, resolve, reject} may finalize a run.
+    // These cover the branches the happy-path tests never exercise.
+
+    it('finalizes exactly once when the run settles after the watchdog already fired', async () => {
+      vi.useFakeTimers();
+      try {
+        const childRun = {
+          ...mockAgentRun,
+          id: 'run-late',
+          parentAgentRunId: 'run-parent',
+          agentDefinitionId: 'agent-def-1',
+        };
+        const parentRun = {
+          ...mockAgentRun,
+          id: 'run-parent',
+          sessionId: 'sess-parent',
+          parentAgentRunId: null,
+        };
+        mockAgentRunRepo.findById.mockImplementation((id: string) =>
+          id === 'run-parent' ? Promise.resolve(parentRun) : Promise.resolve(childRun),
+        );
+
+        // Deferred so we can let the run settle *after* the watchdog fires.
+        const deferred = createDeferred<RunResult>();
+        mockAgentRunner.run.mockReturnValueOnce(deferred.promise);
+
+        service.submit('run-late', {
+          agentDefinitionId: 'agent-def-1',
+          input: 'build an app',
+          userId: 'user-1',
+          sessionId: 'sess-parent',
+          timeoutMs: 1000,
+        });
+
+        expect(service.activeCount).toBe(1);
+
+        // Watchdog fires (timeoutMs 1000 + grace 30000), taking the settle latch.
+        await vi.advanceTimersByTimeAsync(31_001);
+        expect(mockAgentRunRegistry.abort).toHaveBeenCalledWith('run-late', 'watchdog_timeout');
+        expect(service.activeCount).toBe(0);
+        const lpushCallsAfterWatchdog = mockRedis.lpush.mock.calls.length;
+        const updateCallsAfterWatchdog = mockAgentRunRepo.update.mock.calls.length;
+
+        // The orphaned run finally resolves — the `if (settled) return` guard
+        // must make this a complete no-op: no double finalize, no success publish.
+        deferred.resolve(makeRunResult('run-late'));
+        await vi.advanceTimersByTimeAsync(1);
+
+        // finalize() ran once, not twice — activeCount stays 0 rather than -1.
+        expect(service.activeCount).toBe(0);
+        // No second (success) result published on top of the watchdog's failure.
+        expect(mockRedis.lpush.mock.calls.length).toBe(lpushCallsAfterWatchdog);
+        // No later 'completed' write clobbering the watchdog's 'failed' write.
+        expect(mockAgentRunRepo.update.mock.calls.length).toBe(updateCallsAfterWatchdog);
+        expect(mockAgentRunRepo.update).toHaveBeenCalledWith(
+          'run-late',
+          expect.objectContaining({ status: 'failed' }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('frees the slot and clears the watchdog when the run rejects', async () => {
+      vi.useFakeTimers();
+      try {
+        const childRun = {
+          ...mockAgentRun,
+          id: 'run-reject',
+          parentAgentRunId: 'run-parent',
+          agentDefinitionId: 'agent-def-1',
+        };
+        const parentRun = {
+          ...mockAgentRun,
+          id: 'run-parent',
+          sessionId: 'sess-parent',
+          parentAgentRunId: null,
+        };
+        mockAgentRunRepo.findById.mockImplementation((id: string) =>
+          id === 'run-parent' ? Promise.resolve(parentRun) : Promise.resolve(childRun),
+        );
+
+        const deferred = createDeferred<RunResult>();
+        mockAgentRunner.run.mockReturnValueOnce(deferred.promise);
+
+        service.submit('run-reject', {
+          agentDefinitionId: 'agent-def-1',
+          input: 'build an app',
+          userId: 'user-1',
+          sessionId: 'sess-parent',
+          timeoutMs: 1000,
+        });
+
+        expect(service.activeCount).toBe(1);
+
+        // agentRunner.run rejects — the catch branch must finalize (free the slot)
+        // and publish a failure to the parent.
+        deferred.reject(new Error('agent runner blew up'));
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(service.activeCount).toBe(0);
+        const queueKey = `${KEY_PREFIXES.agentResults}sess-parent`;
+        expect(mockRedis.lpush).toHaveBeenCalledWith(queueKey, expect.any(String));
+        const published = JSON.parse(mockRedis.lpush.mock.calls[0]![1] as string) as {
+          status: string;
+        };
+        expect(published.status).toBe('failed');
+
+        // The watchdog must have been cleared on the reject path — advancing past
+        // its window must NOT fire it (no double abort / double finalize).
+        mockAgentRunRegistry.abort.mockClear();
+        await vi.advanceTimersByTimeAsync(31_001);
+        expect(mockAgentRunRegistry.abort).not.toHaveBeenCalled();
+        expect(service.activeCount).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   // ---------------------------------------------------------------- //
@@ -606,6 +783,29 @@ describe('TaskExecutorService', () => {
       await expect(service.onModuleInit()).resolves.toBeUndefined();
     });
 
+    it('skips a whole session group when its session lookup fails, still recovering others', async () => {
+      // A missing session means no userId to run under, so the entire group is
+      // unrecoverable — the broad skip is intentional. Other sessions are
+      // unaffected.
+      const badRun = { ...mockAgentRun, id: 'bad-1', sessionId: 'sess-gone', tokenBudget: null };
+      const goodRun = { ...mockAgentRun, id: 'good-1', sessionId: 'sess-ok', tokenBudget: null };
+      mockAgentRunRepo.findAllByStatus.mockResolvedValue([badRun, goodRun]);
+      mockSessionRepo.findById.mockImplementation((id: string) =>
+        id === 'sess-ok'
+          ? Promise.resolve({ ...mockSession, id: 'sess-ok' })
+          : Promise.reject(new Error('Session not found')),
+      );
+
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const submittedIds = mockAgentRunner.run.mock.calls.map(
+        (c: unknown[]) => (c[0] as { agentRunId: string }).agentRunId,
+      );
+      expect(submittedIds).toContain('good-1');
+      expect(submittedIds).not.toContain('bad-1');
+    });
+
     it('reconstructs a BudgetTracker from persisted budget on recovery', async () => {
       const pendingRun = {
         ...mockAgentRun,
@@ -644,6 +844,84 @@ describe('TaskExecutorService', () => {
 
       const call = mockAgentRunner.run.mock.calls[0]![0] as { budgetTracker?: unknown };
       expect(call.budgetTracker).toBeUndefined();
+    });
+
+    it('shares one seeded tracker across all recovered siblings of a session', async () => {
+      const runA = {
+        ...mockAgentRun,
+        id: 'run-a',
+        sessionId: 'sess-swarm',
+        tokenBudget: 10000,
+        tokenGracePercent: 10,
+        input: 'a',
+      };
+      const runB = {
+        ...mockAgentRun,
+        id: 'run-b',
+        sessionId: 'sess-swarm',
+        tokenBudget: 10000,
+        tokenGracePercent: 10,
+        input: 'b',
+      };
+      mockAgentRunRepo.findAllByStatus.mockResolvedValue([runA, runB]);
+      mockSessionRepo.findById.mockResolvedValue({ ...mockSession, id: 'sess-swarm' });
+      // The swarm already spent 6000 tokens before the crash.
+      mockAgentRunRepo.sumSessionTokenUsage.mockResolvedValue(6000);
+
+      await service.onModuleInit();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const trackers = mockAgentRunner.run.mock.calls
+        .filter((c: unknown[]) => (c[0] as { sessionId?: string }).sessionId === 'sess-swarm')
+        .map((c: unknown[]) => (c[0] as { budgetTracker?: BudgetTracker }).budgetTracker);
+
+      expect(trackers).toHaveLength(2);
+      // Both siblings share the SAME instance, so their post-recovery spend
+      // accumulates together under one cap.
+      expect(trackers[0]).toBeInstanceOf(BudgetTracker);
+      expect(trackers[0]).toBe(trackers[1]);
+      // Seeded from the swarm's prior spend, not reset to 0.
+      expect(trackers[0]?.used).toBe(6000);
+      expect(trackers[0]?.budget).toBe(10000);
+      // Summed once per session, not once per run.
+      expect(mockAgentRunRepo.sumSessionTokenUsage).toHaveBeenCalledWith('sess-swarm');
+      expect(mockAgentRunRepo.sumSessionTokenUsage).toHaveBeenCalledTimes(1);
+    });
+
+    it('rebuilds independent trackers for distinct sessions', async () => {
+      const run1 = {
+        ...mockAgentRun,
+        id: 'r1',
+        sessionId: 'sess-1',
+        tokenBudget: 1000,
+        tokenGracePercent: 10,
+      };
+      const run2 = {
+        ...mockAgentRun,
+        id: 'r2',
+        sessionId: 'sess-2',
+        tokenBudget: 2000,
+        tokenGracePercent: 10,
+      };
+      mockAgentRunRepo.findAllByStatus.mockResolvedValue([run1, run2]);
+      mockSessionRepo.findById.mockImplementation((id: string) =>
+        Promise.resolve({ ...mockSession, id }),
+      );
+      mockAgentRunRepo.sumSessionTokenUsage.mockImplementation((sid: string) =>
+        Promise.resolve(sid === 'sess-1' ? 100 : 500),
+      );
+
+      await service.onModuleInit();
+      await new Promise((r) => setTimeout(r, 0));
+
+      const trackerFor = (id: string): BudgetTracker | undefined =>
+        mockAgentRunner.run.mock.calls
+          .map((c: unknown[]) => c[0] as { agentRunId: string; budgetTracker?: BudgetTracker })
+          .find((o) => o.agentRunId === id)?.budgetTracker;
+
+      expect(trackerFor('r1')).not.toBe(trackerFor('r2'));
+      expect(trackerFor('r1')?.used).toBe(100);
+      expect(trackerFor('r2')?.used).toBe(500);
     });
   });
 
@@ -865,6 +1143,7 @@ describe('TaskExecutorService', () => {
         mockPubsub as unknown as RedisPubSubService,
         mockAgentDefRepo as unknown as AgentDefinitionRepository,
         mockAgentRunRegistry as unknown as import('../agent-run-registry.service.js').AgentRunRegistry,
+        mockRunActivity as unknown as import('../run-activity.registry.js').RunActivityRegistry,
       );
 
       mockAgentRunRepo.findById.mockResolvedValue({
@@ -991,6 +1270,71 @@ describe('TaskExecutorService', () => {
         PUBSUB_CHANNELS.channelResponseReady,
         expect.anything(),
       );
+    });
+
+    it('delivers both completed and failed child results to the parent (partial failure)', async () => {
+      const parentRun = {
+        id: 'run-parent',
+        agentDefinitionId: 'agent-def-1',
+        sessionId: 'sess-parent',
+        parentAgentRunId: null,
+      };
+      mockAgentRunRepo.findById.mockResolvedValue(parentRun);
+      mockSessionRepo.findById.mockResolvedValue({
+        ...mockSession,
+        id: 'sess-parent',
+        userId: 'user-1',
+      });
+      mockRedis.setNx.mockResolvedValue(true);
+
+      const completedRaw = JSON.stringify({
+        agentRunId: 'run-child-ok',
+        parentAgentRunId: 'run-parent',
+        agentName: 'researcher',
+        output: 'Research findings ready',
+        status: 'completed',
+        error: null,
+      });
+      const failedRaw = JSON.stringify({
+        agentRunId: 'run-child-bad',
+        parentAgentRunId: 'run-parent',
+        agentName: 'coder',
+        output: null,
+        status: 'failed',
+        error: 'compilation blew up',
+      });
+      // Two children resolve in sequence, then the queue drains.
+      mockRedis.lmove
+        .mockResolvedValueOnce(completedRaw)
+        .mockResolvedValueOnce(failedRaw)
+        .mockResolvedValueOnce(null);
+      mockRedis.incr.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
+      mockRedis.llen.mockResolvedValue(0);
+
+      await service.onModuleInit();
+      const subscribeCb = mockPubsub.subscribe.mock.calls[0]![1] as (msg: {
+        payload: string;
+      }) => void;
+      await subscribeCb({ payload: 'sess-parent' });
+      await new Promise((r) => setTimeout(r, 100));
+
+      const reinvocationInputs = mockAgentRunner.run.mock.calls
+        .filter((call: unknown[]) => (call[0] as { isReinvocation?: boolean }).isReinvocation)
+        .map((call: unknown[]) => (call[0] as { input: string }).input);
+
+      // Both children delivered — the failed one is NOT silently dropped.
+      expect(reinvocationInputs).toHaveLength(2);
+      const completedInjection = reinvocationInputs.find((i) => i.includes('researcher'));
+      const failedInjection = reinvocationInputs.find((i) => i.includes('coder'));
+      expect(completedInjection).toContain('Status: completed');
+      expect(completedInjection).toContain('Research findings ready');
+      expect(failedInjection).toContain('Status: failed');
+      expect(failedInjection).toContain('compilation blew up');
+
+      // Both processing entries removed — nothing stranded for crash recovery.
+      const processingKey = `${KEY_PREFIXES.agentProcessing}sess-parent`;
+      expect(mockRedis.lrem).toHaveBeenCalledWith(processingKey, 1, completedRaw);
+      expect(mockRedis.lrem).toHaveBeenCalledWith(processingKey, 1, failedRaw);
     });
 
     it('does not start delivery when lock is held', async () => {

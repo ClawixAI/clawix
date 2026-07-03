@@ -28,6 +28,7 @@ import { WorkspaceSeederService } from './workspace-seeder.service.js';
 import { StaleRunReaperService } from './stale-run-reaper.service.js';
 import { CompressorService } from './compressor.js';
 import { AgentRunRegistry } from './agent-run-registry.service.js';
+import { RunActivityRegistry } from './run-activity.registry.js';
 import { SearchProviderRegistry } from './tools/web/search-provider.js';
 import { BraveSearchProvider } from './tools/web/providers/brave.js';
 import { DuckDuckGoProvider } from './tools/web/providers/duckduckgo.js';
@@ -78,6 +79,7 @@ import { SessionSearchService } from './session-recall/session-search.service.js
     StaleRunReaperService,
     CompressorService,
     AgentRunRegistry,
+    RunActivityRegistry,
     {
       provide: SkillLoaderService,
       useFactory: () => {
