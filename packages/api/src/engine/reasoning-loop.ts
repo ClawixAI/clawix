@@ -2,6 +2,7 @@ import { createLogger } from '@clawix/shared';
 import type { ChatMessage, ChatOptions, LLMProvider, LLMResponse, LLMUsage } from '@clawix/shared';
 
 import type { ToolRegistry } from './tool-registry.js';
+import type { ToolResult } from './tool.js';
 import type { LoopResult, ReasoningLoopConfig } from './reasoning-loop.types.js';
 import type { BudgetTracker } from './budget-tracker.js';
 import { runWithRecovery } from './recovery-loop.js';
@@ -16,6 +17,19 @@ const logger = createLogger('engine:reasoning-loop');
 const DEFAULT_MAX_ITERATIONS = 40;
 /** Cap for the grace-turn output. Tight enough that the wrap-up cannot blow the hard limit. */
 const GRACE_TURN_MAX_TOKENS = 1500;
+/** A tool running longer than this (ms) is logged as slow while still in flight. */
+const DEFAULT_SLOW_TOOL_WARN_MS = 30_000;
+/** Interval (ms) between "still alive" heartbeat logs so a hang surfaces before the watchdog. */
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
+/** Grace (ms) after an abort before an unresponsive tool is flagged as ignoring the signal. */
+const DEFAULT_ABORT_GRACE_MS = 5_000;
+
+/** Best-effort unref so a stray timer never keeps the process alive. */
+function unref(handle: ReturnType<typeof setTimeout>): void {
+  if (typeof handle === 'object' && handle !== null && typeof handle.unref === 'function') {
+    handle.unref();
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /*  Module-level helpers                                                */
@@ -68,6 +82,20 @@ export class ReasoningLoop {
     config?: ReasoningLoopConfig,
   ): Promise<LoopResult> {
     const maxIterations = config?.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+    // Run-scoped logger: carries { agentRunId, sessionId } when supplied so
+    // concurrent sub-agents' loop lines are individually greppable.
+    const log = config?.logger ?? logger;
+    const observer = config?.observer;
+    const slowToolWarnMs = config?.slowToolWarnMs ?? DEFAULT_SLOW_TOOL_WARN_MS;
+    const heartbeatIntervalMs = config?.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+    const abortGraceMs = config?.abortGraceMs ?? DEFAULT_ABORT_GRACE_MS;
+    const runStartedAt = Date.now();
+    // Live tool state, read by the heartbeat so a hang names the stuck tool.
+    let currentToolName: string | null = null;
+    let currentToolStartedAt = 0;
+    // Set when abort fired while the current tool is still in flight; lets the
+    // heartbeat re-surface the ignoring-abort state over the whole stuck window.
+    let currentToolAbortedAt: number | null = null;
     let messages: ChatMessage[] = [...initialMessages];
     let totalUsage: LLMUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     let iterations = 0;
@@ -129,10 +157,33 @@ export class ReasoningLoop {
     const stalenessMap = config?.stalenessMap;
     const injectedSkills = new Set<string>();
 
+    // Heartbeat: periodic "still alive" line naming the tool the loop is stuck
+    // in, so a wedge surfaces before the executor watchdog fires. Gated to
+    // in-tool time — healthy inter-iteration waits (covered by the debug
+    // "Starting iteration" + tool logs) stay quiet. When abort has fired but
+    // the tool runs on, it also carries the elapsed-since-abort so the
+    // ignoring-abort state is re-surfaced across the whole stuck window.
+    const heartbeat = setInterval(() => {
+      if (currentToolName === null) return;
+      log.info(
+        {
+          iteration: iterations,
+          tool: currentToolName,
+          toolElapsedMs: Date.now() - currentToolStartedAt,
+          runElapsedMs: Date.now() - runStartedAt,
+          ...(currentToolAbortedAt !== null
+            ? { abortIgnoredMs: Date.now() - currentToolAbortedAt }
+            : {}),
+        },
+        'Reasoning loop heartbeat',
+      );
+    }, heartbeatIntervalMs);
+    unref(heartbeat);
+
     try {
       while (iterations < maxIterations) {
         if (abortController.signal.aborted) {
-          logger.warn(
+          log.warn(
             { iteration: iterations },
             'Reasoning loop aborted (timeout or external signal)',
           );
@@ -143,7 +194,7 @@ export class ReasoningLoop {
         // tracker since our last iteration. Skip the call to avoid paying
         // for tokens we would immediately hard-stop on.
         if (tracker?.isOverGrace()) {
-          logger.warn(
+          log.warn(
             { used: tracker.used, budget: tracker.budget, graceLimit: tracker.graceLimit },
             'Token budget exceeded before iteration — hard stop',
           );
@@ -152,9 +203,10 @@ export class ReasoningLoop {
         }
 
         iterations += 1;
+        observer?.onIteration?.(iterations);
 
-        logger.debug({ iteration: iterations, maxIterations }, 'Starting iteration');
-        logger.debug({ iteration: iterations, messages }, 'Prompt messages sent to LLM');
+        log.debug({ iteration: iterations, maxIterations }, 'Starting iteration');
+        log.debug({ iteration: iterations, messages }, 'Prompt messages sent to LLM');
 
         // When the previous iteration injected grace, force this call to be
         // a constrained wrap-up: no tools available, output capped tightly.
@@ -184,10 +236,7 @@ export class ReasoningLoop {
           // throws an AbortError. Treat that as a clean timeout exit rather
           // than letting it propagate as a hard failure.
           if (abortController.signal.aborted) {
-            logger.warn(
-              { iteration: iterations },
-              'Provider chat aborted by signal — exiting loop',
-            );
+            log.warn({ iteration: iterations }, 'Provider chat aborted by signal — exiting loop');
             break;
           }
           throw err;
@@ -210,7 +259,7 @@ export class ReasoningLoop {
         // Hard stop: budget + grace exhausted. Could be triggered by this call
         // or by a sub-agent that ran while a previous iteration was awaiting.
         if (tracker?.isOverGrace()) {
-          logger.warn(
+          log.warn(
             { used: tracker.used, budget: tracker.budget, graceLimit: tracker.graceLimit },
             'Token budget exceeded — hard stop',
           );
@@ -229,7 +278,7 @@ export class ReasoningLoop {
           });
           tracker.markGraceInjected();
           nextCallIsGraceTurn = true;
-          logger.info(
+          log.info(
             { used: tracker.used, budget: tracker.budget },
             'Token budget reached — grace turn injected',
           );
@@ -237,7 +286,7 @@ export class ReasoningLoop {
 
         // Error finish reason: stop immediately
         if (response.finishReason === 'error') {
-          logger.warn({ iteration: iterations }, 'LLM returned error finish reason');
+          log.warn({ iteration: iterations }, 'LLM returned error finish reason');
           messages.push({ role: 'assistant', content: response.content ?? '' });
           break;
         }
@@ -263,7 +312,7 @@ export class ReasoningLoop {
 
         // Execute each tool call and append result messages
         for (const toolCall of response.toolCalls) {
-          logger.debug({ tool: toolCall.name, id: toolCall.id }, 'Executing tool call');
+          log.debug({ tool: toolCall.name, id: toolCall.id }, 'Executing tool call');
 
           // Streaming: announce the tool call before running it so the
           // channel can render a progress bubble while the tool executes.
@@ -275,9 +324,65 @@ export class ReasoningLoop {
             });
           }
 
-          const result = await this.toolRegistry.execute(toolCall.name, toolCall.arguments, {
-            abortSignal: abortController.signal,
-          });
+          // Mark the tool live for the heartbeat + observer (watchdog read).
+          currentToolName = toolCall.name;
+          currentToolStartedAt = Date.now();
+          observer?.onToolStart?.(toolCall.name);
+
+          // Slow-tool warn: fires while the tool is still running, so a hang is
+          // visible without waiting for the wall-clock timeout.
+          const slowTimer = setTimeout(() => {
+            log.warn(
+              {
+                tool: toolCall.name,
+                elapsedMs: Date.now() - currentToolStartedAt,
+                iteration: iterations,
+              },
+              'Tool still running past slow threshold',
+            );
+          }, slowToolWarnMs);
+          unref(slowTimer);
+
+          // Abort-ignored watch: if abort fires while this tool is in flight and
+          // it doesn't return within the grace window, the tool is ignoring the
+          // signal — the real culprit behind a run that won't settle.
+          let abortTimer: ReturnType<typeof setTimeout> | undefined;
+          const armAbortWatch = (): void => {
+            // Record abort time so the heartbeat can re-surface the ignoring-
+            // abort state; the one-shot warn below is the first, loud signal.
+            currentToolAbortedAt = Date.now();
+            abortTimer = setTimeout(() => {
+              log.warn(
+                { tool: toolCall.name, msSinceAbort: abortGraceMs, iteration: iterations },
+                'Tool ignoring abort signal (still running after grace)',
+              );
+            }, abortGraceMs);
+            unref(abortTimer);
+          };
+          if (abortController.signal.aborted) armAbortWatch();
+          else abortController.signal.addEventListener('abort', armAbortWatch, { once: true });
+
+          let result: ToolResult;
+          try {
+            result = await this.toolRegistry.execute(toolCall.name, toolCall.arguments, {
+              abortSignal: abortController.signal,
+            });
+          } finally {
+            clearTimeout(slowTimer);
+            if (abortTimer) clearTimeout(abortTimer);
+            abortController.signal.removeEventListener('abort', armAbortWatch);
+            log.debug(
+              {
+                tool: toolCall.name,
+                durationMs: Date.now() - currentToolStartedAt,
+                iteration: iterations,
+              },
+              'Tool completed',
+            );
+            observer?.onToolEnd?.(toolCall.name);
+            currentToolName = null;
+            currentToolAbortedAt = null;
+          }
           try {
             toolLoopGuard.record(toolCall.name, toolCall.arguments, result.isError);
           } catch (loopErr) {
@@ -322,6 +427,7 @@ export class ReasoningLoop {
       }
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
+      clearInterval(heartbeat);
     }
 
     const hitMaxIterations =
@@ -329,7 +435,7 @@ export class ReasoningLoop {
 
     const content = lastResponse?.content ?? null;
 
-    logger.info(
+    log.info(
       { iterations, hitMaxIterations, hitTokenBudget, hitTimeout, totalUsage },
       'Reasoning loop completed',
     );

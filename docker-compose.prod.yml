@@ -96,6 +96,16 @@ services:
       MCP_OAUTH_CALLBACK_URL: ${MCP_OAUTH_CALLBACK_URL:-}
       WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:3000}
       MCP_INTERNAL_ALLOWLIST: ${MCP_INTERNAL_ALLOWLIST:-}
+      # Prometheus scrape endpoint — OFF by default. Uncomment METRICS_ENABLED
+      # to turn it on; it then serves GET /metrics on a DEDICATED port (never
+      # added to `ports:`, reachable only inside Docker networks). Default bind
+      # is loopback (METRICS_BIND_IP unset -> 127.0.0.1). To scrape from a
+      # networked Prometheus on clawix-internal, set METRICS_BIND_IP to this
+      # container's internal IP (airtight) or 0.0.0.0 (also reachable from
+      # clawix-browser-egress — documented residual). See prometheus.yml and
+      # docs/GETTING_STARTED.md → "Metrics & Observability".
+      # METRICS_ENABLED: 'true'
+      METRICS_PORT: '9091'
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/data

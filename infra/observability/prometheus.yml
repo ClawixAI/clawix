@@ -1,0 +1,52 @@
+# Prometheus configuration for scraping Clawix.
+#
+# METRICS ARE OFF BY DEFAULT. Set METRICS_ENABLED=true on the API service
+# first (see docker-compose.*.yml / docs/GETTING_STARTED.md); otherwise nothing
+# listens and this scrape target is refused.
+#
+# When enabled, the API serves the prom-client default registry (agent-loop
+# stability counters + Node.js process metrics) at GET /metrics on a DEDICATED
+# port (METRICS_PORT, default 9091) — separate from the public API port 3001,
+# and never published to the host. There is NO per-request auth; the security
+# boundary is the bind address (METRICS_BIND_IP, default 127.0.0.1) plus Docker
+# network placement. Pick ONE recipe below and set the scrape target to match.
+#
+# Recipe A (DEFAULT — airtight, single-node): API binds 127.0.0.1:9091. Run
+# Prometheus inside the API container's network namespace so `localhost:9091`
+# resolves. This is what the scrape target below is set for.
+#
+#   prometheus:
+#     image: prom/prometheus:latest
+#     network_mode: 'service:api'          # dev compose: 'service:api-server'
+#     command: ['--config.file=/etc/prometheus/prometheus.yml']
+#     volumes:
+#       - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+#       - ./infra/observability/agent-loop.rules.yml:/etc/prometheus/rules/agent-loop.rules.yml:ro
+#
+# Recipe B (airtight, centralized): set METRICS_BIND_IP to the API's pinned
+# clawix-internal IP, attach Prometheus to clawix-internal, and set the target
+# to '<that-ip>:9091'. The clawix-browser-egress interface is not listening.
+#
+# Recipe C (centralized, simplest, RESIDUAL): set METRICS_BIND_IP=0.0.0.0,
+# attach Prometheus to clawix-internal, set the target to 'api:9091' (prod) or
+# 'api-server:9091' (dev). NOTE: 0.0.0.0 also listens on clawix-browser-egress,
+# so the Chromium sidecar can reach /metrics — a documented, low-sensitivity
+# residual you accept by choosing this recipe.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/agent-loop.rules.yml
+
+scrape_configs:
+  - job_name: clawix-api
+    metrics_path: /metrics
+    static_configs:
+      # Default = Recipe A (Prometheus shares the API container's netns).
+      # Recipe B: replace with '<api-internal-ip>:9091'.
+      # Recipe C: replace with 'api:9091' (prod) / 'api-server:9091' (dev).
+      - targets: ['localhost:9091']
+        labels:
+          service: clawix-api

@@ -6,9 +6,10 @@
  * throws on duplicate registration). These power the leak-detector and
  * fire-rate alerts in `infra/observability/agent-loop.rules.yml`.
  *
- * NOTE: like the other engine `*-metrics.ts` modules, these register on the
- * default registry but are only observable once a `/metrics` scrape endpoint
- * is wired up.
+ * Like the other engine `*-metrics.ts` modules, these register on the default
+ * registry, which is served at `GET /metrics` by the standalone metrics
+ * server (`./metrics/metrics.server.ts`, opt-in via METRICS_ENABLED) and
+ * scraped per `infra/observability/prometheus.yml`.
  */
 
 import { Counter, Gauge } from 'prom-client';

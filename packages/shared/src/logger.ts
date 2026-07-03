@@ -4,6 +4,8 @@ export interface LoggerContext {
   readonly tenantId?: string;
   readonly userId?: string;
   readonly agentId?: string;
+  /** Identifies a single agent run — lets per-run loop logs be grepped in isolation. */
+  readonly agentRunId?: string;
   readonly requestId?: string;
   readonly sessionId?: string;
 }

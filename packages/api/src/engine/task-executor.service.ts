@@ -28,6 +28,7 @@ import {
 } from '../cache/cache.constants.js';
 import { AgentDefinitionRepository } from '../db/agent-definition.repository.js';
 import { AgentRunRegistry } from './agent-run-registry.service.js';
+import { RunActivityRegistry } from './run-activity.registry.js';
 import {
   agentActiveSlots,
   agentPendingQueue,
@@ -136,6 +137,7 @@ export class TaskExecutorService implements OnModuleInit {
     private readonly pubsub: RedisPubSubService,
     private readonly agentDefRepo: AgentDefinitionRepository,
     private readonly agentRunRegistry: AgentRunRegistry,
+    private readonly runActivity: RunActivityRegistry,
   ) {
     this.maxConcurrent = parseInt(process.env['MAX_CONCURRENT_AGENTS'] ?? '10', 10);
     this.maxPending = parseInt(process.env['MAX_PENDING_AGENTS'] ?? '100', 10);
@@ -376,8 +378,19 @@ export class TaskExecutorService implements OnModuleInit {
       if (settled) return;
       settled = true;
       agentWatchdogFiredTotal.inc();
+      // Enrich the death-log with the run's last-known activity so it names the
+      // tool/iteration the run was wedged in, not just an opaque timeout.
+      const activity = this.runActivity.snapshot(agentRunId);
+      const stuckInMs =
+        activity?.currentToolStartedAt != null ? Date.now() - activity.currentToolStartedAt : null;
       logger.error(
-        { agentRunId, timeoutMs },
+        {
+          agentRunId,
+          timeoutMs,
+          iteration: activity?.iteration ?? null,
+          lastTool: activity?.currentToolName ?? null,
+          stuckInToolMs: stuckInMs,
+        },
         'Sub-agent watchdog fired — run did not settle; aborting and failing',
       );
       this.agentRunRegistry.abort(agentRunId, 'watchdog_timeout');

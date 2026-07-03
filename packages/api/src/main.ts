@@ -6,6 +6,7 @@ import { createLogger } from '@clawix/shared';
 import { AppModule } from './app.module.js';
 import { registerSecurityPlugins } from './common/security.config.js';
 import { configureGlobalHttpDispatcher } from './common/http-dispatcher.js';
+import { startMetricsServer, installMetricsShutdown } from './metrics/metrics.server.js';
 
 const logger = createLogger('api');
 
@@ -92,6 +93,21 @@ async function bootstrap() {
 
   await app.listen(port, host);
   logger.info(`API server listening on ${host}:${port}`);
+
+  // Metrics are OFF by default (METRICS_ENABLED). When enabled they live on a
+  // SEPARATE port (METRICS_BIND_IP, default 127.0.0.1) — never on the public
+  // API port. Started AFTER listen() so the engine *-metrics.ts side-effect
+  // imports have registered their counters and an early scrape isn't empty.
+  // The enable-gate and bind failure-isolation both live inside
+  // startMetricsServer: it returns null (disabled or bind failed) and the API
+  // keeps serving either way.
+  const metricsServer = await startMetricsServer(logger);
+
+  // Signal handlers are installed ONLY when metrics are enabled — see
+  // installMetricsShutdown's doc comment. On the default metrics-off path
+  // this installs nothing, preserving Node's default SIGTERM/SIGINT
+  // termination behavior exactly as it was before the metrics feature.
+  installMetricsShutdown(metricsServer, logger);
 }
 
 bootstrap().catch((err: unknown) => {

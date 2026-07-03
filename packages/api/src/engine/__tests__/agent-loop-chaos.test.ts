@@ -54,7 +54,7 @@ function makeRunResult(agentRunId: string): RunResult {
 
 /** Read a no-label prom-client metric's current scalar value. */
 async function metricValue(metric: {
-  get(): Promise<{ values: Array<{ value: number }> }>;
+  get(): Promise<{ values: { value: number }[] }>;
 }): Promise<number> {
   const snapshot = await metric.get();
   return snapshot.values[0]?.value ?? 0;
@@ -142,6 +142,7 @@ describe('agent-loop chaos harness', () => {
       findById: vi.fn().mockResolvedValue({ id: 'agent-def-1', name: 'worker' }),
     };
     mockAgentRunRegistry = { abort: vi.fn().mockReturnValue(true) };
+    const mockRunActivity = { snapshot: vi.fn().mockReturnValue(undefined) };
 
     service = new TaskExecutorService(
       mockAgentRunner as unknown as AgentRunnerService,
@@ -151,6 +152,7 @@ describe('agent-loop chaos harness', () => {
       mockPubsub as unknown as RedisPubSubService,
       mockAgentDefRepo as unknown as AgentDefinitionRepository,
       mockAgentRunRegistry as unknown as import('../agent-run-registry.service.js').AgentRunRegistry,
+      mockRunActivity as unknown as import('../run-activity.registry.js').RunActivityRegistry,
     );
   });
 

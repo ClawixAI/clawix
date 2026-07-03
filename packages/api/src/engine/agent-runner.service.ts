@@ -93,6 +93,7 @@ import { resolveWorkspacePaths } from './workspace-resolver.js';
 import type { TaskExecutorService } from './task-executor.service.js';
 import { SystemSettingsService } from '../system-settings/system-settings.service.js';
 import { AgentRunRegistry } from './agent-run-registry.service.js';
+import { RunActivityRegistry } from './run-activity.registry.js';
 import { PythonContainerPoolService } from './python-container-pool.service.js';
 import { PythonProxyHealthService } from './python-proxy-health.service.js';
 import { PythonConcurrencyLimiter } from './tools/python/concurrency-limiter.js';
@@ -185,6 +186,7 @@ export class AgentRunnerService {
     private readonly notificationRepo: NotificationRepository,
     private readonly mcpClientService: McpClientService,
     private readonly mcpTokenManager: McpTokenManager,
+    private readonly runActivity: RunActivityRegistry,
   ) {}
 
   /** Lazy accessor to break circular dependency with TaskExecutorService. */
@@ -310,6 +312,20 @@ export class AgentRunnerService {
     const effectiveSignal = signals.length > 1 ? AbortSignal.any(signals) : localController.signal;
 
     this.agentRunRegistry.register(agentRun.id, localController);
+
+    // Track run activity for per-run logging and watchdog visibility: the loop
+    // gets a logger bound to { agentRunId, sessionId } (so concurrent sub-agents
+    // are greppable) plus an observer that feeds iteration/tool state the
+    // executor watchdog reads when a run fails to settle.
+    this.runActivity.register(agentRun.id, {
+      agentName: agentDef.name,
+      ...(session ? { sessionId: session.id } : {}),
+      ...(agentRun.parentAgentRunId ? { parentAgentRunId: agentRun.parentAgentRunId } : {}),
+    });
+    const runLogger = this.runActivity.createRunLogger({
+      agentRunId: agentRun.id,
+      ...(session ? { sessionId: session.id } : {}),
+    });
 
     // ── Steps 7–19: Execution block (container + loop) ─────────────
     let containerId: string | null = null;
@@ -670,6 +686,12 @@ export class AgentRunnerService {
         ...(streamingUsed && options.onEvent ? { onEvent: options.onEvent } : {}),
         abortSignal: effectiveSignal,
         stalenessMap,
+        logger: runLogger,
+        observer: {
+          onIteration: (n) => this.runActivity.recordIteration(agentRun.id, n),
+          onToolStart: (name) => this.runActivity.recordToolStart(agentRun.id, name),
+          onToolEnd: () => this.runActivity.recordToolEnd(agentRun.id),
+        },
       });
 
       // Detect user cancellation — abort endpoint already wrote status='cancelled'.
@@ -870,6 +892,7 @@ export class AgentRunnerService {
         logger.warn({ runId: agentRun.id, err }, 'browser session cleanup failed');
       });
       this.agentRunRegistry.unregister(agentRun.id);
+      this.runActivity.unregister(agentRun.id);
     }
   }
 

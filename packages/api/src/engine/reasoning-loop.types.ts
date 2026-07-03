@@ -1,7 +1,24 @@
+import type { Logger } from 'pino';
+
 import type { ChatMessage, GenerationSettings, LLMUsage } from '@clawix/shared';
 
 import type { BudgetTracker } from './budget-tracker.js';
 import type { SkillStalenessMap } from './skill-loader.types.js';
+
+/**
+ * Side-channel hooks for observing loop progress without coupling the loop to
+ * any service. Fed by {@link RunActivityRegistry} so the executor watchdog can
+ * read what a hung run was last doing. All handlers are best-effort and must
+ * not throw.
+ */
+export interface ReasoningLoopObserver {
+  /** Called at the start of each iteration with the 1-based iteration index. */
+  readonly onIteration?: (iteration: number) => void;
+  /** Called immediately before a tool executes. */
+  readonly onToolStart?: (toolName: string) => void;
+  /** Called after a tool settles (success or error). */
+  readonly onToolEnd?: (toolName: string) => void;
+}
 
 /**
  * Streaming event emitted from the reasoning loop. Consumed by channel
@@ -53,6 +70,20 @@ export interface ReasoningLoopConfig {
   readonly abortSignal?: AbortSignal;
   /** Staleness map from skill loader — carried for downstream consumption. */
   readonly stalenessMap?: SkillStalenessMap;
+  /**
+   * Run-scoped logger. When provided, every loop line carries the run's
+   * context (`agentRunId`, `sessionId`) so concurrent sub-agents are
+   * individually greppable. Defaults to the module logger.
+   */
+  readonly logger?: Logger;
+  /** Progress observer (iteration + tool lifecycle). Omit for no observation. */
+  readonly observer?: ReasoningLoopObserver;
+  /** Warn if a single tool call runs longer than this (ms). Default 30_000. */
+  readonly slowToolWarnMs?: number;
+  /** Emit a heartbeat log at this interval while the loop runs (ms). Default 60_000. */
+  readonly heartbeatIntervalMs?: number;
+  /** Warn if a tool keeps running this long (ms) after the abort signal fired. Default 5_000. */
+  readonly abortGraceMs?: number;
 }
 
 /** Result of a completed reasoning loop. */

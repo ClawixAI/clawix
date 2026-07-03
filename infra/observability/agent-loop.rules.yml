@@ -4,14 +4,12 @@
 # stale-run reaper (StaleRunReaperService), defined in
 # packages/api/src/engine/agent-loop-metrics.ts.
 #
-# PREREQUISITE: these rules assume the API's prom-client default registry is
-# scraped at a `/metrics` endpoint. That scrape endpoint is not wired yet — add
-# it (and a Prometheus scrape_config for the api-server target) before loading
-# these rules, otherwise every expression evaluates against no data.
-#
-# Load via prometheus.yml:
-#   rule_files:
-#     - /etc/prometheus/rules/agent-loop.rules.yml
+# These rules evaluate against the API's prom-client default registry, scraped
+# at the `GET /metrics` endpoint (standalone metrics server on METRICS_PORT,
+# default 9091; opt-in via METRICS_ENABLED, off by default). A ready-to-use
+# scrape config lives alongside this file at `infra/observability/prometheus.yml`, which loads
+# these rules via its `rule_files` and scrapes the metrics port (default 9091)
+# the internal Docker network.
 
 groups:
   - name: clawix-agent-loop

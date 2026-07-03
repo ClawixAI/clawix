@@ -120,6 +120,7 @@ describe('TaskExecutorService', () => {
   };
   let mockAgentDefRepo: { findById: ReturnType<typeof vi.fn> };
   let mockAgentRunRegistry: { abort: ReturnType<typeof vi.fn> };
+  let mockRunActivity: { snapshot: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -163,6 +164,7 @@ describe('TaskExecutorService', () => {
     };
 
     mockAgentRunRegistry = { abort: vi.fn().mockReturnValue(true) };
+    mockRunActivity = { snapshot: vi.fn().mockReturnValue(undefined) };
 
     service = new TaskExecutorService(
       mockAgentRunner as unknown as AgentRunnerService,
@@ -172,6 +174,7 @@ describe('TaskExecutorService', () => {
       mockPubsub as unknown as RedisPubSubService,
       mockAgentDefRepo as unknown as AgentDefinitionRepository,
       mockAgentRunRegistry as unknown as import('../agent-run-registry.service.js').AgentRunRegistry,
+      mockRunActivity as unknown as import('../run-activity.registry.js').RunActivityRegistry,
     );
   });
 
@@ -507,6 +510,51 @@ describe('TaskExecutorService', () => {
         expect(published.status).toBe('failed');
 
         expect(service.activeCount).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('consults the run-activity snapshot to enrich the watchdog failure log', async () => {
+      vi.useFakeTimers();
+      try {
+        const childRun = {
+          ...mockAgentRun,
+          id: 'run-stuck',
+          parentAgentRunId: 'run-parent',
+          agentDefinitionId: 'agent-def-1',
+        };
+        const parentRun = {
+          ...mockAgentRun,
+          id: 'run-parent',
+          sessionId: 'sess-parent',
+          parentAgentRunId: null,
+        };
+        mockAgentRunRepo.findById.mockResolvedValueOnce(childRun).mockResolvedValueOnce(parentRun);
+        mockRunActivity.snapshot.mockReturnValue({
+          agentName: 'worker',
+          sessionId: 'sess-parent',
+          parentAgentRunId: 'run-parent',
+          iteration: 4,
+          currentToolName: 'shell',
+          currentToolStartedAt: 123,
+        });
+        // Run never settles — simulates a tool that ignores the abort signal.
+        mockAgentRunner.run.mockReturnValueOnce(new Promise<RunResult>(() => {}));
+
+        service.submit('run-stuck', {
+          agentDefinitionId: 'agent-def-1',
+          input: 'build an app',
+          userId: 'user-1',
+          sessionId: 'sess-parent',
+          timeoutMs: 1000,
+        });
+
+        await vi.advanceTimersByTimeAsync(31_001);
+
+        // The watchdog reads the run's last-known activity so the death-log can
+        // name the tool the run was stuck in, not just "timed out".
+        expect(mockRunActivity.snapshot).toHaveBeenCalledWith('run-stuck');
       } finally {
         vi.useRealTimers();
       }
@@ -1095,6 +1143,7 @@ describe('TaskExecutorService', () => {
         mockPubsub as unknown as RedisPubSubService,
         mockAgentDefRepo as unknown as AgentDefinitionRepository,
         mockAgentRunRegistry as unknown as import('../agent-run-registry.service.js').AgentRunRegistry,
+        mockRunActivity as unknown as import('../run-activity.registry.js').RunActivityRegistry,
       );
 
       mockAgentRunRepo.findById.mockResolvedValue({

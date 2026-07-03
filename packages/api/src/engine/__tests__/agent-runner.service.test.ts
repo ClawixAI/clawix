@@ -394,6 +394,29 @@ function buildMocks() {
     abortAllForUser: vi.fn(),
   };
 
+  const mockRunActivity: {
+    register: ReturnType<typeof vi.fn>;
+    unregister: ReturnType<typeof vi.fn>;
+    recordIteration: ReturnType<typeof vi.fn>;
+    recordToolStart: ReturnType<typeof vi.fn>;
+    recordToolEnd: ReturnType<typeof vi.fn>;
+    createRunLogger: ReturnType<typeof vi.fn>;
+    snapshot: ReturnType<typeof vi.fn>;
+  } = {
+    register: vi.fn(),
+    unregister: vi.fn(),
+    recordIteration: vi.fn(),
+    recordToolStart: vi.fn(),
+    recordToolEnd: vi.fn(),
+    createRunLogger: vi.fn().mockReturnValue({
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }),
+    snapshot: vi.fn().mockReturnValue(undefined),
+  };
+
   const mockMcpServerRepo: {
     findServersForRun: ReturnType<typeof vi.fn>;
     findEnabledServersForUser: ReturnType<typeof vi.fn>;
@@ -442,6 +465,7 @@ function buildMocks() {
     mockSystemSettings,
     mockPrisma,
     mockAgentRunRegistry,
+    mockRunActivity,
     mockMcpServerRepo,
     mockNotificationRepo,
     mockMcpClientService,
@@ -512,6 +536,8 @@ function buildService(mocks: ReturnType<typeof buildMocks>): AgentRunnerService 
     mocks.mockNotificationRepo as any,
     mocks.mockMcpClientService as any,
     mocks.mockMcpTokenManager as any,
+    // 42: run-activity registry (per-run logger + activity tracking)
+    mocks.mockRunActivity as unknown as import('../run-activity.registry.js').RunActivityRegistry,
   );
 }
 
@@ -1223,6 +1249,29 @@ describe('AgentRunnerService', () => {
         expect.any(AbortController),
       );
       expect(mocks.mockAgentRunRegistry.unregister).toHaveBeenCalledWith('run-1');
+    });
+
+    it('registers run activity and passes a run-scoped logger + observer to the loop', async () => {
+      await service.run(defaultOptions);
+
+      // The run is tracked for per-run logging and watchdog visibility.
+      expect(mocks.mockRunActivity.register).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ sessionId: 'sess-1' }),
+      );
+      expect(mocks.mockRunActivity.unregister).toHaveBeenCalledWith('run-1');
+
+      // The loop receives the run-scoped logger and an observer feeding the registry.
+      const loopConfig = mockLoopInstance.run.mock.calls[0]![1] as {
+        logger?: unknown;
+        observer?: { onToolStart?: (n: string) => void };
+      };
+      expect(loopConfig.logger).toBeDefined();
+      expect(loopConfig.observer).toBeDefined();
+
+      // The observer routes tool activity into the registry.
+      loopConfig.observer!.onToolStart!('shell');
+      expect(mocks.mockRunActivity.recordToolStart).toHaveBeenCalledWith('run-1', 'shell');
     });
 
     it('cancel signal fired before loop runs returns cancelled status', async () => {
