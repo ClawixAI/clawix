@@ -449,9 +449,16 @@ git push origin feature/your-feature
 
 ---
 
+## Community
+
+- **Issues** -- Report bugs or request features on the [issue tracker](https://github.com/ClawixAI/clawix/issues).
+- **Discord** -- Join our [Discord server](https://discord.gg/hFYA8basF2) to chat with the community. Basic rules: be nice, be respectful, and don't spam.
+
+---
+
 ## Security
 
-If you discover a security vulnerability, please report it responsibly via [GitHub Security Advisories](https://github.com/clawix/clawix/security/advisories) instead of using the public issue tracker.
+If you discover a security vulnerability, please report it responsibly via [GitHub Security Advisories](https://github.com/ClawixAI/clawix/security/advisories) instead of using the public issue tracker.
 
 ---
 
