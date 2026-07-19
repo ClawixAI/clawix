@@ -91,24 +91,114 @@ export class AgentDefinitionRepository {
     }
 
     return this.prisma.agentDefinition.create({
-      data: {
-        name: 'default-worker',
-        description: 'Default worker agent for anonymous sub-agent tasks',
-        systemPrompt: 'Complete the assigned task thoroughly and report the result.',
-        role: 'worker',
-        provider,
-        model,
-        maxTokensPerRun: 50000,
-        containerConfig: {
-          image: process.env['AGENT_CONTAINER_IMAGE'] ?? 'clawix-agent:latest',
-          cpuLimit: '0.5',
-          memoryLimit: '256m',
-          timeoutSeconds: 300,
-          readOnlyRootfs: false,
-          allowedMounts: [],
-        },
-      },
+      data: this.buildDefaultWorkerData('default-worker', provider, model),
     });
+  }
+
+  /**
+   * Find or create a default worker whose provider is permitted by the spawning
+   * user's policy (`Policy.allowedProviders`).
+   *
+   * When the org default provider is allowed (or no restriction is supplied),
+   * this is exactly {@link findOrCreateDefaultWorker}. When the org default is
+   * out-of-policy, the first allowed provider that is both configured (enabled
+   * `ProviderConfig`) and resolvable in the provider registry is substituted,
+   * backed by a per-provider `default-worker-<provider>` row — so anonymous
+   * sub-agent spawns keep working without forcing the org default into every
+   * policy, and without ever binding an out-of-policy provider.
+   */
+  async findOrCreateDefaultWorkerForPolicy(allowedProviders?: string[]): Promise<AgentDefinition> {
+    const defaultProviderConfig = await this.prisma.providerConfig.findFirst({
+      where: { isDefault: true, isEnabled: true },
+    });
+    if (!defaultProviderConfig) {
+      throw new Error(
+        'No default provider configured. Set isDefault=true on a ProviderConfig row, ' +
+          'or configure DEFAULT_PROVIDER and re-run bootstrap.',
+      );
+    }
+    const orgDefault = defaultProviderConfig.provider;
+
+    // No restriction context, or the org default is permitted → standard path.
+    if (
+      !allowedProviders ||
+      allowedProviders.length === 0 ||
+      allowedProviders.includes(orgDefault)
+    ) {
+      return this.findOrCreateDefaultWorker();
+    }
+
+    // Restricted: the org default is out-of-policy. Substitute the first allowed
+    // provider that is both configured and resolvable in the registry.
+    for (const provider of allowedProviders) {
+      const config = await this.prisma.providerConfig.findFirst({
+        where: { provider, isEnabled: true },
+      });
+      if (!config) {
+        continue;
+      }
+      const model = this.tryResolveModelForProvider(provider);
+      if (!model) {
+        continue;
+      }
+      return this.findOrCreateNamedDefaultWorker(`default-worker-${provider}`, provider, model);
+    }
+
+    throw new Error(
+      `None of your policy's allowed providers (${allowedProviders.join(', ')}) is configured ` +
+        'for anonymous sub-agent spawns. Ask an admin to enable one, or spawn a named worker agent.',
+    );
+  }
+
+  /** Find or create a per-provider default worker row by exact name. */
+  private async findOrCreateNamedDefaultWorker(
+    name: string,
+    provider: string,
+    model: string,
+  ): Promise<AgentDefinition> {
+    const existing = await this.prisma.agentDefinition.findFirst({
+      where: { name, role: 'worker' },
+    });
+    if (existing) {
+      return existing;
+    }
+    return this.prisma.agentDefinition.create({
+      data: this.buildDefaultWorkerData(name, provider, model),
+    });
+  }
+
+  /** Shared create payload for anonymous default-worker definitions. */
+  private buildDefaultWorkerData(
+    name: string,
+    provider: string,
+    model: string,
+  ): Prisma.AgentDefinitionCreateInput {
+    return {
+      name,
+      description: 'Default worker agent for anonymous sub-agent tasks',
+      systemPrompt: 'Complete the assigned task thoroughly and report the result.',
+      role: 'worker',
+      provider,
+      model,
+      maxTokensPerRun: 50000,
+      containerConfig: {
+        image: process.env['AGENT_CONTAINER_IMAGE'] ?? 'clawix-agent:latest',
+        cpuLimit: '0.5',
+        memoryLimit: '256m',
+        timeoutSeconds: 300,
+        readOnlyRootfs: false,
+        allowedMounts: [],
+      },
+    };
+  }
+
+  /** Resolve a provider's default model from the registry; null if unavailable. */
+  private tryResolveModelForProvider(provider: string): string | null {
+    try {
+      return getProviderSpec(provider).defaultModel || null;
+    } catch {
+      return null;
+    }
   }
 
   private async resolveDefaultWorkerProviderModel(): Promise<{

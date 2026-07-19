@@ -8,12 +8,12 @@ import type { AgentRunRepository } from '../../db/agent-run.repository.js';
 // Minimal stub shapes — only the methods used by the spawn tool.
 function makeAgentDefRepo(overrides?: {
   findByName?: ReturnType<typeof vi.fn>;
-  findOrCreateDefaultWorker?: ReturnType<typeof vi.fn>;
-}): Pick<AgentDefinitionRepository, 'findByName' | 'findOrCreateDefaultWorker'> {
+  findOrCreateDefaultWorkerForPolicy?: ReturnType<typeof vi.fn>;
+}): Pick<AgentDefinitionRepository, 'findByName' | 'findOrCreateDefaultWorkerForPolicy'> {
   return {
     findByName: overrides?.findByName ?? vi.fn().mockResolvedValue(null),
-    findOrCreateDefaultWorker:
-      overrides?.findOrCreateDefaultWorker ??
+    findOrCreateDefaultWorkerForPolicy:
+      overrides?.findOrCreateDefaultWorkerForPolicy ??
       vi.fn().mockResolvedValue({
         id: 'def-default',
         name: 'default-worker',
@@ -141,11 +141,10 @@ describe('spawn tool — named spawn', () => {
 });
 
 describe('spawn tool — anonymous spawn', () => {
-  it('uses default-worker when agent_name is omitted', async () => {
+  it('uses the policy-aware default worker when agent_name is omitted', async () => {
     const defaultWorker = { id: 'def-default', name: 'default-worker', role: 'worker' };
-    const agentDefRepo = makeAgentDefRepo({
-      findOrCreateDefaultWorker: vi.fn().mockResolvedValue(defaultWorker),
-    });
+    const findOrCreateDefaultWorkerForPolicy = vi.fn().mockResolvedValue(defaultWorker);
+    const agentDefRepo = makeAgentDefRepo({ findOrCreateDefaultWorkerForPolicy });
     const agentRunRepo = makeAgentRunRepo(defaultRun);
 
     const tool = createSpawnTool(
@@ -160,11 +159,35 @@ describe('spawn tool — anonymous spawn', () => {
     const result = await tool.execute({ prompt: 'Do something generic' });
 
     expect(result.isError).toBe(false);
-    expect(agentDefRepo.findOrCreateDefaultWorker).toHaveBeenCalledOnce();
+    expect(findOrCreateDefaultWorkerForPolicy).toHaveBeenCalledOnce();
     expect(agentRunRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ agentDefinitionId: 'def-default' }),
     );
     expect(result.output).toContain('default-worker');
+  });
+
+  it('passes the caller’s policy allowedProviders to the default-worker resolver', async () => {
+    const findOrCreateDefaultWorkerForPolicy = vi
+      .fn()
+      .mockResolvedValue({ id: 'def-default', name: 'default-worker', role: 'worker' });
+    const agentDefRepo = makeAgentDefRepo({ findOrCreateDefaultWorkerForPolicy });
+    const agentRunRepo = makeAgentRunRepo(defaultRun);
+
+    const tool = createSpawnTool(
+      agentDefRepo as AgentDefinitionRepository,
+      agentRunRepo as AgentRunRepository,
+      null,
+      'session-abc',
+      'parent-run-0',
+      'user-1',
+      undefined,
+      undefined,
+      ['openai', 'gemini'],
+    );
+
+    await tool.execute({ prompt: 'Do something generic' });
+
+    expect(findOrCreateDefaultWorkerForPolicy).toHaveBeenCalledWith(['openai', 'gemini']);
   });
 });
 
