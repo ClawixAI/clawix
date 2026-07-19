@@ -36,6 +36,10 @@ export function createWikiShareTool(
       },
       required: ['pageId', 'targetType'],
     },
+    requiresApproval: true,
+    approvalScope: 'resource',
+    resourceKeyFromParams: (params) =>
+      `${String(params['pageId'] ?? '')}:${String(params['targetType'] ?? '')}:${String(params['groupId'] ?? '')}`,
     async execute(params): Promise<ToolResult> {
       const pageId = String(params['pageId'] ?? '');
       const targetType = params['targetType'] as 'group' | 'org';

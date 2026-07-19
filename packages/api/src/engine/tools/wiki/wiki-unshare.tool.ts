@@ -26,6 +26,9 @@ export function createWikiUnshareTool(
       properties: { shareId: { type: 'string' } },
       required: ['shareId'],
     },
+    requiresApproval: true,
+    approvalScope: 'resource',
+    resourceKeyFromParams: (params) => String(params['shareId'] ?? ''),
     async execute(params): Promise<ToolResult> {
       const shareId = String(params['shareId'] ?? '');
 

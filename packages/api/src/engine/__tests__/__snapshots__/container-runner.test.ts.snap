@@ -1,0 +1,34 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildDockerRunArgs egress firewall > is byte-identical to today when egressFirewall is absent 1`] = `
+[
+  "run",
+  "-d",
+  "--name",
+  "c",
+  "--user",
+  "1000:1000",
+  "--network",
+  "none",
+  "--cpus",
+  "0.5",
+  "--memory",
+  "512m",
+  "--pids-limit",
+  "256",
+  "--ulimit",
+  "nofile=1024:1024",
+  "--security-opt",
+  "no-new-privileges",
+  "--label",
+  "clawix.timeout=30",
+  "-e",
+  "TZ=UTC",
+  "--read-only",
+  "--tmpfs",
+  "/tmp:rw,noexec,nosuid,size=64m",
+  "clawix-agent:latest",
+  "sleep",
+  "infinity",
+]
+`;

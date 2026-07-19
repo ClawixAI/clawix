@@ -100,6 +100,8 @@ import { PythonConcurrencyLimiter } from './tools/python/concurrency-limiter.js'
 import { InstallMutex } from './tools/python/install-mutex.js';
 import { createPythonRunTool } from './tools/python/python-run.js';
 import { createPythonRunNetTool } from './tools/python/python-run-net.js';
+import { createShellNetTool } from './tools/shell-net.js';
+import { ShellNetConcurrencyLimiter } from './tools/shell-net-concurrency-limiter.js';
 import { WikiPageRepository } from '../db/wiki-page.repository.js';
 import { WikiLinkRepository } from '../db/wiki-link.repository.js';
 import { WikiShareRepository } from '../db/wiki-share.repository.js';
@@ -116,6 +118,7 @@ import { registerSessionTools } from './tools/session/register.js';
 import { SessionSearchService } from './session-recall/session-search.service.js';
 import { mcpBindingsSchema, type McpBindings } from '@clawix/shared';
 import { bindingsFromTiers } from './tools/mcp/bindings-from-tiers.js';
+import { ToolApprovalService } from '../approvals/tool-approval.service.js';
 
 const logger = createLogger('engine:agent-runner');
 
@@ -175,6 +178,7 @@ export class AgentRunnerService {
     private readonly pythonPool: PythonContainerPoolService,
     private readonly pythonProxyHealth: PythonProxyHealthService,
     private readonly pythonLimiter: PythonConcurrencyLimiter,
+    private readonly shellNetLimiter: ShellNetConcurrencyLimiter,
     private readonly pythonInstallMutex: InstallMutex,
     private readonly wikiPageRepo: WikiPageRepository,
     private readonly wikiLinkRepo: WikiLinkRepository,
@@ -187,6 +191,7 @@ export class AgentRunnerService {
     private readonly mcpClientService: McpClientService,
     private readonly mcpTokenManager: McpTokenManager,
     private readonly runActivity: RunActivityRegistry,
+    private readonly toolApprovalService: ToolApprovalService,
   ) {}
 
   /** Lazy accessor to break circular dependency with TaskExecutorService. */
@@ -482,6 +487,13 @@ export class AgentRunnerService {
 
       // Step 13: Create ToolRegistry, register builtin tools + web tools + memory/wiki tools + spawn tool
       const registry = new ToolRegistry();
+      registry.setApprovalContext({
+        userId,
+        agentRunId: agentRun.id,
+        sessionId: session?.id ?? null,
+        isSubAgent: Boolean(isSubAgent),
+        gate: (input) => this.toolApprovalService.gate(input),
+      });
       registerBuiltinTools(registry, containerId, this.containerRunner);
       registerWebTools(registry, this.searchProviderRegistry);
 
@@ -517,6 +529,7 @@ export class AgentRunnerService {
             userId,
             budgetTracker,
             policy.maxSubAgentRunMs,
+            policy.allowedProviders,
           ),
         );
       }
@@ -612,6 +625,24 @@ export class AgentRunnerService {
             proxyHealth: this.pythonProxyHealth,
             limiter: this.pythonLimiter,
             installMutex: this.pythonInstallMutex,
+          }),
+        );
+      }
+
+      if (policy.allowShellNet && workspacePaths !== undefined) {
+        registry.register(
+          createShellNetTool({
+            userId,
+            workspaceHostPath: workspacePaths.hostPath,
+            policy: {
+              allowShellNet: policy.allowShellNet,
+              maxShellNetMemoryMb: policy.maxShellNetMemoryMb,
+              maxShellNetTimeoutSecs: policy.maxShellNetTimeoutSecs,
+              maxShellNetCpuCores: policy.maxShellNetCpuCores,
+              maxConcurrentShellNetRuns: policy.maxConcurrentShellNetRuns,
+            },
+            runner: this.containerRunner,
+            limiter: this.shellNetLimiter,
           }),
         );
       }

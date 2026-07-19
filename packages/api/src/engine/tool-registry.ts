@@ -1,6 +1,8 @@
 import { createLogger } from '@clawix/shared';
 import type { ToolDefinition } from '@clawix/shared';
 
+import type { GateInput, GateResult } from '../approvals/tool-approval.service.js';
+import { approvalExtractorErrorsTotal } from '../approvals/approval-metrics.js';
 import {
   toToolDefinition,
   type ParamSchema,
@@ -10,6 +12,27 @@ import {
 } from './tool.js';
 
 const logger = createLogger('engine:tool-registry');
+
+/**
+ * Message when a tool requiring approval executes on a registry that never
+ * received an approval context — fail-closed guard.
+ */
+export const BLOCKED_NO_CONTEXT = (tool: string): string =>
+  `BLOCKED: ${tool} requires user approval, but the approval context is not initialized. This indicates a system configuration error, not a user decision. The tool call must not be retried or worked around.`;
+
+/**
+ * Per-run identity + bound gate function, set once via
+ * `ToolRegistry.setApprovalContext()` before the run begins. Closure-captured
+ * per run instance — ToolRegistry is a plain per-run class, not a Nest
+ * injectable, so this is not DI-managed.
+ */
+export interface ToolApprovalContext {
+  readonly userId: string;
+  readonly agentRunId: string;
+  readonly sessionId: string | null;
+  readonly isSubAgent: boolean;
+  readonly gate: (input: GateInput) => Promise<GateResult>;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Module-level helpers: validation                                   */
@@ -191,6 +214,7 @@ function stripUnknownKeys(
 export class ToolRegistry {
   private readonly tools = new Map<string, Tool>();
   private readonly maxOutputChars: number;
+  private approvalContext: ToolApprovalContext | null = null;
 
   constructor(maxOutputChars = 16_000) {
     this.maxOutputChars = maxOutputChars;
@@ -198,11 +222,26 @@ export class ToolRegistry {
 
   /** Register a tool. Overwrites any existing tool with the same name. */
   register(tool: Tool): void {
+    if (tool.approvalScope === 'resource' && !tool.resourceKeyFromParams) {
+      throw new Error(
+        `Tool ${tool.name} declares approvalScope 'resource' without resourceKeyFromParams`,
+      );
+    }
     if (this.tools.has(tool.name)) {
       logger.warn({ tool: tool.name }, 'Overwriting existing tool registration');
     }
     logger.info({ tool: tool.name }, 'Registering tool');
     this.tools.set(tool.name, tool);
+  }
+
+  /**
+   * Set the per-run approval identity + bound gate function. Must be called
+   * before execute() for tools with `requiresApproval`; if never called, such
+   * tools fail closed (execute() returns BLOCKED_NO_CONTEXT) — a missing
+   * wiring is never an approval bypass.
+   */
+  setApprovalContext(ctx: ToolApprovalContext): void {
+    this.approvalContext = ctx;
   }
 
   /** Check whether a tool is registered. */
@@ -283,6 +322,73 @@ export class ToolRegistry {
     params: Record<string, unknown>,
     ctx?: ToolExecuteContext,
   ): Promise<ToolResult> {
+    // Resolve whether THIS call requires approval. `requiresApprovalForParams`
+    // lets a multi-action tool exempt specific actions (e.g. reads) from an
+    // otherwise `requiresApproval: true` tool. Absent predicate = gated as
+    // declared; predicate throwing is treated as requiring approval (fail
+    // closed) rather than silently exempting the call.
+    let needsApproval = tool.requiresApproval === true;
+    if (needsApproval && tool.requiresApprovalForParams) {
+      try {
+        // Strict `!== false`: only an explicit false exempts. A non-boolean
+        // return (reachable only via a runtime type bypass the signature can't
+        // model) gates rather than exempts — so the lint rule's "redundant
+        // boolean compare" assumption doesn't hold here; the compare is the
+        // fail-closed defense.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare
+        needsApproval = tool.requiresApprovalForParams(params) !== false;
+      } catch (predicateErr: unknown) {
+        const message = predicateErr instanceof Error ? predicateErr.message : String(predicateErr);
+        logger.error(
+          { tool: tool.name, error: message },
+          'requiresApprovalForParams threw on validated params',
+        );
+        needsApproval = true;
+      }
+    }
+
+    // Fail-closed: block if this call requires approval but no approval context is wired
+    if (needsApproval && !this.approvalContext) {
+      return { output: BLOCKED_NO_CONTEXT(tool.name), isError: true };
+    }
+
+    if (needsApproval && this.approvalContext) {
+      const scopeKind = tool.approvalScope ?? 'call';
+      let resourceKey = '';
+      let extractorFailed = false;
+      if (scopeKind === 'resource') {
+        try {
+          resourceKey = tool.resourceKeyFromParams?.(params) ?? '';
+          if (resourceKey === '') extractorFailed = true;
+        } catch {
+          extractorFailed = true;
+          resourceKey = '';
+        }
+        if (extractorFailed) {
+          // Bug, not a user condition (spec §2 failure class 2): loud + alertable.
+          approvalExtractorErrorsTotal.inc();
+          logger.error({ tool: tool.name }, 'resourceKeyFromParams failed on validated params');
+        }
+      }
+      const gateResult = await this.approvalContext.gate({
+        userId: this.approvalContext.userId,
+        agentRunId: this.approvalContext.agentRunId,
+        sessionId: this.approvalContext.sessionId,
+        isSubAgent: this.approvalContext.isSubAgent,
+        toolName: tool.name,
+        scopeKind,
+        resourceKey,
+        extractorFailed,
+        params,
+        abortSignal: ctx?.abortSignal,
+      });
+      if (!gateResult.allowed) {
+        return {
+          output: `${gateResult.blockedMessage}\n\n[Analyze the error above and try a different approach.]`,
+          isError: true,
+        };
+      }
+    }
     try {
       const result = await tool.execute(params, ctx);
       const output = this.truncate(result.output);

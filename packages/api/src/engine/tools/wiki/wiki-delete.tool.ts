@@ -27,6 +27,9 @@ export function createWikiDeleteTool(
       properties: { pageId: { type: 'string' } },
       required: ['pageId'],
     },
+    requiresApproval: true,
+    approvalScope: 'resource',
+    resourceKeyFromParams: (params) => String(params['pageId'] ?? ''),
     async execute(params): Promise<ToolResult> {
       const pageId = String(params['pageId'] ?? '');
       if (!pageId) return { output: 'pageId required', isError: true };
