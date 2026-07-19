@@ -17,6 +17,8 @@ import { SystemSettingsRepository } from './system-settings.repository.js';
 import { GroupRepository } from './group.repository.js';
 import { GroupInviteRepository } from './group-invite.repository.js';
 import { NotificationRepository } from './notification.repository.js';
+import { ApprovalRequestRepository } from './approval-request.repository.js';
+import { UserToolApprovalRepository } from './user-tool-approval.repository.js';
 import { WikiPageRepository } from './wiki-page.repository.js';
 import { WikiLinkRepository } from './wiki-link.repository.js';
 import { WikiShareRepository } from './wiki-share.repository.js';
@@ -42,6 +44,8 @@ const repositories = [
   GroupRepository,
   GroupInviteRepository,
   NotificationRepository,
+  ApprovalRequestRepository,
+  UserToolApprovalRepository,
   WikiPageRepository,
   WikiLinkRepository,
   WikiShareRepository,

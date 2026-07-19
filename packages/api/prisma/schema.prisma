@@ -542,6 +542,7 @@ enum NotificationType {
   GROUP_INVITE_RESPONSE
   PRIMARY_AGENT_ASSIGNED
   MCP_SERVER_ATTENTION
+  TOOL_APPROVAL
 }
 
 model Notification {
@@ -556,6 +557,51 @@ model Notification {
 
   @@index([recipientId])
   @@index([recipientId, isRead])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+  CANCELLED
+}
+
+/// One row per approval gate hit that was not silently served from memory-allow.
+/// Rows for system outcomes (standing_deny, no_channel, subagent, restart_sweep)
+/// are created pre-resolved with resolutionReason set. Append-mostly; only
+/// status/scope/resolutionReason/memory fields and resolvedAt flip, exactly once.
+model ApprovalRequest {
+  id               String         @id @default(cuid())
+  userId           String
+  agentRunId       String
+  sessionId        String?
+  toolName         String
+  paramsSummary    Json // redacted/truncated display copy — never the raw args
+  status           ApprovalStatus @default(PENDING)
+  scope            String? // once | session | always — user's tier, or the deny tier that fired for standing/session-deny rows
+  resolutionReason String? // standing_deny | session_deny | timeout | no_channel | subagent | restart_sweep | run_aborted
+  memoryStore      String? // 'session' | 'persistent' — set when resolution wrote or applied a memory entry
+  memoryKey        String? // `${toolName}:${resourceKey}` — server-trusted /revoke target; never client-supplied
+  createdAt        DateTime       @default(now())
+  resolvedAt       DateTime?
+
+  @@index([userId, status])
+  @@index([agentRunId])
+}
+
+/// Standing (always-scope) allow/deny decisions. Only run/resource-scoped
+/// tools get rows; call-scoped tools never persist (chat-click ceiling).
+model UserToolApproval {
+  id          String   @id @default(cuid())
+  userId      String
+  toolName    String
+  resourceKey String   @default("") // '' = run-scope sentinel (NOT NULL: Postgres treats NULLs as distinct in uniques). Run-scoped tools always write '', resource-scoped always non-empty.
+  decision    String // 'allowed' | 'denied'
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, toolName, resourceKey])
+  @@index([userId])
 }
 
 // ============================================================================
@@ -633,6 +679,7 @@ model McpTool {
   name            String
   description     String
   inputSchema     Json
+  annotations     Json? // MCP spec tool annotations (readOnlyHint etc.) captured at discovery — untrusted hints
   scanFlagged     Boolean       @default(false) // description failed prompt-injection scan
   scanReason      String?
   createdAt       DateTime      @default(now())
@@ -652,6 +699,7 @@ model McpConnection {
   lastError        String?
   lastDiscoveredAt DateTime?
   tiers            Json? // { recommended: string[], optional: string[], off: string[] } — null until set
+  approvalOverrides Json? // { [toolName]: 'ask' | 'allow' } — sparse overlay; null until any tool is toggled. Only gates tools that are already bound; tier off ⇒ inert.
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
