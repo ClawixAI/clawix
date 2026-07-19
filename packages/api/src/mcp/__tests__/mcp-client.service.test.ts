@@ -101,9 +101,26 @@ describe('McpClientService', () => {
     expect(validateUrl).toHaveBeenCalledWith(PARAMS.url, {
       allowlistEnv: 'MCP_INTERNAL_ALLOWLIST',
     });
-    expect(tools).toEqual([{ name: 't', description: 'd', inputSchema: { type: 'object' } }]);
+    expect(tools).toEqual([
+      { name: 't', description: 'd', inputSchema: { type: 'object' }, annotations: null },
+    ]);
     expect(mockClose).toHaveBeenCalled(); // discover closes its connection
     expect(mockAgentClose).toHaveBeenCalled(); // ...and frees the pinned dispatcher
+  });
+
+  it('passes through server-provided tool annotations verbatim', async () => {
+    mockListTools.mockResolvedValue({
+      tools: [
+        {
+          name: 't',
+          description: 'd',
+          inputSchema: { type: 'object' },
+          annotations: { readOnlyHint: true },
+        },
+      ],
+    });
+    const tools = await svc.discover(PARAMS);
+    expect(tools[0]?.annotations).toEqual({ readOnlyHint: true });
   });
 
   it('connect returns a client whose callTool maps content and isError', async () => {

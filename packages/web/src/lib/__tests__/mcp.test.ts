@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { connectionBadge, type McpServerWithConnection } from '../mcp';
+import { connectionBadge, mcpApprovalDefault, type McpServerWithConnection } from '../mcp';
+
+describe('mcpApprovalDefault — mirrors server mcpRequiresApproval (ask-by-default)', () => {
+  it('only a truthful readOnlyHint=true loosens to allow', () => {
+    expect(mcpApprovalDefault({ readOnlyHint: true })).toBe('allow');
+  });
+
+  it('missing / false / malformed annotations default to ask (servers can lie or omit)', () => {
+    expect(mcpApprovalDefault(null)).toBe('ask');
+    expect(mcpApprovalDefault(undefined)).toBe('ask');
+    expect(mcpApprovalDefault({})).toBe('ask');
+    expect(mcpApprovalDefault({ readOnlyHint: false })).toBe('ask');
+    expect(mcpApprovalDefault({ readOnlyHint: 'true' })).toBe('ask');
+  });
+});
 
 function server(over: Partial<McpServerWithConnection> = {}): McpServerWithConnection {
   return {

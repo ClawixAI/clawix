@@ -1,9 +1,11 @@
-import type { McpToolTiers } from '@clawix/shared';
+import type { McpApprovalOverrides, McpToolTiers } from '@clawix/shared';
 
 interface RawTiers {
   recommended?: unknown;
   optional?: unknown;
   off?: unknown;
+  /** Auto-sort's proposed per-tool approval classification (spec §3). */
+  approval?: unknown;
 }
 
 /** Tolerantly parse a model's JSON tier output (handles fences / surrounding prose). */
@@ -58,4 +60,26 @@ export function normalizeTiers(
     if (!seen.has(n)) off.push(n);
   }
   return { recommended, optional, off };
+}
+
+/**
+ * Validate the auto-sort LLM's proposed per-tool approval classification
+ * against the real catalog: unknown tool names dropped, non-enum values
+ * dropped. Unlike `normalizeTiers`, omitted tools are simply absent (sparse
+ * overlay, not rebalanced wholesale — spec §3).
+ */
+export function normalizeApprovals(
+  raw: RawTiers | null,
+  catalogNames: readonly string[],
+): McpApprovalOverrides {
+  const valid = new Set(catalogNames);
+  const src = raw?.approval;
+  if (!src || typeof src !== 'object') return {};
+  const out: Record<string, 'ask' | 'allow'> = {};
+  for (const [name, value] of Object.entries(src as Record<string, unknown>)) {
+    if (valid.has(name) && (value === 'ask' || value === 'allow')) {
+      out[name] = value;
+    }
+  }
+  return out;
 }

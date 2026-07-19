@@ -51,7 +51,15 @@ export interface McpToolDto {
   scanFlagged: boolean;
   scanReason: string | null;
   createdAt: string;
+  /** MCP tool annotations captured at discovery (Task 8); `readOnlyHint` drives
+   *  the default "Ask before use" state when no explicit override exists. */
+  annotations?: Record<string, unknown> | null;
 }
+
+/** Per-tool approval overlay value (spec §3): `ask` gates every call, `allow`
+ *  never prompts. Absent = derived default (ask unless `readOnlyHint`). */
+export type McpApprovalOverride = 'ask' | 'allow';
+export type McpApprovalOverrides = Record<string, McpApprovalOverride>;
 
 export interface McpCallRow {
   id: string;
@@ -227,6 +235,35 @@ export function setConnectionTiers(
     method: 'PUT',
     body: JSON.stringify({ tiers }),
   });
+}
+
+export function getConnectionApprovalOverrides(
+  connectionId: string,
+): Promise<McpApprovalOverrides> {
+  return authFetch<McpApprovalOverrides>(`/mcp/connections/${connectionId}/approval-overrides`);
+}
+
+export function setConnectionApprovalOverrides(
+  connectionId: string,
+  overrides: McpApprovalOverrides,
+): Promise<McpApprovalOverrides> {
+  return authFetch<McpApprovalOverrides>(`/mcp/connections/${connectionId}/approval-overrides`, {
+    method: 'PUT',
+    body: JSON.stringify(overrides),
+  });
+}
+
+/**
+ * Default "Ask before use" state for a tool with no explicit override, mirroring
+ * `mcpRequiresApproval` on the server (`packages/api/src/engine/tools/mcp/mcp-approval.ts`):
+ * only a truthful `readOnlyHint === true` annotation loosens to `allow`; anything
+ * else (missing/false/malformed) defaults to `ask`. Annotations are untrusted
+ * server hints — they may only loosen, never force-escalate.
+ */
+export function mcpApprovalDefault(
+  annotations: Record<string, unknown> | null | undefined,
+): McpApprovalOverride {
+  return annotations?.['readOnlyHint'] === true ? 'allow' : 'ask';
 }
 
 export function autoSortConnectionTiers(connectionId: string): Promise<McpToolTiers> {

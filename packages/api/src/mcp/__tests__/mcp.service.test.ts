@@ -80,6 +80,13 @@ function makeDeps() {
         status: 'active',
         tiers,
       })),
+      updateConnectionApprovalOverrides: vi.fn(async (id: string, approvalOverrides: unknown) => ({
+        id,
+        mcpServerId: 'srv1',
+        userId: 'u1',
+        status: 'active',
+        approvalOverrides,
+      })),
       ensureConnection: vi.fn(async () => ({ id: 'c1', mcpServerId: 'srv1', userId: 'u1' })),
       upsertOAuthToken: vi.fn(async () => ({})),
       setConnectionStatus: vi.fn(async () => ({})),
@@ -339,6 +346,30 @@ describe('McpService.connect (user, discovers own catalog)', () => {
     ]);
   });
 
+  it('persists server-provided tool annotations verbatim at discovery', async () => {
+    deps.client.discover.mockResolvedValue([
+      {
+        name: 'search',
+        description: 'Search repos',
+        inputSchema: { type: 'object' },
+        annotations: { readOnlyHint: true },
+      },
+    ]);
+    await svc.connect('u1', 'srv1', { credential: 'Bearer t' });
+    expect(deps.repo.createConnectionWithCatalog).toHaveBeenCalledWith(expect.anything(), [
+      expect.objectContaining({ name: 'search', annotations: { readOnlyHint: true } }),
+    ]);
+  });
+
+  it('missing annotations persist as JsonNull, not undefined', async () => {
+    deps.client.discover.mockResolvedValue([
+      { name: 'search', description: 'Search repos', inputSchema: { type: 'object' } },
+    ]);
+    await svc.connect('u1', 'srv1', { credential: 'Bearer t' });
+    const [, tools] = deps.repo.createConnectionWithCatalog.mock.calls[0] as [unknown, unknown[]];
+    expect((tools[0] as { annotations: unknown }).annotations).not.toBeUndefined();
+  });
+
   it('throws ForbiddenError when policy.allowMcp is false', async () => {
     deps.policies.findById.mockResolvedValue({ id: 'p1', allowMcp: false });
     await expect(svc.connect('u1', 'srv1', {})).rejects.toThrow(ForbiddenError);
@@ -502,6 +533,83 @@ describe('McpService.autoSortTiers', () => {
     const tiers = await svc.autoSortTiers('u1', 'conn1');
     expect(tiers.recommended).toEqual([]);
     expect(deps.repo.updateConnectionTiers).not.toHaveBeenCalled();
+  });
+
+  it('persists the LLM-proposed approval overlay alongside tiers, in the same call', async () => {
+    mockChat.mockResolvedValue({
+      content:
+        '{"recommended":["search"],"optional":[],"off":["delete_repo"],' +
+        '"approval":{"search":"allow","delete_repo":"ask","ghost":"allow"}}',
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+    await svc.autoSortTiers('u1', 'conn1');
+    expect(deps.repo.updateConnectionTiers).toHaveBeenCalledWith(
+      'conn1',
+      { recommended: ['search'], optional: [], off: ['delete_repo'] },
+      { search: 'allow', delete_repo: 'ask' }, // unknown tool name "ghost" dropped
+    );
+  });
+
+  it('an existing human-set override always wins over the LLM proposal (never silently flipped)', async () => {
+    deps.repo.findConnectionById.mockResolvedValue({
+      id: 'conn1',
+      mcpServerId: 'srv1',
+      userId: 'u1',
+      status: 'active',
+      credentialEnc: null,
+      approvalOverrides: { search: 'ask' }, // human toggled this to ask
+    });
+    mockChat.mockResolvedValue({
+      content:
+        '{"recommended":["search"],"optional":[],"off":["delete_repo"],"approval":{"search":"allow"}}',
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+    await svc.autoSortTiers('u1', 'conn1');
+    expect(deps.repo.updateConnectionTiers).toHaveBeenCalledWith(
+      'conn1',
+      { recommended: ['search'], optional: [], off: ['delete_repo'] },
+      { search: 'ask' },
+    );
+  });
+});
+
+describe('McpService.setApprovalOverrides', () => {
+  let deps: ReturnType<typeof makeDeps>;
+  let svc: McpService;
+  beforeEach(() => {
+    deps = makeDeps();
+    svc = makeSvc(deps);
+    deps.repo.findConnectionById.mockResolvedValue({
+      id: 'conn1',
+      mcpServerId: 'srv1',
+      userId: 'u1',
+      status: 'active',
+      credentialEnc: null,
+    });
+  });
+
+  it('persists the overlay and audits mcp.approvals.set', async () => {
+    const result = await svc.setApprovalOverrides('u1', 'conn1', { send_email: 'allow' });
+    expect(result).toEqual({ send_email: 'allow' });
+    expect(deps.repo.updateConnectionApprovalOverrides).toHaveBeenCalledWith('conn1', {
+      send_email: 'allow',
+    });
+    expect(deps.audit.create).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'mcp.approvals.set', resourceId: 'conn1' }),
+    );
+  });
+
+  it("rejects another user's connection", async () => {
+    deps.repo.findConnectionById.mockResolvedValue({
+      id: 'conn1',
+      userId: 'other',
+      mcpServerId: 'srv1',
+      status: 'active',
+      credentialEnc: null,
+    });
+    await expect(svc.setApprovalOverrides('u1', 'conn1', { search: 'ask' })).rejects.toThrow(
+      ForbiddenError,
+    );
   });
 });
 

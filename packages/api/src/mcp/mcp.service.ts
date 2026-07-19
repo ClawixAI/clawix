@@ -16,6 +16,7 @@ import {
   ValidationError,
   createLogger,
   listProviders,
+  setMcpApprovalOverridesSchema,
 } from '@clawix/shared';
 import { RedisService } from '../cache/redis.service.js';
 import { createPkcePair, randomUrlToken } from './oauth-pkce.js';
@@ -23,6 +24,7 @@ import type {
   ChatMessage,
   ConnectMcpInput,
   ImportMcpServerInput,
+  McpApprovalOverrides,
   McpToolTiers,
   UpdateMcpConnectionInput,
   UpdateMcpServerInput,
@@ -41,7 +43,7 @@ import { scanContextContent } from '../engine/prompt-injection-scanner.js';
 import { validateUrl } from '../engine/tools/web/ssrf-protection.js';
 import { McpClientService, type DiscoveredTool } from './mcp-client.service.js';
 import { McpOAuthDiscoveryService } from './mcp-oauth-discovery.service.js';
-import { normalizeTiers, parseTiersJson } from './tier-utils.js';
+import { normalizeApprovals, normalizeTiers, parseTiersJson } from './tier-utils.js';
 
 const logger = createLogger('mcp:service');
 
@@ -635,6 +637,19 @@ export class McpService {
   }
 
   /**
+   * The caller's stored per-tool approval overlay (the "Ask before use" toggle
+   * column), or an empty map. Symmetric read for
+   * `setApprovalOverrides` — the Tiers-tab UI needs the current state to render
+   * each toggle. Malformed persisted JSON degrades to `{}` (never throws), so
+   * a corrupt column can't wedge the page.
+   */
+  async getApprovalOverrides(userId: string, connectionId: string): Promise<McpApprovalOverrides> {
+    await this.assertMcpAllowed(userId);
+    const connection = await this.getOwnConnection(userId, connectionId);
+    return setMcpApprovalOverridesSchema.catch({}).parse(connection.approvalOverrides ?? {}) ?? {};
+  }
+
+  /**
    * Persist a human-curated tier assignment for the caller's connection.
    * Normalized against the connection's catalog (precedence
    * recommended > optional > off; omitted catalog tools fall to off; unknown
@@ -656,6 +671,35 @@ export class McpService {
       details: { recommended: tiers.recommended.length, optional: tiers.optional.length },
     });
     return tiers;
+  }
+
+  /**
+   * Persist a human-curated per-tool approval overlay for the caller's
+   * connection (spec §3). Sparse map, keyed by tool name — replaces the
+   * overlay wholesale (the Tiers-tab toggle column always PUTs full state),
+   * unlike `setTiers` there's no catalog-normalization pass: an entry for a
+   * tool that's off-tier or no longer in the catalog is inert config, not an
+   * error. Owner-only, audited.
+   */
+  async setApprovalOverrides(
+    userId: string,
+    connectionId: string,
+    overrides: McpApprovalOverrides,
+  ): Promise<McpApprovalOverrides> {
+    await this.assertMcpAllowed(userId);
+    const connection = await this.getOwnConnection(userId, connectionId);
+    await this.repo.updateConnectionApprovalOverrides(
+      connection.id,
+      overrides as unknown as Prisma.InputJsonValue,
+    );
+    await this.audit.create({
+      userId,
+      action: 'mcp.approvals.set',
+      resource: 'mcp_connection',
+      resourceId: connection.id,
+      details: { count: Object.keys(overrides).length },
+    });
+    return overrides;
   }
 
   /**
@@ -682,10 +726,13 @@ export class McpService {
         {
           role: 'system',
           content:
-            'You classify third-party tools by general usefulness for an AI agent. ' +
+            'You classify third-party tools by general usefulness for an AI agent, and by ' +
+            'whether calling them is safe to run without a standing human approval. ' +
             'recommended = common, safe/read-oriented; off = destructive, admin, or rarely needed; ' +
-            'optional = everything else. Reply with ONLY JSON: {"recommended":[],"optional":[],"off":[]} ' +
-            'using exact tool names.',
+            'optional = everything else. approval: "allow" for safe, read-only, non-destructive ' +
+            'tools; "ask" for anything that writes, deletes, sends, or otherwise has side effects. ' +
+            'Reply with ONLY JSON: {"recommended":[],"optional":[],"off":[],' +
+            '"approval":{"<tool name>":"ask"|"allow"}} using exact tool names.',
         },
         {
           role: 'user',
@@ -693,10 +740,21 @@ export class McpService {
         },
       ];
       const res = await provider.chat(messages, { model, settings: { temperature: 0 } });
-      const tiers = normalizeTiers(parseTiersJson(res.content), catalogNames);
+      const parsed = parseTiersJson(res.content);
+      const tiers = normalizeTiers(parsed, catalogNames);
+      // Existing human-set overrides always win — auto-sort only fills gaps
+      // for tools that have never been explicitly toggled. A background
+      // reclassification must never silently flip a standing decision.
+      const existingOverrides = setMcpApprovalOverridesSchema
+        .nullable()
+        .catch(null)
+        .parse(connection.approvalOverrides);
+      const proposedApprovals = normalizeApprovals(parsed, catalogNames);
+      const approvals: McpApprovalOverrides = { ...proposedApprovals, ...existingOverrides };
       await this.repo.updateConnectionTiers(
         connection.id,
         tiers as unknown as Prisma.InputJsonValue,
+        approvals as unknown as Prisma.InputJsonValue,
       );
       await this.audit.create({
         userId,
@@ -743,6 +801,9 @@ function scanTool(t: DiscoveredTool) {
     name: t.name,
     description: t.description,
     inputSchema: t.inputSchema as never,
+    // Pass through verbatim (untrusted server hint; scanned display-side
+    // already via the description scan above).
+    annotations: (t.annotations ?? Prisma.JsonNull) as never,
     scanFlagged: scan.blocked,
     scanReason: scan.blocked ? scan.findings.join(', ') : null,
   };

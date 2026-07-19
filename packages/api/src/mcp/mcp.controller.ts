@@ -14,9 +14,11 @@ import {
 } from '@nestjs/common';
 import {
   connectMcpSchema,
+  setMcpApprovalOverridesSchema,
   setMcpTiersSchema,
   updateMcpConnectionSchema,
   type ConnectMcpInput,
+  type McpApprovalOverrides,
   type SetMcpTiersInput,
   type UpdateMcpConnectionInput,
 } from '@clawix/shared';
@@ -142,5 +144,25 @@ export class McpController {
   @Post('connections/:id/auto-sort-tiers')
   async autoSortTiers(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.svc.autoSortTiers(req.user.sub, id);
+  }
+
+  /** The caller's stored per-tool approval overlay, or an empty map. */
+  @Get('connections/:id/approval-overrides')
+  async getApprovalOverrides(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.svc.getApprovalOverrides(req.user.sub, id);
+  }
+
+  /**
+   * Persist a human-curated per-tool approval overlay ("Ask before use" toggle
+   * column) for the caller's connection. Sparse map — replaces the overlay
+   * wholesale, since the UI always PUTs the full current state.
+   */
+  @Put('connections/:id/approval-overrides')
+  async setApprovalOverrides(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(setMcpApprovalOverridesSchema)) body: McpApprovalOverrides,
+  ) {
+    return this.svc.setApprovalOverrides(req.user.sub, id, body);
   }
 }

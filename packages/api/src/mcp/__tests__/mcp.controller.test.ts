@@ -6,6 +6,7 @@ function makeSvc() {
   return {
     startOAuth: vi.fn(),
     handleOAuthCallback: vi.fn(),
+    setApprovalOverrides: vi.fn(),
   };
 }
 
@@ -38,5 +39,14 @@ describe('McpController OAuth routes', () => {
     const r = await controller.oauthCallback('state', 'code');
     expect(r.statusCode).toBe(302);
     expect(r.url).toContain('oauth=error');
+  });
+
+  it('PUT connections/:id/approval-overrides threads through to the service', async () => {
+    svc.setApprovalOverrides.mockResolvedValue({ search: 'allow' });
+    const r = await controller.setApprovalOverrides({ user: { sub: 'user-1' } } as never, 'conn1', {
+      search: 'allow',
+    });
+    expect(svc.setApprovalOverrides).toHaveBeenCalledWith('user-1', 'conn1', { search: 'allow' });
+    expect(r).toEqual({ search: 'allow' });
   });
 });
