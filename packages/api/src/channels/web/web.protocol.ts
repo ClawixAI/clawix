@@ -57,6 +57,14 @@ export type ServerMessage =
   | {
       readonly type: 'error';
       readonly payload: { readonly code: string; readonly message: string };
+    }
+  | {
+      // Tool-approval prompt/notice/resolved frames (spec §7). `payload` is
+      // the `ApprovalFramePayload` published by `ApprovalDeliveryService` and
+      // routed verbatim by `ChannelManagerService` — kept as `unknown` here
+      // to avoid a channels→approvals module coupling in the wire protocol.
+      readonly type: 'approval.request' | 'approval.notice' | 'approval.resolved';
+      readonly payload: unknown;
     };
 
 export function serializeServerMessage(msg: ServerMessage): string {

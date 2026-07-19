@@ -4,6 +4,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { DbModule } from '../db/db.module.js';
 import { EngineModule } from '../engine/engine.module.js';
 import { CommandModule } from '../commands/command.module.js';
+import { ApprovalsModule } from '../approvals/approvals.module.js';
+import { ToolApprovalService } from '../approvals/tool-approval.service.js';
 import { ChannelRegistry } from './channel.registry.js';
 import { MessageRouterService } from './message-router.service.js';
 import { ChannelManagerService } from './channel-manager.service.js';
@@ -18,7 +20,7 @@ import { createWebAdapter } from './web/web.adapter.js';
 import { WebChatGateway } from './web/web.gateway.js';
 
 @Module({
-  imports: [DbModule, EngineModule, JwtModule.register({}), CommandModule],
+  imports: [DbModule, EngineModule, JwtModule.register({}), CommandModule, ApprovalsModule],
   controllers: [ChannelsController],
   providers: [
     ChannelRegistry,
@@ -34,9 +36,16 @@ import { WebChatGateway } from './web/web.gateway.js';
         sessionRepo: SessionRepository,
         userRepo: UserRepository,
         gateway: WebChatGateway,
+        toolApprovals: ToolApprovalService,
       ) => {
-        // Register channel adapter factories
-        registry.register('telegram', (config) => createTelegramAdapter(config));
+        // Register channel adapter factories. `createTelegramAdapter` gets a
+        // second `deps` argument threading `ToolApprovalService` + `UserRepository`
+        // through this factory closure — the same mechanism already used to give
+        // `ChannelManagerService` itself a `UserRepository` below, and the web
+        // adapter's `gateway.setAdapter(adapter)` wiring above.
+        registry.register('telegram', (config) =>
+          createTelegramAdapter(config, { userRepo, toolApprovals }),
+        );
         registry.register('whatsapp', (config) => createWhatsAppAdapter(config));
         registry.register('web', (config) => {
           const adapter = createWebAdapter(config);
@@ -61,6 +70,7 @@ import { WebChatGateway } from './web/web.gateway.js';
         SessionRepository,
         UserRepository,
         WebChatGateway,
+        ToolApprovalService,
       ],
     },
   ],

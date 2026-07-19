@@ -10,6 +10,7 @@ import { RedisPubSubService } from '../cache/redis-pubsub.service.js';
 import { SessionRepository } from '../db/session.repository.js';
 import { UserRepository } from '../db/user.repository.js';
 import { PUBSUB_CHANNELS } from '../cache/cache.constants.js';
+import type { ApprovalFramePayload } from '../approvals/approval-delivery.service.js';
 
 const logger = createLogger('channels:manager');
 
@@ -84,6 +85,7 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
     await this.startAll();
     await this.subscribeToResponseDelivery();
     await this.subscribeToCronResults();
+    await this.subscribeToApprovalFrame();
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -315,6 +317,134 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
         'Failed to deliver re-invocation response to channel',
       );
     }
+  }
+
+  /**
+   * Subscribe to approvalFrame pub/sub events (Task 9 delivery). Routes each
+   * prompt/notice/resolved frame to the requesting session's channel adapter,
+   * reusing the same session→adapter→recipient crawl as
+   * `deliverResponseToChannel`.
+   */
+  private async subscribeToApprovalFrame(): Promise<void> {
+    await this.pubsub.subscribe<ApprovalFramePayload>(
+      PUBSUB_CHANNELS.approvalFrame,
+      async (msg) => {
+        const payload = msg.payload;
+        if (!payload?.approvalId || !payload?.kind) return;
+
+        await this.deliverApprovalFrame(payload);
+      },
+    );
+  }
+
+  /**
+   * Look up the session's channel and user, then deliver the approval frame
+   * via the appropriate channel adapter. A missing session, channel, adapter,
+   * or recipient is logged and skipped — never thrown — so a malformed or
+   * unroutable frame can't crash the subscription callback.
+   */
+  private async deliverApprovalFrame(payload: ApprovalFramePayload): Promise<void> {
+    try {
+      if (!payload.sessionId) {
+        logger.debug(
+          { approvalId: payload.approvalId, kind: payload.kind },
+          'Approval frame has no sessionId; skipping channel delivery',
+        );
+        return;
+      }
+
+      const session = await this.sessionRepo.findById(payload.sessionId);
+
+      if (!session.channelId) {
+        logger.debug(
+          { sessionId: payload.sessionId },
+          'Session has no channelId; skipping approval frame delivery',
+        );
+        return;
+      }
+
+      const adapter = this.findByChannelId(session.channelId);
+      if (!adapter) {
+        logger.warn(
+          { sessionId: payload.sessionId, channelId: session.channelId },
+          'No active adapter for approval frame delivery',
+        );
+        return;
+      }
+
+      const user = await this.userRepo.findById(session.userId);
+
+      const recipientId = this.resolveRecipientId(adapter.type, user);
+      if (!recipientId) {
+        logger.warn(
+          { channelType: adapter.type, userId: user.id },
+          'Could not resolve recipient ID for approval frame',
+        );
+        return;
+      }
+
+      // Spec §7 event names: kind 'prompt' travels as event 'approval.request';
+      // 'notice' and 'resolved' as approval.notice / approval.resolved.
+      const event = payload.kind === 'prompt' ? 'approval.request' : `approval.${payload.kind}`;
+      await adapter.sendMessage({
+        recipientId,
+        text: this.approvalFallbackText(payload), // plain-text fallback for adapters without rich rendering
+        metadata: { event, approval: payload },
+      });
+
+      logger.info(
+        {
+          approvalId: payload.approvalId,
+          kind: payload.kind,
+          sessionId: payload.sessionId,
+          channelId: session.channelId,
+          recipientId,
+        },
+        'Delivered approval frame to channel',
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(
+        { approvalId: payload.approvalId, kind: payload.kind, error: message },
+        'Failed to deliver approval frame',
+      );
+    }
+  }
+
+  /**
+   * Plain-text fallback for adapters without rich approval-card rendering
+   * (used verbatim by WhatsApp if ever routed; Telegram/web override
+   * rendering in their own adapters via `metadata.event`/`metadata.approval`).
+   *
+   * Kind-specific so a settled or auto-denied frame doesn't wrongly tell the
+   * user to "approve or deny" something already decided: `prompt` is the only
+   * actionable frame; `notice` reports an automatic block; `resolved` reports
+   * the outcome.
+   */
+  private approvalFallbackText(payload: ApprovalFramePayload): string {
+    const toolName = payload.toolName ?? 'this tool';
+    if (payload.kind === 'notice') {
+      const rule =
+        payload.reason === 'standing_deny'
+          ? 'a standing "always deny" rule'
+          : payload.reason === 'session_deny'
+            ? 'a "deny this session" rule'
+            : 'an automatic rule';
+      return `Blocked ${toolName}: ${rule} denied it automatically. Manage standing decisions in the dashboard.`;
+    }
+    if (payload.kind === 'resolved') {
+      const outcome =
+        payload.status === 'APPROVED'
+          ? 'approved'
+          : payload.status === 'EXPIRED'
+            ? 'expired (auto-denied — no response in time)'
+            : payload.status === 'CANCELLED'
+              ? 'cancelled'
+              : 'denied';
+      const scope = payload.scope ? ` (${payload.scope})` : '';
+      return `Approval for ${toolName} was ${outcome}${scope}.`;
+    }
+    return `Approval needed: agent wants to run ${toolName}. Open the dashboard to approve or deny.`;
   }
 
   // ---------------------------------------------------------------- //

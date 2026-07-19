@@ -7,11 +7,18 @@ const sendMessageMock = vi.fn().mockResolvedValue({ message_id: 100 });
 const sendChatActionMock = vi.fn().mockResolvedValue({});
 const editMessageTextMock = vi.fn().mockResolvedValue({});
 
+vi.mock('@grammyjs/runner', () => ({
+  run: vi.fn(() => ({ isRunning: () => true, stop: vi.fn().mockResolvedValue(undefined) })),
+  sequentialize: vi.fn(() => vi.fn()),
+}));
+
 vi.mock('grammy', () => {
   return {
     Bot: vi.fn().mockImplementation(() => ({
       on: vi.fn(),
       command: vi.fn(),
+      use: vi.fn(),
+      catch: vi.fn(),
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
       api: {
