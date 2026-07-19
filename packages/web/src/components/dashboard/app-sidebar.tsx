@@ -22,6 +22,7 @@ import {
   Radio,
   ScrollText,
   Settings2,
+  ShieldCheck,
   Sun,
   User,
   Users,
@@ -260,6 +261,19 @@ export function AppSidebar() {
                 <Link href="/mcp-servers">
                   <Plug />
                   <span>MCP Servers</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive('/tool-approvals')}
+                tooltip="Tool Approvals"
+                className={navButtonClass}
+              >
+                <Link href="/tool-approvals">
+                  <ShieldCheck />
+                  <span>Tool Approvals</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

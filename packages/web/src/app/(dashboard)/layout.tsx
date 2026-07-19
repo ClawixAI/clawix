@@ -7,6 +7,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/s
 import { AppSidebar } from '@/components/dashboard/app-sidebar';
 import { NotificationBell } from '@/components/dashboard/notification-bell';
 import { UnreadChatProvider } from '@/components/dashboard/unread-chat-provider';
+import { PendingApprovalBanner } from '@/components/dashboard/pending-approval-banner';
 import { Toaster } from '@/components/ui/sonner';
 import { EASING, DURATION } from '@/lib/anime';
 
@@ -54,6 +55,7 @@ export default function DashboardLayout({
             <NotificationBell />
           </div>
         </header>
+        <PendingApprovalBanner />
         <AppSidebar />
         <SidebarInset className="min-w-0">
           <main id="dashboard-main" tabIndex={-1} className="min-w-0 flex-1 overflow-auto pt-14">
