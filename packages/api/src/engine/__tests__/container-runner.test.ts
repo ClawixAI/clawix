@@ -42,7 +42,8 @@ vi.mock('../mount-security.js', () => ({
 }));
 
 // Dynamic import after mocks are in place
-const { ContainerRunner } = await import('../container-runner.js');
+const { ContainerRunner, buildDockerRunArgs, buildDockerExecArgs } =
+  await import('../container-runner.js');
 
 // ------------------------------------------------------------------ //
 //  Helpers                                                            //
@@ -436,5 +437,64 @@ describe('exec with AbortSignal', () => {
     expect(result.exitCode).toBe(-1);
     expect(result.stdout).toBe('partial output');
     expect(result.stderr).toMatch(/exec aborted|aborted/i);
+  });
+});
+
+// ------------------------------------------------------------------ //
+//  buildDockerRunArgs — egress firewall                              //
+// ------------------------------------------------------------------ //
+
+describe('buildDockerRunArgs egress firewall', () => {
+  it('adds NET_ADMIN + root user + allowlist env when egressFirewall is set', () => {
+    const args = buildDockerRunArgs({
+      agentDef: makeAgentDef(),
+      containerName: 'c',
+      validatedMounts: [],
+      network: 'clawix-python-net-egress',
+      egressFirewall: true,
+      egressAllowlist: 'a.test:3001',
+    });
+    expect(args).toContain('--cap-add');
+    expect(args).toContain('NET_ADMIN');
+    // starts as root, NOT 1000:1000
+    const i = args.indexOf('--user');
+    expect(args[i + 1]).toBe('0:0');
+    expect(args).not.toContain('1000:1000');
+    // allowlist env passed through
+    expect(args).toContain('EGRESS_ALLOWLIST=a.test:3001');
+  });
+
+  it('is byte-identical to today when egressFirewall is absent', () => {
+    const args = buildDockerRunArgs({
+      agentDef: makeAgentDef(),
+      containerName: 'c',
+      validatedMounts: [],
+    });
+    expect(args).toContain('1000:1000');
+    expect(args).not.toContain('NET_ADMIN');
+    expect(args.join(' ')).not.toContain('EGRESS_ALLOWLIST');
+    // Snapshot the full arg vector so positional / ordering drift is caught,
+    // not just membership — this is the "byte-identical no-net path" guarantee.
+    expect(args).toMatchSnapshot();
+  });
+});
+
+// ------------------------------------------------------------------ //
+//  buildDockerExecArgs — user option                                 //
+// ------------------------------------------------------------------ //
+
+describe('buildDockerExecArgs', () => {
+  it('adds --user when user option is set', () => {
+    const args = buildDockerExecArgs('cid', ['sh', '-c', 'echo hi'], { user: '1000:1000' });
+    const i = args.indexOf('--user');
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe('1000:1000');
+    expect(args).toEqual(expect.arrayContaining(['exec', 'cid', 'sh', '-c', 'echo hi']));
+  });
+
+  it('omits --user when not set (unchanged behavior)', () => {
+    const args = buildDockerExecArgs('cid', ['ls'], {});
+    expect(args).not.toContain('--user');
+    expect(args).toEqual(['exec', 'cid', 'ls']);
   });
 });

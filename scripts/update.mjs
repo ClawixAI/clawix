@@ -115,7 +115,9 @@ async function main() {
     ok('clawix-agent:latest built');
 
     step('Building python-runner Docker image');
-    runVisible('docker build -t clawix-python-runner:latest infra/docker/python-runner');
+    runVisible(
+      'docker build -t clawix-python-runner:latest -f infra/docker/python-runner/Dockerfile infra/docker',
+    );
     ok('clawix-python-runner:latest built');
   }
 

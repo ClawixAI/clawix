@@ -43,6 +43,10 @@ const logger = createLogger('engine:tools:python_run_net');
 
 const NETWORK_NAME = process.env['PYTHON_NET_NETWORK_NAME'] ?? 'clawix-python-net-egress';
 const RUNNER_IMAGE = process.env['PYTHON_RUNNER_IMAGE'] ?? 'clawix-python-runner:latest';
+/** Operator allowlist re-permitting internal host[:port] targets past the egress block. */
+const ALLOWLIST = process.env['PYTHON_INTERNAL_ALLOWLIST'] ?? '';
+/** uid:gid agent execs run as (the container boots root for the firewall, drops to 1000). */
+const EXEC_USER = '1000:1000';
 
 // ------------------------------------------------------------------ //
 //  Deps interface                                                      //
@@ -60,6 +64,8 @@ export interface PythonRunNetDeps {
         disableAutoStop?: boolean;
         workspaceHostPath?: string;
         network?: string;
+        egressFirewall?: boolean;
+        egressAllowlist?: string;
       },
     ) => Promise<string>;
     exec: (
@@ -70,6 +76,7 @@ export interface PythonRunNetDeps {
         timeout?: number;
         workdir?: string;
         stdin?: string;
+        user?: string;
       },
     ) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
     stop: (id: string) => Promise<void>;
@@ -134,6 +141,8 @@ export function createPythonRunNetTool(deps: PythonRunNetDeps): Tool {
         },
       },
     },
+    requiresApproval: true,
+    approvalScope: 'run',
 
     async execute(
       rawInput: Record<string, unknown>,
@@ -194,12 +203,19 @@ export function createPythonRunNetTool(deps: PythonRunNetDeps): Tool {
           disableAutoStop: true,
           workspaceHostPath: deps.workspaceHostPath,
           network: NETWORK_NAME,
+          egressFirewall: true,
+          egressAllowlist: ALLOWLIST,
         });
 
         try {
+          // The container boots as root for the firewall entrypoint, then drops
+          // to uid 1000; every agent exec below must run as uid 1000 so files it
+          // writes to /workspace keep uid-1000 ownership (root writes would break
+          // subsequent uid-1000 access).
           const markerPath = `/tmp/python_run_net_marker_${callId}`;
           await deps.runner.exec(containerId, ['touch', markerPath], {
             signal: ctx?.abortSignal,
+            user: EXEC_USER,
           });
 
           // Install extra packages if requested
@@ -208,7 +224,7 @@ export function createPythonRunNetTool(deps: PythonRunNetDeps): Tool {
               const installRes = await deps.runner.exec(
                 containerId!,
                 ['pip', 'install', '--quiet', '--no-color', ...input.packages!],
-                { signal: ctx?.abortSignal, timeout: 120 * 1000 },
+                { signal: ctx?.abortSignal, timeout: 120 * 1000, user: EXEC_USER },
               );
               if (installRes.exitCode !== 0) {
                 throw new PythonToolError(
@@ -239,7 +255,7 @@ export function createPythonRunNetTool(deps: PythonRunNetDeps): Tool {
                 `if [ -e "$0" ]; then readlink -f "$0"; else echo NOTFOUND; fi`,
                 input.script!,
               ],
-              { signal: ctx?.abortSignal, timeout: 5_000 },
+              { signal: ctx?.abortSignal, timeout: 5_000, user: EXEC_USER },
             );
             const resolved = checkRes.stdout.trim();
             if (resolved === 'NOTFOUND' || !resolved.startsWith('/workspace/')) {
@@ -260,6 +276,7 @@ export function createPythonRunNetTool(deps: PythonRunNetDeps): Tool {
             signal: ctx?.abortSignal,
             timeout: timeoutSec * 1000,
             workdir: '/workspace',
+            user: EXEC_USER,
           });
 
           // Collect workspace files modified during this run
@@ -267,16 +284,11 @@ export function createPythonRunNetTool(deps: PythonRunNetDeps): Tool {
             ? []
             : parseFindOutput(
                 (
-                  await deps.runner.exec(containerId, [
-                    'find',
-                    '/workspace',
-                    '-newer',
-                    markerPath,
-                    '-type',
-                    'f',
-                    '-printf',
-                    '%P\n',
-                  ])
+                  await deps.runner.exec(
+                    containerId,
+                    ['find', '/workspace', '-newer', markerPath, '-type', 'f', '-printf', '%P\n'],
+                    { user: EXEC_USER },
+                  )
                 ).stdout,
               );
 
@@ -350,6 +362,7 @@ async function writeInlineScript(
   await deps.runner.exec(containerId, ['sh', '-c', `cat > ${path}`], {
     signal,
     stdin: code,
+    user: EXEC_USER,
   });
   return path;
 }
