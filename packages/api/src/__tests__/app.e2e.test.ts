@@ -12,6 +12,9 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../cache/redis.service.js';
 import { RedisPubSubService } from '../cache/redis-pubsub.service.js';
 import { ContainerPoolService } from '../engine/container-pool.service.js';
+import { AgentRunnerService } from '../engine/agent-runner.service.js';
+import { RunActivityRegistry } from '../engine/run-activity.registry.js';
+import { ToolApprovalService } from '../approvals/tool-approval.service.js';
 
 interface ErrorResponseBody {
   statusCode: number;
@@ -77,6 +80,11 @@ describe('App E2E', () => {
           count: () => Promise.resolve(1),
           findMany: () => Promise.resolve([]),
           findUnique: () => Promise.resolve(null),
+        },
+        // ApprovalsModule (Task 9): ToolApprovalService.onModuleInit sweeps
+        // stale PENDING approvals from before restart.
+        approvalRequest: {
+          updateMany: () => Promise.resolve({ count: 0 }),
         },
       })
       .overrideProvider(RedisService)
@@ -197,5 +205,23 @@ describe('App E2E', () => {
     const body = JSON.parse(result.payload) as ErrorResponseBody;
     expect(body.code).toBe('INTERNAL_ERROR');
     expect(body.message).toBe('Internal server error');
+  });
+
+  // Task 10: EngineModule now imports ApprovalsModule (AgentRunnerService
+  // needs ToolApprovalService) and ApprovalsModule needs RunActivityRegistry
+  // (Task 9 invariant: the SAME instance the engine watchdog snapshots, so
+  // the `awaiting_approval:<tool>` marker is visible to it). Resolving the
+  // would-be EngineModule<->ApprovalsModule cycle by extracting
+  // RunActivityModule must not silently give each side its own registry.
+  it('wires AgentRunnerService and ToolApprovalService to the same RunActivityRegistry instance', () => {
+    const agentRunner = app.get(AgentRunnerService);
+    const toolApproval = app.get(ToolApprovalService);
+
+    const fromEngine = (agentRunner as unknown as { runActivity: RunActivityRegistry }).runActivity;
+    const fromApprovals = (toolApproval as unknown as { runActivity: RunActivityRegistry })
+      .runActivity;
+
+    expect(fromEngine).toBeInstanceOf(RunActivityRegistry);
+    expect(fromEngine).toBe(fromApprovals);
   });
 });

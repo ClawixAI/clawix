@@ -2,6 +2,14 @@
  * Prisma seed script — populates the database with development data.
  *
  * Run: pnpm exec prisma db seed
+ *   Upsert-only: reconciles system settings, policies, users, and provider
+ *   configs. Safe to re-run — this is how you pick up new Policy columns after
+ *   a migration.
+ *
+ * Run: SEED_RESET=true pnpm exec prisma db seed
+ *   Additionally wipes ALL channels, sessions, agent definitions, groups, and
+ *   audit logs (not just seeded rows) and recreates the dev fixtures. Fresh
+ *   databases only — never against a deployment you care about.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -52,15 +60,31 @@ async function main(): Promise<void> {
   }
   const passwordHash = await bcrypt.hash(defaultPassword, 12);
 
-  // --- Clean previous seed data (allows safe re-seeding) ---
-  // Delete in reverse dependency order; ON DELETE CASCADE handles children.
-  console.log('  Cleaning previous seed data...');
-  await prisma.auditLog.deleteMany({});
-  await prisma.group.deleteMany({});
-  await prisma.session.deleteMany({});
-  await prisma.userAgent.deleteMany({});
-  await prisma.channel.deleteMany({});
-  await prisma.agentDefinition.deleteMany({});
+  // --- Clean previous seed data (opt-in via SEED_RESET) ---
+  // The deletes below are NOT limited to seeded rows — they wipe every channel,
+  // session, agent definition, group, and the entire audit trail, including
+  // whatever a live deployment created. That is fine on a fresh dev database and
+  // destructive anywhere else, so a reset is opt-in rather than the default.
+  //
+  // Without it this script runs in upsert-only mode: system settings, policies,
+  // users, and provider configs are reconciled, and the sections that `create`
+  // rows unconditionally (agents, channels, group, audit entry) are skipped so
+  // re-running cannot duplicate them. That covers the usual reason to re-run —
+  // picking up new Policy columns after a migration — without collateral damage.
+  const reset = process.env['SEED_RESET'] === 'true';
+
+  if (reset) {
+    // Delete in reverse dependency order; ON DELETE CASCADE handles children.
+    console.log('  SEED_RESET=true — cleaning previous seed data...');
+    await prisma.auditLog.deleteMany({});
+    await prisma.group.deleteMany({});
+    await prisma.session.deleteMany({});
+    await prisma.userAgent.deleteMany({});
+    await prisma.channel.deleteMany({});
+    await prisma.agentDefinition.deleteMany({});
+  } else {
+    console.log('  Upsert-only mode (set SEED_RESET=true to wipe and fully re-seed).');
+  }
 
   // --- System Settings (singleton — org identity + config) ---
   const system = await prisma.systemSettings.upsert({
@@ -135,6 +159,11 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 60,
       maxPythonCpuCores: 1,
       maxConcurrentPythonRuns: 2,
+      allowShellNet: false,
+      maxShellNetMemoryMb: 512,
+      maxShellNetTimeoutSecs: 60,
+      maxShellNetCpuCores: 1,
+      maxConcurrentShellNetRuns: 2,
       maxSubAgentRunMs: 300000, // 5 min
     },
     create: {
@@ -154,6 +183,11 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 60,
       maxPythonCpuCores: 1,
       maxConcurrentPythonRuns: 2,
+      allowShellNet: false,
+      maxShellNetMemoryMb: 512,
+      maxShellNetTimeoutSecs: 60,
+      maxShellNetCpuCores: 1,
+      maxConcurrentShellNetRuns: 2,
       maxSubAgentRunMs: 300000, // 5 min
       allowMcp: false,
     },
@@ -170,6 +204,11 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 300,
       maxPythonCpuCores: 2,
       maxConcurrentPythonRuns: 3,
+      allowShellNet: false,
+      maxShellNetMemoryMb: 2048,
+      maxShellNetTimeoutSecs: 300,
+      maxShellNetCpuCores: 2,
+      maxConcurrentShellNetRuns: 3,
       maxSubAgentRunMs: 480000, // 8 min
     },
     create: {
@@ -189,6 +228,11 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 300,
       maxPythonCpuCores: 2,
       maxConcurrentPythonRuns: 3,
+      allowShellNet: false,
+      maxShellNetMemoryMb: 2048,
+      maxShellNetTimeoutSecs: 300,
+      maxShellNetCpuCores: 2,
+      maxConcurrentShellNetRuns: 3,
       maxSubAgentRunMs: 480000, // 8 min
       allowMcp: true,
     },
@@ -205,6 +249,11 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 600,
       maxPythonCpuCores: 4,
       maxConcurrentPythonRuns: 5,
+      allowShellNet: true,
+      maxShellNetMemoryMb: 8192,
+      maxShellNetTimeoutSecs: 600,
+      maxShellNetCpuCores: 4,
+      maxConcurrentShellNetRuns: 5,
       maxSubAgentRunMs: 540000, // 9 min (kept under the 10-min stale-run reaper)
     },
     create: {
@@ -224,6 +273,11 @@ async function main(): Promise<void> {
       maxPythonTimeoutSecs: 600,
       maxPythonCpuCores: 4,
       maxConcurrentPythonRuns: 5,
+      allowShellNet: true,
+      maxShellNetMemoryMb: 8192,
+      maxShellNetTimeoutSecs: 600,
+      maxShellNetCpuCores: 4,
+      maxConcurrentShellNetRuns: 5,
       maxSubAgentRunMs: 540000, // 9 min (kept under the 10-min stale-run reaper)
       allowMcp: true,
     },
@@ -274,114 +328,118 @@ async function main(): Promise<void> {
   });
   console.log(`  User: ${viewer.name} (${viewer.role}, ${standardPolicy.name})`);
 
-  // --- Agent Definitions ---
-  const primaryAgent = await prisma.agentDefinition.create({
-    data: {
-      name: 'Primary Assistant',
-      description: 'Default primary agent for users',
-      systemPrompt: 'You are a helpful AI assistant.',
-      role: 'primary',
-      provider: defaultProvider,
-      model: defaultModel,
-      maxTokensPerRun: 100000,
-      containerConfig: {
-        image: 'clawix-agent:latest',
-        cpuLimit: '1',
-        memoryLimit: '512m',
-        timeoutSeconds: 300,
-        readOnlyRootfs: true,
-        allowedMounts: [],
+  // --- Agent Definitions + User Agents (reset-only) ---
+  // Plain `create`s with no natural unique key to upsert on — they rely on the
+  // wipe above, so they only run as part of a reset.
+  if (reset) {
+    const primaryAgent = await prisma.agentDefinition.create({
+      data: {
+        name: 'Primary Assistant',
+        description: 'Default primary agent for users',
+        systemPrompt: 'You are a helpful AI assistant.',
+        role: 'primary',
+        provider: defaultProvider,
+        model: defaultModel,
+        maxTokensPerRun: 100000,
+        containerConfig: {
+          image: 'clawix-agent:latest',
+          cpuLimit: '1',
+          memoryLimit: '512m',
+          timeoutSeconds: 300,
+          readOnlyRootfs: true,
+          allowedMounts: [],
+        },
+        isActive: true,
       },
-      isActive: true,
-    },
-  });
-  console.log(`  Agent: ${primaryAgent.name} (primary, ${defaultProvider}/${defaultModel})`);
+    });
+    console.log(`  Agent: ${primaryAgent.name} (primary, ${defaultProvider}/${defaultModel})`);
 
-  const coderAgent = await prisma.agentDefinition.create({
-    data: {
-      name: 'coder',
-      description: 'Writes, reviews, and tests code — optimized for code generation',
-      systemPrompt:
-        'You are a skilled software engineer. Write clean, complete, functional code. Never use placeholders or TODO comments. Always verify your output is complete. Use the tools available to read, write, and execute code in the workspace.',
-      role: 'worker',
-      provider: defaultProvider,
-      model: defaultModel,
-      maxTokensPerRun: 100000,
-      containerConfig: {
-        image: 'clawix-agent:latest',
-        cpuLimit: '1',
-        memoryLimit: '512m',
-        timeoutSeconds: 300,
-        readOnlyRootfs: false,
-        allowedMounts: [],
+    const coderAgent = await prisma.agentDefinition.create({
+      data: {
+        name: 'coder',
+        description: 'Writes, reviews, and tests code — optimized for code generation',
+        systemPrompt:
+          'You are a skilled software engineer. Write clean, complete, functional code. Never use placeholders or TODO comments. Always verify your output is complete. Use the tools available to read, write, and execute code in the workspace.',
+        role: 'worker',
+        provider: defaultProvider,
+        model: defaultModel,
+        maxTokensPerRun: 100000,
+        containerConfig: {
+          image: 'clawix-agent:latest',
+          cpuLimit: '1',
+          memoryLimit: '512m',
+          timeoutSeconds: 300,
+          readOnlyRootfs: false,
+          allowedMounts: [],
+        },
+        isActive: true,
       },
-      isActive: true,
-    },
-  });
-  console.log(`  Agent: ${coderAgent.name} (worker, ${defaultProvider}/${defaultModel})`);
+    });
+    console.log(`  Agent: ${coderAgent.name} (worker, ${defaultProvider}/${defaultModel})`);
 
-  const researcherAgent = await prisma.agentDefinition.create({
-    data: {
-      name: 'researcher',
-      description: 'Searches the web and summarizes findings',
-      systemPrompt:
-        'You are a research specialist. Search the web for information, analyze sources, and provide clear, well-organized summaries with citations.',
-      role: 'worker',
-      provider: defaultProvider,
-      model: defaultModel,
-      maxTokensPerRun: 50000,
-      containerConfig: {
-        image: 'clawix-agent:latest',
-        cpuLimit: '0.5',
-        memoryLimit: '256m',
-        timeoutSeconds: 120,
-        readOnlyRootfs: true,
-        allowedMounts: [],
+    const researcherAgent = await prisma.agentDefinition.create({
+      data: {
+        name: 'researcher',
+        description: 'Searches the web and summarizes findings',
+        systemPrompt:
+          'You are a research specialist. Search the web for information, analyze sources, and provide clear, well-organized summaries with citations.',
+        role: 'worker',
+        provider: defaultProvider,
+        model: defaultModel,
+        maxTokensPerRun: 50000,
+        containerConfig: {
+          image: 'clawix-agent:latest',
+          cpuLimit: '0.5',
+          memoryLimit: '256m',
+          timeoutSeconds: 120,
+          readOnlyRootfs: true,
+          allowedMounts: [],
+        },
+        isActive: true,
       },
-      isActive: true,
-    },
-  });
-  console.log(`  Agent: ${researcherAgent.name} (worker, ${defaultProvider}/${defaultModel})`);
+    });
+    console.log(`  Agent: ${researcherAgent.name} (worker, ${defaultProvider}/${defaultModel})`);
 
-  const defaultWorker = await prisma.agentDefinition.create({
-    data: {
-      name: 'default-worker',
-      description: 'Default worker agent for anonymous sub-agent tasks',
-      systemPrompt: 'Complete the assigned task thoroughly and report the result.',
-      role: 'worker',
-      provider: defaultProvider,
-      model: defaultModel,
-      maxTokensPerRun: 50000,
-      containerConfig: {
-        image: 'clawix-agent:latest',
-        cpuLimit: '0.5',
-        memoryLimit: '256m',
-        timeoutSeconds: 300,
-        readOnlyRootfs: false,
-        allowedMounts: [],
+    const defaultWorker = await prisma.agentDefinition.create({
+      data: {
+        name: 'default-worker',
+        description: 'Default worker agent for anonymous sub-agent tasks',
+        systemPrompt: 'Complete the assigned task thoroughly and report the result.',
+        role: 'worker',
+        provider: defaultProvider,
+        model: defaultModel,
+        maxTokensPerRun: 50000,
+        containerConfig: {
+          image: 'clawix-agent:latest',
+          cpuLimit: '0.5',
+          memoryLimit: '256m',
+          timeoutSeconds: 300,
+          readOnlyRootfs: false,
+          allowedMounts: [],
+        },
+        isActive: true,
       },
-      isActive: true,
-    },
-  });
-  console.log(`  Agent: ${defaultWorker.name} (worker, ${defaultProvider}/${defaultModel})`);
+    });
+    console.log(`  Agent: ${defaultWorker.name} (worker, ${defaultProvider}/${defaultModel})`);
 
-  // --- User Agents (bind users to primary agent) ---
-  await prisma.userAgent.create({
-    data: {
-      userId: admin.id,
-      agentDefinitionId: primaryAgent.id,
-      workspacePath: `users/${admin.id}/workspace`,
-    },
-  });
+    // --- User Agents (bind users to primary agent) ---
+    await prisma.userAgent.create({
+      data: {
+        userId: admin.id,
+        agentDefinitionId: primaryAgent.id,
+        workspacePath: `users/${admin.id}/workspace`,
+      },
+    });
 
-  await prisma.userAgent.create({
-    data: {
-      userId: developer.id,
-      agentDefinitionId: primaryAgent.id,
-      workspacePath: `users/${developer.id}/workspace`,
-    },
-  });
-  console.log('  UserAgents: admin + developer bound to Primary Assistant');
+    await prisma.userAgent.create({
+      data: {
+        userId: developer.id,
+        agentDefinitionId: primaryAgent.id,
+        workspacePath: `users/${developer.id}/workspace`,
+      },
+    });
+    console.log('  UserAgents: admin + developer bound to Primary Assistant');
+  }
 
   // Custom skill directories are created lazily inside each user's workspace
   // (<workspace>/skills/) on first agent run — see agent-runner.service.ts.
@@ -424,58 +482,63 @@ async function main(): Promise<void> {
     );
   }
 
-  // --- Channel ---
-  const webChannel = await prisma.channel.create({
-    data: {
-      type: 'web',
-      name: 'Web Dashboard',
-      config: { enableProgress: true, enableToolHints: true },
-      isActive: true,
-    },
-  });
-  console.log(`  Channel: ${webChannel.name}`);
-
-  if (process.env['TELEGRAM_BOT_TOKEN']) {
-    const telegramChannel = await prisma.channel.create({
+  // --- Channels, group, audit entry (reset-only) ---
+  // Same reasoning as the agent definitions above: unconditional `create`s that
+  // depend on the wipe, so re-running without a reset would duplicate them.
+  if (reset) {
+    // --- Channel ---
+    const webChannel = await prisma.channel.create({
       data: {
-        type: 'telegram',
-        name: 'Telegram Bot',
-        config: encryptChannelConfig('telegram', {
-          bot_token: process.env['TELEGRAM_BOT_TOKEN'],
-        }) as Record<string, string>,
+        type: 'web',
+        name: 'Web Dashboard',
+        config: { enableProgress: true, enableToolHints: true },
         isActive: true,
       },
     });
-    console.log(`  Channel: ${telegramChannel.name}`);
-  }
+    console.log(`  Channel: ${webChannel.name}`);
 
-  // --- Group (memory sharing) ---
-  const engineeringGroup = await prisma.group.create({
-    data: {
-      name: 'Engineering',
-      description: 'Engineering team memory sharing group',
-      createdById: admin.id,
-      members: {
-        create: [
-          { userId: admin.id, role: 'OWNER' },
-          { userId: developer.id, role: 'MEMBER' },
-        ],
+    if (process.env['TELEGRAM_BOT_TOKEN']) {
+      const telegramChannel = await prisma.channel.create({
+        data: {
+          type: 'telegram',
+          name: 'Telegram Bot',
+          config: encryptChannelConfig('telegram', {
+            bot_token: process.env['TELEGRAM_BOT_TOKEN'],
+          }) as Record<string, string>,
+          isActive: true,
+        },
+      });
+      console.log(`  Channel: ${telegramChannel.name}`);
+    }
+
+    // --- Group (memory sharing) ---
+    const engineeringGroup = await prisma.group.create({
+      data: {
+        name: 'Engineering',
+        description: 'Engineering team memory sharing group',
+        createdById: admin.id,
+        members: {
+          create: [
+            { userId: admin.id, role: 'OWNER' },
+            { userId: developer.id, role: 'MEMBER' },
+          ],
+        },
       },
-    },
-  });
-  console.log(`  Group: ${engineeringGroup.name} (2 members)`);
+    });
+    console.log(`  Group: ${engineeringGroup.name} (2 members)`);
 
-  // --- Audit Log entry ---
-  await prisma.auditLog.create({
-    data: {
-      userId: admin.id,
-      action: 'org.seed',
-      resource: 'SystemSettings',
-      resourceId: system.id,
-      details: { source: 'seed-script', version: '1.0.0' },
-    },
-  });
-  console.log('  AuditLog: seed event recorded');
+    // --- Audit Log entry ---
+    await prisma.auditLog.create({
+      data: {
+        userId: admin.id,
+        action: 'org.seed',
+        resource: 'SystemSettings',
+        resourceId: system.id,
+        details: { source: 'seed-script', version: '1.0.0' },
+      },
+    });
+    console.log('  AuditLog: seed event recorded');
+  }
 
   console.log('\nSeed complete.');
 }
