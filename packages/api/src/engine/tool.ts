@@ -1,5 +1,7 @@
 import type { ToolDefinition } from '@clawix/shared';
 
+import type { ApprovalScopeKind } from '../approvals/approval.types.js';
+
 /** Result returned by a tool execution. */
 export interface ToolResult {
   readonly output: string;
@@ -45,6 +47,25 @@ export interface Tool {
    * input. Output post-processing (truncation, error hints) still applies.
    */
   readonly rawParams?: boolean;
+
+  /** When true, ToolRegistry gates execute() behind ToolApprovalService (spec §3). */
+  readonly requiresApproval?: boolean;
+
+  /** What an "Always" decision covers. Default 'call' — the conservative floor (spec §2). */
+  readonly approvalScope?: ApprovalScopeKind;
+
+  /** Required when approvalScope === 'resource'. Derives the memory key from validated params. */
+  readonly resourceKeyFromParams?: (params: Record<string, unknown>) => string;
+
+  /**
+   * Optional per-call refinement of `requiresApproval`. When present on a tool
+   * with `requiresApproval: true`, the registry evaluates it against the
+   * validated params; a `false` return means this specific call is exempt from
+   * approval (e.g. a read-only action of a multi-action tool). Absent predicate
+   * = every call requires approval. If the predicate throws, the call is
+   * treated as requiring approval (fail closed).
+   */
+  readonly requiresApprovalForParams?: (params: Record<string, unknown>) => boolean;
 
   execute(params: Record<string, unknown>, ctx?: ToolExecuteContext): Promise<ToolResult>;
 }
