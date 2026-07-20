@@ -22,6 +22,9 @@ describe('ResetCommand', () => {
       count: vi.fn().mockResolvedValue(10),
     },
   };
+  const mockToolApprovalService = {
+    clearSessionMemory: vi.fn(),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -30,27 +33,41 @@ describe('ResetCommand', () => {
   });
 
   it('has the correct name and description', () => {
-    const cmd = new ResetCommand(mockSessionManager as never, mockPrisma as never);
+    const cmd = new ResetCommand(
+      mockSessionManager as never,
+      mockPrisma as never,
+      mockToolApprovalService as never,
+    );
     expect(cmd.name).toBe('reset');
     expect(cmd.description).toBeDefined();
   });
 
-  it('deactivates the session and returns confirmation', async () => {
+  it('deactivates the session, clears approval session memory, and returns confirmation', async () => {
     mockPrisma.sessionMessage.count.mockResolvedValue(10);
-    const cmd = new ResetCommand(mockSessionManager as never, mockPrisma as never);
+    const cmd = new ResetCommand(
+      mockSessionManager as never,
+      mockPrisma as never,
+      mockToolApprovalService as never,
+    );
     const result = await cmd.execute(makeContext());
 
     expect(mockSessionManager.deactivate).toHaveBeenCalledWith('session-1');
+    expect(mockToolApprovalService.clearSessionMemory).toHaveBeenCalledWith('session-1');
     expect(result.text).toContain('reset');
     expect(result.text).toContain('fresh');
   });
 
   it('returns early message when session has no messages', async () => {
     mockPrisma.sessionMessage.count.mockResolvedValue(0);
-    const cmd = new ResetCommand(mockSessionManager as never, mockPrisma as never);
+    const cmd = new ResetCommand(
+      mockSessionManager as never,
+      mockPrisma as never,
+      mockToolApprovalService as never,
+    );
     const result = await cmd.execute(makeContext());
 
     expect(mockSessionManager.deactivate).not.toHaveBeenCalled();
+    expect(mockToolApprovalService.clearSessionMemory).not.toHaveBeenCalled();
     expect(result.text).toContain('No active conversation');
   });
 });

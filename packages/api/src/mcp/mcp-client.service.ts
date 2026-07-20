@@ -28,6 +28,8 @@ export interface DiscoveredTool {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: Record<string, unknown>;
+  /** MCP spec tool annotations (e.g. `readOnlyHint`), untrusted server hints. */
+  readonly annotations: Record<string, unknown> | null;
 }
 
 export interface McpCallResult {
@@ -69,6 +71,9 @@ export class McpClientService {
         name: t.name,
         description: t.description ?? '',
         inputSchema: (t.inputSchema ?? { type: 'object' }) as Record<string, unknown>,
+        // Pass through verbatim — untrusted server-provided hints, scanned
+        // display-side; consumed by mcpRequiresApproval as a loosen-only signal.
+        annotations: (t.annotations ?? null) as Record<string, unknown> | null,
       }));
     } finally {
       try {

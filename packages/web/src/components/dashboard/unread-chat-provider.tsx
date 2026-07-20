@@ -3,7 +3,14 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
-import { getAccessToken } from '@/lib/auth';
+import { authFetch, getAccessToken } from '@/lib/auth';
+import {
+  applyApprovalFrame,
+  pendingRowToFrame,
+  type ApprovalFrame,
+  type IncomingApprovalFrame,
+  type PendingApprovalRow,
+} from '@/lib/approval-frames';
 
 /**
  * Tracks incoming chat `message.create` frames that arrive while the user
@@ -24,11 +31,18 @@ import { getAccessToken } from '@/lib/auth';
 interface UnreadChatContextValue {
   readonly count: number;
   readonly clear: () => void;
+  /** Approval prompts awaiting the user's choice (spec §7) — fed by the same
+   *  chat WS connection's `approval.request` / `approval.resolved` frames.
+   *  Drives `pending-approval-banner.tsx`. `approval.notice` frames (standing-
+   *  deny auto-resolutions) are intentionally NOT added here — there's
+   *  nothing pending for the user to act on. */
+  readonly pendingApprovals: readonly ApprovalFrame[];
 }
 
 const UnreadChatContext = createContext<UnreadChatContextValue>({
   count: 0,
   clear: () => undefined,
+  pendingApprovals: [],
 });
 
 export function useUnreadChat(): UnreadChatContextValue {
@@ -40,12 +54,13 @@ const RECONNECT_MAX_MS = 30_000;
 
 interface IncomingFrame {
   readonly type: string;
-  readonly payload?: { readonly messageId?: string };
+  readonly payload?: unknown;
 }
 
 export function UnreadChatProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [count, setCount] = useState(0);
+  const [pendingApprovals, setPendingApprovals] = useState<ApprovalFrame[]>([]);
   const seenIds = useRef<Set<string>>(new Set());
 
   const onChatPage = pathname.startsWith('/conversations');
@@ -69,6 +84,28 @@ export function UnreadChatProvider({ children }: { children: React.ReactNode }) 
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let backoff = RECONNECT_INITIAL_MS;
 
+    // Reconcile pendingApprovals against the server's authoritative pending
+    // set. Covers both a fresh page load and resuming this socket after it
+    // was closed while the user was on /conversations — during that window
+    // we couldn't see any approval.resolved frames, so a stale entry here
+    // would show the banner for an approval that's already been decided.
+    void authFetch<{ data: PendingApprovalRow[] }>('/api/v1/chat/approvals/pending')
+      .then((res) => {
+        if (stopped) return;
+        const rows = Array.isArray(res.data) ? res.data : [];
+        setPendingApprovals((prev) => {
+          const serverIds = new Set(rows.map((r) => r.id));
+          const kept = prev.filter((f) => serverIds.has(f.approvalId));
+          const keptIds = new Set(kept.map((f) => f.approvalId));
+          const added = rows.filter((r) => !keptIds.has(r.id)).map(pendingRowToFrame);
+          return added.length ? [...kept, ...added] : kept;
+        });
+      })
+      .catch(() => {
+        // Not yet authenticated, or a transient network error — live WS
+        // frames (and the next reconnect's reconciliation) keep this in sync.
+      });
+
     const connect = async (): Promise<void> => {
       if (stopped) return;
       const token = await getAccessToken();
@@ -85,12 +122,25 @@ export function UnreadChatProvider({ children }: { children: React.ReactNode }) 
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data as string) as IncomingFrame;
-          if (msg.type !== 'message.create') return;
-          const id = msg.payload?.messageId;
-          if (!id) return;
-          if (seenIds.current.has(id)) return;
-          seenIds.current.add(id);
-          setCount((c) => c + 1);
+
+          if (msg.type === 'message.create') {
+            const id = (msg.payload as { messageId?: string } | undefined)?.messageId;
+            if (!id) return;
+            if (seenIds.current.has(id)) return;
+            seenIds.current.add(id);
+            setCount((c) => c + 1);
+            return;
+          }
+
+          // Tool-approval prompt/resolved frames (spec §7, Task 9) — same
+          // wire shape and reducer `use-chat.ts` uses for the in-chat
+          // approval cards. `approval.notice` (standing-deny auto-resolution)
+          // is intentionally NOT handled here: nothing is pending on it.
+          if (msg.type === 'approval.request' || msg.type === 'approval.resolved') {
+            setPendingApprovals((prev) =>
+              applyApprovalFrame(prev, msg.payload as IncomingApprovalFrame),
+            );
+          }
         } catch {
           // Malformed frames are ignored — use-chat handles real parse.
         }
@@ -132,6 +182,7 @@ export function UnreadChatProvider({ children }: { children: React.ReactNode }) 
           setCount(0);
           seenIds.current.clear();
         },
+        pendingApprovals,
       }}
     >
       {children}

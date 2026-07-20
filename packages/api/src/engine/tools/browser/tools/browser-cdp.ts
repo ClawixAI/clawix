@@ -41,6 +41,8 @@ export function createBrowserCdpTool(
       },
       required: ['method'],
     },
+    requiresApproval: true,
+    approvalScope: 'run',
 
     async execute(params: Record<string, unknown>): Promise<ToolResult> {
       const ctx = getRunContext();

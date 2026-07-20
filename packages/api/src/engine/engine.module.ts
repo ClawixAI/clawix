@@ -8,6 +8,7 @@ import { DbModule } from '../db/index.js';
 import { McpModule } from '../mcp/mcp.module.js';
 import { SystemSettingsModule } from '../system-settings/system-settings.module.js';
 import { ProviderConfigModule } from '../provider-config/provider-config.module.js';
+import { ApprovalsModule } from '../approvals/approvals.module.js';
 import { AgentRunnerService } from './agent-runner.service.js';
 import { CronGuardService } from './cron-guard.service.js';
 import { CronSchedulerService } from './cron-scheduler.service.js';
@@ -28,7 +29,7 @@ import { WorkspaceSeederService } from './workspace-seeder.service.js';
 import { StaleRunReaperService } from './stale-run-reaper.service.js';
 import { CompressorService } from './compressor.js';
 import { AgentRunRegistry } from './agent-run-registry.service.js';
-import { RunActivityRegistry } from './run-activity.registry.js';
+import { RunActivityModule } from './run-activity.module.js';
 import { SearchProviderRegistry } from './tools/web/search-provider.js';
 import { BraveSearchProvider } from './tools/web/providers/brave.js';
 import { DuckDuckGoProvider } from './tools/web/providers/duckduckgo.js';
@@ -45,12 +46,20 @@ import {
 import { BrowserQuotaCache } from './tools/browser/browser-quota-cache.service.js';
 import { AgentRunSourceAdapter } from './tools/browser/agent-run-source.adapter.js';
 import { PythonConcurrencyLimiter } from './tools/python/concurrency-limiter.js';
+import { ShellNetConcurrencyLimiter } from './tools/shell-net-concurrency-limiter.js';
 import { InstallMutex } from './tools/python/install-mutex.js';
 import { WikiBootstrapService } from './wiki/wiki-bootstrap.service.js';
 import { SessionSearchService } from './session-recall/session-search.service.js';
 
 @Module({
-  imports: [DbModule, McpModule, SystemSettingsModule, ProviderConfigModule],
+  imports: [
+    DbModule,
+    McpModule,
+    SystemSettingsModule,
+    ProviderConfigModule,
+    RunActivityModule,
+    ApprovalsModule,
+  ],
   providers: [
     AgentRunnerService,
     ContextBuilderService,
@@ -70,6 +79,7 @@ import { SessionSearchService } from './session-recall/session-search.service.js
     PythonProxyHealthService,
     PythonContainerPoolService,
     PythonConcurrencyLimiter,
+    ShellNetConcurrencyLimiter,
     InstallMutex,
     MemoryConsolidationService,
     TaskExecutorService,
@@ -79,7 +89,6 @@ import { SessionSearchService } from './session-recall/session-search.service.js
     StaleRunReaperService,
     CompressorService,
     AgentRunRegistry,
-    RunActivityRegistry,
     {
       provide: SkillLoaderService,
       useFactory: () => {
@@ -144,6 +153,7 @@ import { SessionSearchService } from './session-recall/session-search.service.js
     CronGuardService,
     SkillLoaderService,
     AgentRunRegistry,
+    RunActivityModule,
     PythonProxyHealthService,
     PythonContainerPoolService,
     WikiBootstrapService,

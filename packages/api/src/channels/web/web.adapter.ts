@@ -104,6 +104,25 @@ export function createWebAdapter(config: ChannelAdapterConfig): WebAdapterExtend
         'Sending message to user',
       );
 
+      // Tool-approval prompt/notice/resolved frames carry their own structured
+      // payload (see ChannelManagerService.deliverApprovalFrame) and render as
+      // a dedicated approval.* frame instead of a chat message.create — the
+      // `text` fallback exists only for adapters without rich rendering.
+      if (
+        event === 'approval.request' ||
+        event === 'approval.notice' ||
+        event === 'approval.resolved'
+      ) {
+        sendToUser(
+          message.recipientId,
+          serializeServerMessage({
+            type: event,
+            payload: message.metadata?.['approval'],
+          }),
+        );
+        return messageId === '' ? undefined : messageId;
+      }
+
       const payload = serializeServerMessage({
         type: 'message.create',
         payload: {

@@ -75,6 +75,15 @@ export interface StartOptions {
    * needs to reach a sidecar service such as the PyPI proxy.
    */
   readonly network?: string;
+  /**
+   * Attach a boot-time egress firewall: start the container as root with
+   * NET_ADMIN so the baked `egress-firewall.sh` entrypoint can program iptables,
+   * then it drops to uid 1000. Egress path only (`python_run_net`, `shell_net`);
+   * every existing caller leaves this false and gets today's args verbatim.
+   */
+  readonly egressFirewall?: boolean;
+  /** Passed as EGRESS_ALLOWLIST into the firewall container (comma-separated host[:port]). */
+  readonly egressAllowlist?: string;
 }
 
 // ------------------------------------------------------------------ //
@@ -150,6 +159,8 @@ export class ContainerRunner implements IContainerRunner {
       workspaceHostPath: options.workspaceHostPath,
       skillMounts: options.skillMounts,
       network: options.network,
+      egressFirewall: options.egressFirewall,
+      egressAllowlist: options.egressAllowlist,
     });
 
     logger.info(
@@ -190,23 +201,13 @@ export class ContainerRunner implements IContainerRunner {
     command: readonly string[],
     options: ExecOptions = {},
   ): Promise<ExecResult> {
-    const { stdin, workdir, timeout: rawTimeout, signal } = options;
+    const { stdin, workdir, timeout: rawTimeout, signal, user } = options;
 
     const timeoutMs = Math.min(rawTimeout ?? DEFAULT_EXEC_TIMEOUT_MS, MAX_EXEC_TIMEOUT_MS);
 
-    const args: string[] = ['exec'];
+    const args = buildDockerExecArgs(containerId, command, { workdir, stdin, user });
 
-    if (workdir !== undefined) {
-      args.push('-w', workdir);
-    }
-
-    if (stdin !== undefined) {
-      args.push('-i');
-    }
-
-    args.push(containerId, ...command);
-
-    logger.debug({ containerId, command, workdir }, 'Executing command in container');
+    logger.debug({ containerId, command, workdir, user }, 'Executing command in container');
 
     if (stdin !== undefined) {
       return this.execWithStdin(args, stdin, signal);
@@ -397,6 +398,10 @@ interface DockerRunArgsParams {
   readonly skillMounts?: StartOptions['skillMounts'];
   /** Docker network to attach the container to. Defaults to 'none'. */
   readonly network?: string;
+  /** Start as root + NET_ADMIN for the egress-firewall entrypoint (see StartOptions). */
+  readonly egressFirewall?: boolean;
+  /** Value for the container's EGRESS_ALLOWLIST env when egressFirewall is set. */
+  readonly egressAllowlist?: string;
 }
 
 /**
@@ -412,8 +417,11 @@ export function buildDockerRunArgs(params: DockerRunArgsParams): string[] {
     '-d',
     '--name',
     containerName,
+    // Egress-firewall containers must boot as root so the entrypoint can program
+    // iptables; it drops to uid 1000 via gosu before running any workload. Every
+    // other caller starts unprivileged as today.
     '--user',
-    '1000:1000',
+    params.egressFirewall ? '0:0' : '1000:1000',
     '--network',
     params.network ?? 'none',
     '--cpus',
@@ -431,6 +439,11 @@ export function buildDockerRunArgs(params: DockerRunArgsParams): string[] {
     '-e',
     `TZ=${process.env['TZ'] ?? 'UTC'}`,
   ];
+
+  if (params.egressFirewall) {
+    args.push('--cap-add', 'NET_ADMIN');
+    args.push('-e', `EGRESS_ALLOWLIST=${params.egressAllowlist ?? ''}`);
+  }
 
   if (containerConfig.readOnlyRootfs) {
     args.push('--read-only');
@@ -460,6 +473,24 @@ export function buildDockerRunArgs(params: DockerRunArgsParams): string[] {
   // exits immediately in detached mode with no TTY/stdin.
   args.push('sleep', 'infinity');
 
+  return args;
+}
+
+/**
+ * Build the argument list for `docker exec`. Pure function, exported for
+ * testability. `--user` is emitted first (before -w/-i) when set so the
+ * exec runs as that uid:gid; omitting it preserves today's behavior exactly.
+ */
+export function buildDockerExecArgs(
+  containerId: string,
+  command: readonly string[],
+  options: { workdir?: string; stdin?: string; user?: string },
+): string[] {
+  const args: string[] = ['exec'];
+  if (options.user !== undefined) args.push('--user', options.user);
+  if (options.workdir !== undefined) args.push('-w', options.workdir);
+  if (options.stdin !== undefined) args.push('-i');
+  args.push(containerId, ...command);
   return args;
 }
 

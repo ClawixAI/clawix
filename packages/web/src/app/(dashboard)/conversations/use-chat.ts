@@ -8,6 +8,13 @@ import { resolveToolProgressMode } from '@clawix/shared';
 
 import { authFetch, clearTokens, getAccessToken } from '@/lib/auth';
 import { uuidv4 } from '@/lib/utils';
+import {
+  applyApprovalFrame,
+  pendingRowToFrame,
+  type ApprovalFrame,
+  type IncomingApprovalFrame,
+  type PendingApprovalRow,
+} from '@/lib/approval-frames';
 
 /**
  * Merge incoming sessions into the existing list, sorted by createdAt desc.
@@ -75,6 +82,11 @@ interface PaginatedSessions {
   meta: { total: number; page: number; limit: number };
 }
 
+interface PendingApprovalsResponse {
+  success: boolean;
+  data: PendingApprovalRow[];
+}
+
 interface PaginatedMessages {
   success: boolean;
   data: {
@@ -103,7 +115,15 @@ type ServerEvent =
   | { type: 'typing.stop'; payload: Record<string, never> }
   | { type: 'pong'; payload: Record<string, never> }
   | { type: 'session.reset'; payload: { sessionId: string } }
-  | { type: 'error'; payload: { code: string; message: string } };
+  | { type: 'error'; payload: { code: string; message: string } }
+  // Tool-approval prompt/notice/resolved frames (spec §7, Task 9). `payload`
+  // is the `ApprovalFramePayload` published by `ApprovalDeliveryService` and
+  // routed verbatim by `ChannelManagerService` — its own `kind` field (not
+  // this outer `type`) drives reducer semantics; see `applyApprovalFrame`.
+  | {
+      type: 'approval.request' | 'approval.notice' | 'approval.resolved';
+      payload: IncomingApprovalFrame;
+    };
 
 /* ------------------------------------------------------------------ */
 /*  Hook                                                               */
@@ -134,6 +154,7 @@ export function useChat() {
   const [webChannelId, setWebChannelId] = useState<string | null>(null);
   const [channelResolved, setChannelResolved] = useState(false);
   const [toolProgressMode, setToolProgressMode] = useState<ToolProgressMode>('all');
+  const [pendingApprovals, setPendingApprovals] = useState<ApprovalFrame[]>([]);
 
   /* ---- refs ---- */
   const wsRef = useRef<WebSocket | null>(null);
@@ -434,6 +455,14 @@ export function useChat() {
         case 'pong':
           pongReceivedRef.current = true;
           break;
+
+        case 'approval.request':
+        case 'approval.notice':
+        case 'approval.resolved':
+          // `parsed.payload.kind` (not the outer frame `type`) drives the
+          // reducer — it already mirrors 'prompt' | 'notice' | 'resolved'.
+          setPendingApprovals((prev) => applyApprovalFrame(prev, parsed.payload));
+          break;
       }
     };
 
@@ -627,6 +656,35 @@ export function useChat() {
     void fetchSessionsRef.current?.();
   }, []);
 
+  /* ---- approval cards: apply a resolved frame from a card's own action ---- */
+  // `ApprovalCard` resolves/revokes over REST directly, then reports the
+  // outcome here so the same pure reducer used for WS frames stays the single
+  // source of truth for card state (the WS `approval.resolved` frame that
+  // follows is idempotent against this).
+  const applyResolvedApproval = useCallback((frame: IncomingApprovalFrame) => {
+    setPendingApprovals((prev) => applyApprovalFrame(prev, frame));
+  }, []);
+
+  /* ---- seed pending approvals on mount (reload recovery) ---- */
+  useEffect(() => {
+    void authFetch<PendingApprovalsResponse>('/api/v1/chat/approvals/pending')
+      .then((res) => {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        // Merge, don't replace: the mount-seed GET and the WS connection are
+        // independent async paths. A live `approval.request`/`approval.resolved`
+        // frame may land before this response — a wholesale replace would drop
+        // that live update. Only append rows we don't already track.
+        setPendingApprovals((prev) => {
+          const known = new Set(prev.map((f) => f.approvalId));
+          const seeded = rows.map(pendingRowToFrame).filter((f) => !known.has(f.approvalId));
+          return seeded.length ? [...prev, ...seeded] : prev;
+        });
+      })
+      .catch(() => {
+        /* no approvals to recover, or not yet authenticated — safe to skip */
+      });
+  }, []);
+
   /* ---- resolve web channel ID ---- */
   useEffect(() => {
     void authFetch<{
@@ -761,5 +819,7 @@ export function useChat() {
     loadMoreSessions,
     refreshSessions: fetchSessions,
     toolProgressMode,
+    pendingApprovals,
+    applyResolvedApproval,
   };
 }

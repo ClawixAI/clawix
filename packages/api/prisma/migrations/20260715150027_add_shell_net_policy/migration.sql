@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Policy" ADD COLUMN     "allowShellNet" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "maxConcurrentShellNetRuns" INTEGER NOT NULL DEFAULT 2,
+ADD COLUMN     "maxShellNetCpuCores" INTEGER NOT NULL DEFAULT 1,
+ADD COLUMN     "maxShellNetMemoryMb" INTEGER NOT NULL DEFAULT 512,
+ADD COLUMN     "maxShellNetTimeoutSecs" INTEGER NOT NULL DEFAULT 60;

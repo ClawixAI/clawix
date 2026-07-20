@@ -132,6 +132,148 @@ export function checkDenyPatterns(command: string): string | undefined {
 }
 
 // ------------------------------------------------------------------ //
+//  Sensitive-command classification (approval gating)                 //
+// ------------------------------------------------------------------ //
+
+/**
+ * Kinds of shell command that require human approval.
+ *
+ * The *category* — not the raw command string — is the approval resource key.
+ * Command strings are unbounded free text, so keying approval memory on them
+ * would make persistent decisions both useless (never a second hit) and
+ * unauditable. Keying on the category means an "Always" grant reads as a
+ * capability the user understands: "this agent may install packages".
+ */
+export type ShellSensitiveCategory = 'net-egress' | 'pkg-install' | 'fs-outside-workspace';
+
+interface SensitivePattern {
+  readonly regex: RegExp;
+  readonly category: ShellSensitiveCategory;
+}
+
+const SENSITIVE_PATTERNS: readonly SensitivePattern[] = [
+  // Outbound network
+  {
+    regex: /\b(curl|wget|nc|netcat|ncat|telnet|ftp|sftp|scp|rsync|ssh)\b/,
+    category: 'net-egress',
+  },
+  { regex: /\bgit\s+(clone|push|pull|fetch|remote|ls-remote)\b/, category: 'net-egress' },
+  { regex: /\b(npx|pnpx)\b/, category: 'net-egress' },
+  // Package installation
+  { regex: /\b(pip|pip3)\s+install\b/, category: 'pkg-install' },
+  { regex: /\buv\s+(pip\s+install|add)\b/, category: 'pkg-install' },
+  { regex: /\b(npm|pnpm|yarn)\s+(install|add|i)\b/, category: 'pkg-install' },
+  { regex: /\bapt(-get)?\s+install\b/, category: 'pkg-install' },
+  { regex: /\bapk\s+add\b/, category: 'pkg-install' },
+  { regex: /\b(gem|cargo|go)\s+install\b/, category: 'pkg-install' },
+  { regex: /\bpoetry\s+add\b/, category: 'pkg-install' },
+];
+
+/**
+ * Absolute path roots a command may write to without approval. Everything the
+ * agent legitimately owns lives under these.
+ */
+const WRITABLE_ROOTS: readonly string[] = ['/workspace', '/tmp'];
+
+/** Commands whose non-flag arguments name paths they mutate. */
+const FS_MUTATING_COMMAND = /^(cp|mv|rm|mkdir|rmdir|touch|chmod|chown|ln|truncate|tee|dd)\b/;
+
+function unquote(token: string): string {
+  const first = token[0];
+  if ((first === '"' || first === "'") && token.endsWith(first) && token.length > 1) {
+    return token.slice(1, -1);
+  }
+  return token;
+}
+
+/**
+ * Whether a write target escapes the roots the agent owns.
+ *
+ * Absolute paths are checked against {@link WRITABLE_ROOTS}. Relative paths
+ * resolve against `workdir` (which defaults into /workspace), so they are only
+ * treated as escaping when they traverse upward with `..`.
+ */
+function isOutsideWorkspace(path: string): boolean {
+  if (!path.startsWith('/')) {
+    return path.split('/').includes('..');
+  }
+  return !WRITABLE_ROOTS.some((root) => path === root || path.startsWith(`${root}/`));
+}
+
+/**
+ * Extract the paths a single command segment writes to: redirect targets, plus
+ * the non-flag arguments of filesystem-mutating commands.
+ */
+function writeTargets(segment: string): readonly string[] {
+  const targets: string[] = [];
+
+  // Redirects: `> path`, `>> path`, `2> path`. `>&1` style fd-dups are skipped.
+  const redirectRegex = /(?:^|\s)\d?>>?\s*(?!&)("[^"]*"|'[^']*'|\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = redirectRegex.exec(segment)) !== null) {
+    const target = match[1];
+    if (target !== undefined) {
+      targets.push(unquote(target));
+    }
+  }
+
+  const trimmed = segment.trim();
+  // `sed` only writes when editing in place; otherwise it is a reader.
+  const mutates = FS_MUTATING_COMMAND.test(trimmed) || /^sed\b.*\s-i\b/.test(trimmed);
+  if (mutates) {
+    for (const token of trimmed.split(/\s+/).slice(1)) {
+      if (!token.startsWith('-')) {
+        targets.push(unquote(token));
+      }
+    }
+  }
+
+  return targets;
+}
+
+/**
+ * Classify a command into the approval categories it triggers.
+ *
+ * This is a heuristic defence-in-depth layer that decides *when to ask a
+ * human*, not a security boundary — the container is the boundary, and the
+ * deny-pattern list is the hard stop. A sufficiently obfuscated command
+ * (base64-decoded payloads, variable indirection) will not be classified;
+ * that is accepted, because an unclassified command is still confined to the
+ * sandbox and still subject to {@link checkDenyPatterns}.
+ *
+ * @param command - The raw shell command string.
+ * @returns Sorted, de-duplicated categories. Empty means no approval needed.
+ */
+export function classifyShellCommand(command: string): readonly ShellSensitiveCategory[] {
+  const found = new Set<ShellSensitiveCategory>();
+
+  // Word-boundary patterns match anywhere in the command, so subshell and
+  // compound contents are covered without decomposing first.
+  const lower = command.toLowerCase();
+  for (const { regex, category } of SENSITIVE_PATTERNS) {
+    if (regex.test(lower)) {
+      found.add(category);
+    }
+  }
+
+  // Write targets need segmentation — a path only means something relative to
+  // the command it is an argument of.
+  const segments = [
+    ...splitCompoundCommand(command),
+    ...extractSubshells(command).flatMap((inner) => splitCompoundCommand(inner)),
+  ];
+  for (const segment of segments) {
+    for (const target of writeTargets(segment)) {
+      if (isOutsideWorkspace(target)) {
+        found.add('fs-outside-workspace');
+      }
+    }
+  }
+
+  return [...found].sort();
+}
+
+// ------------------------------------------------------------------ //
 //  Shell tool factory                                                 //
 // ------------------------------------------------------------------ //
 
@@ -168,6 +310,18 @@ export function createShellTool(containerId: string, containerRunner: IContainer
       },
       required: ['command'],
     },
+
+    // Only commands that reach outside the sandbox are gated — network egress,
+    // package installs, and writes escaping the roots the agent owns. Ordinary
+    // in-container work (ls, grep, build, test) is exempt via
+    // requiresApprovalForParams, which keeps prompt volume survivable and keeps
+    // sub-agents (hardcoded auto-deny, never promptable) usable for everything
+    // that isn't sensitive. The deny-pattern list remains the hard stop and
+    // still runs inside execute() after any approval.
+    requiresApproval: true,
+    requiresApprovalForParams: (p) => classifyShellCommand(String(p['command'] ?? '')).length > 0,
+    approvalScope: 'resource',
+    resourceKeyFromParams: (p) => classifyShellCommand(String(p['command'] ?? '')).join('+'),
 
     async execute(params: Record<string, unknown>, ctx?: ToolExecuteContext): Promise<ToolResult> {
       const command = params['command'] as string;

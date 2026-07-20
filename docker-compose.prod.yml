@@ -256,7 +256,8 @@ networks:
     name: clawix-python-net-egress
     driver: bridge
     # External default: this network reaches the public internet by default.
-    # RFC1918 blocking is enforced by the deploy environment's firewall rules
-    # or a sidecar egress proxy. Used by python_run_net ephemeral runners and
-    # also carries proxy traffic from those runners to clawix-pypi-proxy.
-    # See docs/specs/2026-05-08-python-run-tool-design.md §Security.
+    # RFC1918/metadata egress is blocked PER-CONTAINER by the egress-firewall
+    # entrypoint baked into the runner images (routed private ranges + gateway +
+    # 169.254.169.254 dropped; public egress + DNS preserved). Used by
+    # python_run_net and shell_net ephemeral runners, and carries proxy traffic
+    # to clawix-pypi-proxy. See docs/specs/2026-07-16-egress-filter-design.md.

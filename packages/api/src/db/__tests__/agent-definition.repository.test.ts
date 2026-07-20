@@ -268,4 +268,81 @@ describe('AgentDefinitionRepository', () => {
       );
     });
   });
+
+  describe('findOrCreateDefaultWorkerForPolicy', () => {
+    // Org default provider is anthropic; a provider is "configured" iff the
+    // routed providerConfig lookup returns an enabled row.
+    function routeProviderConfig(enabled: string[]) {
+      mockPrisma.providerConfig.findFirst.mockImplementation(
+        async (args: { where: Record<string, unknown> }) => {
+          const where = args.where;
+          if (where['isDefault']) {
+            return { id: 'pc-default', provider: 'anthropic', isEnabled: true, isDefault: true };
+          }
+          if (typeof where['provider'] === 'string' && enabled.includes(where['provider'])) {
+            return { id: `pc-${where['provider']}`, provider: where['provider'], isEnabled: true };
+          }
+          return null;
+        },
+      );
+    }
+
+    it('uses the org default worker when the org default provider is allowed', async () => {
+      routeProviderConfig(['anthropic', 'openai']);
+      mockPrisma.agentDefinition.findFirst.mockResolvedValue(null);
+      mockPrisma.agentDefinition.create.mockImplementation(
+        async (args: { data: Record<string, unknown> }) => ({ id: 'created', ...args.data }),
+      );
+
+      const result = await repo.findOrCreateDefaultWorkerForPolicy(['anthropic', 'openai']);
+
+      expect(result.provider).toBe('anthropic');
+      expect(mockPrisma.agentDefinition.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ name: 'default-worker', provider: 'anthropic' }),
+      });
+    });
+
+    it('auto-substitutes an allowed provider when the org default is out-of-policy', async () => {
+      routeProviderConfig(['anthropic', 'openai']);
+      mockPrisma.agentDefinition.findFirst.mockResolvedValue(null);
+      mockPrisma.agentDefinition.create.mockImplementation(
+        async (args: { data: Record<string, unknown> }) => ({ id: 'created', ...args.data }),
+      );
+
+      const result = await repo.findOrCreateDefaultWorkerForPolicy(['openai']);
+
+      expect(result.provider).toBe('openai');
+      expect(mockPrisma.agentDefinition.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ name: 'default-worker-openai', provider: 'openai' }),
+      });
+    });
+
+    it('reuses an existing per-provider default worker row when present', async () => {
+      routeProviderConfig(['anthropic', 'openai']);
+      const existing = {
+        ...mockAgent,
+        id: 'dw-openai',
+        name: 'default-worker-openai',
+        role: 'worker',
+        provider: 'openai',
+        model: 'gpt-4o',
+      };
+      mockPrisma.agentDefinition.findFirst.mockResolvedValue(existing);
+
+      const result = await repo.findOrCreateDefaultWorkerForPolicy(['openai']);
+
+      expect(result).toEqual(existing);
+      expect(mockPrisma.agentDefinition.create).not.toHaveBeenCalled();
+    });
+
+    it('throws an actionable error when none of the allowed providers is configured', async () => {
+      routeProviderConfig(['anthropic', 'openai']); // gemini not enabled
+      mockPrisma.agentDefinition.findFirst.mockResolvedValue(null);
+
+      await expect(repo.findOrCreateDefaultWorkerForPolicy(['gemini'])).rejects.toThrow(
+        /allowed providers/i,
+      );
+      expect(mockPrisma.agentDefinition.create).not.toHaveBeenCalled();
+    });
+  });
 });

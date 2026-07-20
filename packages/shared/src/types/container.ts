@@ -38,6 +38,12 @@ export interface ExecOptions {
   readonly workdir?: string;
   readonly timeout?: number;
   /**
+   * Run the exec as this user (e.g. '1000:1000'). Omitted → the container's
+   * default user. Egress-firewall containers boot as root and drop to uid 1000
+   * via gosu, so agent execs must pass '1000:1000' to stay unprivileged.
+   */
+  readonly user?: string;
+  /**
    * Optional signal to abort the in-flight `docker exec`. When fired,
    * the child receives SIGTERM and exec() resolves with `{ exitCode: -1, ... }`
    * (does not throw).

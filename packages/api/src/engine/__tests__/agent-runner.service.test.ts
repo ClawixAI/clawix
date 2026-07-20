@@ -89,6 +89,7 @@ vi.mock('fs', async (importOriginal) => {
 // ------------------------------------------------------------------ //
 
 import { AgentRunnerService } from '../agent-runner.service.js';
+import { ToolRegistry } from '../tool-registry.js';
 import type { RunOptions } from '../agent-runner.types.js';
 import type { SessionManagerService } from '../session-manager.service.js';
 import type { ContainerRunner } from '../container-runner.js';
@@ -445,6 +446,14 @@ function buildMocks() {
     getAccessToken: vi.fn().mockResolvedValue('tok'),
   };
 
+  const mockToolApprovalService: {
+    gate: ReturnType<typeof vi.fn>;
+    clearSessionMemory: ReturnType<typeof vi.fn>;
+  } = {
+    gate: vi.fn().mockResolvedValue({ allowed: true }),
+    clearSessionMemory: vi.fn(),
+  };
+
   return {
     mockSessionManager,
     mockContainerRunner,
@@ -470,15 +479,19 @@ function buildMocks() {
     mockNotificationRepo,
     mockMcpClientService,
     mockMcpTokenManager,
+    mockToolApprovalService,
   };
 }
 
 /**
- * Construct an AgentRunnerService with all 41 constructor deps in the EXACT
+ * Construct an AgentRunnerService with all 44 constructor deps in the EXACT
  * order declared in agent-runner.service.ts. Centralized so the three test
  * suites can't drift — and so newly-added deps land at their real positions
- * (positions 28-37 were previously omitted-as-undefined; 38-41 are the MCP
- * deps that MUST be at the tail, not masquerading as python deps).
+ * (positions 28-38 were previously omitted-as-undefined; 39-42 are the MCP
+ * deps that MUST be at the tail, not masquerading as python deps; 43 is the
+ * run-activity registry; 44 is the tool approval service, Task 10). Position
+ * 31 is the shell_net concurrency limiter (Task 6), inserted next to
+ * pythonLimiter to mirror the real constructor.
  */
 function buildService(mocks: ReturnType<typeof buildMocks>): AgentRunnerService {
   return new AgentRunnerService(
@@ -518,26 +531,30 @@ function buildService(mocks: ReturnType<typeof buildMocks>): AgentRunnerService 
     { read: vi.fn().mockReturnValue(2), warm: vi.fn().mockResolvedValue(undefined) } as any,
     // 27: agentRunRegistry
     mocks.mockAgentRunRegistry as unknown as AgentRunRegistry,
-    // 28-31: python* (gated off in tests; unused → empty stubs)
+    // 28-32: python*/shellNet* (gated off in tests; unused → empty stubs)
+    {} as any,
+    {} as any,
+    {} as any,
+    // 31: shellNetLimiter (Task 6, next to pythonLimiter)
+    {} as any,
+    {} as any,
+    // 33-36: wiki* (registerWikiTools is real, but takes objects it doesn't call here)
     {} as any,
     {} as any,
     {} as any,
     {} as any,
-    // 32-35: wiki* (registerWikiTools is real, but takes objects it doesn't call here)
+    // 37-38: auditLogRepo, sessionSearchService
     {} as any,
     {} as any,
-    {} as any,
-    {} as any,
-    // 36-37: auditLogRepo, sessionSearchService
-    {} as any,
-    {} as any,
-    // 38-41: MCP deps (the tail — must be here, not at python positions)
+    // 39-42: MCP deps (the tail — must be here, not at python positions)
     mocks.mockMcpServerRepo as any,
     mocks.mockNotificationRepo as any,
     mocks.mockMcpClientService as any,
     mocks.mockMcpTokenManager as any,
-    // 42: run-activity registry (per-run logger + activity tracking)
+    // 43: run-activity registry (per-run logger + activity tracking)
     mocks.mockRunActivity as unknown as import('../run-activity.registry.js').RunActivityRegistry,
+    // 44: tool approval service (approval gate bound into the ToolRegistry's approval context)
+    mocks.mockToolApprovalService as unknown as import('../../approvals/tool-approval.service.js').ToolApprovalService,
   );
 }
 
@@ -837,6 +854,54 @@ describe('AgentRunnerService', () => {
   });
 
   // ---------------------------------------------------------------- //
+  //  Test 14b: Wires the approval context onto the ToolRegistry       //
+  // ---------------------------------------------------------------- //
+
+  it('sets the approval context on the ToolRegistry for a primary run', async () => {
+    const spy = vi.spyOn(ToolRegistry.prototype, 'setApprovalContext');
+
+    await service.run(defaultOptions);
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const ctx = spy.mock.calls[0]![0];
+    expect(ctx).toMatchObject({
+      userId: 'user-1',
+      agentRunId: 'run-1',
+      sessionId: 'sess-1',
+      isSubAgent: false,
+    });
+    expect(typeof ctx.gate).toBe('function');
+
+    // The bound gate must delegate to ToolApprovalService.gate unmodified.
+    const gateInput = {
+      userId: 'user-1',
+      agentRunId: 'run-1',
+      sessionId: 'sess-1',
+      isSubAgent: false,
+      toolName: 'shell',
+      scopeKind: 'call' as const,
+      resourceKey: '',
+      extractorFailed: false,
+      params: {},
+    };
+    await ctx.gate(gateInput);
+    expect(mocks.mockToolApprovalService.gate).toHaveBeenCalledWith(gateInput);
+
+    spy.mockRestore();
+  });
+
+  it('sets isSubAgent true in the approval context for a sub-agent run', async () => {
+    const spy = vi.spyOn(ToolRegistry.prototype, 'setApprovalContext');
+
+    await service.run({ ...defaultOptions, isSubAgent: true });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0]![0]).toMatchObject({ isSubAgent: true });
+
+    spy.mockRestore();
+  });
+
+  // ---------------------------------------------------------------- //
   //  Test 15: Reuses existing AgentRun when agentRunId is provided    //
   // ---------------------------------------------------------------- //
 
@@ -1050,6 +1115,7 @@ describe('AgentRunnerService', () => {
       'user-1', // userId
       undefined, // budgetTracker — none in this test (no tokenBudget passed)
       300000, // subAgentTimeoutMs from policy.maxSubAgentRunMs
+      ['openai', 'anthropic'], // allowedProviders from policy, for anonymous default-worker resolution
     );
   });
 

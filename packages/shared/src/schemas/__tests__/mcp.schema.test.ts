@@ -6,6 +6,7 @@ import {
   updateMcpConnectionSchema,
   mcpBindingsSchema,
   setMcpTiersSchema,
+  setMcpApprovalOverridesSchema,
 } from '../mcp.schema.js';
 import { updateAgentDefinitionSchema } from '../agent.schema.js';
 
@@ -115,6 +116,26 @@ describe('setMcpTiersSchema', () => {
     expect(
       setMcpTiersSchema.safeParse({ tiers: { recommended: [''], optional: [], off: [] } }).success,
     ).toBe(false);
+  });
+});
+
+describe('setMcpApprovalOverridesSchema', () => {
+  it('accepts a sparse map of tool name -> ask|allow', () => {
+    const r = setMcpApprovalOverridesSchema.safeParse({ send_email: 'ask', search: 'allow' });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts an empty object (clearing all overrides)', () => {
+    expect(setMcpApprovalOverridesSchema.safeParse({}).success).toBe(true);
+  });
+
+  it('rejects values outside the ask|allow enum', () => {
+    expect(setMcpApprovalOverridesSchema.safeParse({ search: 'deny' }).success).toBe(false);
+  });
+
+  it('rejects a non-object payload', () => {
+    expect(setMcpApprovalOverridesSchema.safeParse('garbage').success).toBe(false);
+    expect(setMcpApprovalOverridesSchema.safeParse(null).success).toBe(false);
   });
 });
 

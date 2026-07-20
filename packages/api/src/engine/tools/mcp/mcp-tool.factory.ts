@@ -7,8 +7,8 @@
  * caller has no active connection → silent skip. TOFU: only tools present in
  * BOTH the explicit binding allowlist AND the cached catalog register.
  */
-import { createLogger } from '@clawix/shared';
-import type { McpBindings } from '@clawix/shared';
+import { createLogger, setMcpApprovalOverridesSchema } from '@clawix/shared';
+import type { McpApprovalOverrides, McpBindings } from '@clawix/shared';
 
 import type { McpServerForRun } from '../../../db/mcp-server.repository.js';
 import type { AuditLogRepository } from '../../../db/audit-log.repository.js';
@@ -20,6 +20,7 @@ import type { ToolRegistry } from '../../tool-registry.js';
 import { scanContextContent } from '../../prompt-injection-scanner.js';
 import { mcpToolCallDurationSeconds, mcpToolCallsTotal } from './mcp-metrics.js';
 import type { McpRunConnections } from './mcp-run-connections.js';
+import { mcpRequiresApproval } from './mcp-approval.js';
 
 const logger = createLogger('engine:tools:mcp:factory');
 
@@ -64,6 +65,14 @@ export async function registerMcpTools(
       continue;
     }
 
+    // Per-connection sparse overlay (Task 8, spec §3): parsed once per
+    // connection, not per tool. Malformed/absent JSON → null (fail closed to
+    // the annotation-derived default inside mcpRequiresApproval).
+    const approvalOverrides: McpApprovalOverrides | null = setMcpApprovalOverridesSchema
+      .nullable()
+      .catch(null)
+      .parse(connection.approvalOverrides);
+
     const allowed = new Set(binding.enabledTools);
     for (const tool of connection.tools) {
       if (!allowed.has(tool.name)) continue; // TOFU: explicit allowlist only
@@ -73,7 +82,7 @@ export async function registerMcpTools(
         logger.warn({ toolName }, 'Skipping MCP tool: combined name exceeds 64 chars');
         continue;
       }
-      registry.register(createMcpTool(opts, server, connection, tool, toolName));
+      registry.register(createMcpTool(opts, server, connection, tool, toolName, approvalOverrides));
     }
   }
 }
@@ -84,6 +93,7 @@ function createMcpTool(
   connection: McpConnection,
   tool: McpToolRow,
   toolName: string,
+  approvalOverrides: McpApprovalOverrides | null,
 ): Tool {
   const description = tool.scanFlagged
     ? `[flagged: this tool's description failed the prompt-injection scan (${tool.scanReason ?? 'unknown'})]`
@@ -96,6 +106,10 @@ function createMcpTool(
     // The MCP server is the source of truth for its own schema — pass params
     // through verbatim instead of running the registry's strict cast/validate/strip.
     rawParams: true,
+    // Ask-by-default (spec §3): overrides win; absent an entry, only an
+    // explicit readOnlyHint=true annotation loosens to allow.
+    requiresApproval: mcpRequiresApproval(tool.name, tool.annotations, approvalOverrides),
+    approvalScope: 'call',
     async execute(params, ctx): Promise<ToolResult> {
       const started = Date.now();
       let output: string;

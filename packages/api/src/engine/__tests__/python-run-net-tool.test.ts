@@ -59,7 +59,23 @@ describe('python_run_net tool', () => {
     await tool.execute({ code: 'print(1)' }, { abortSignal: new AbortController().signal });
     const startArgs = (deps.runner.start as ReturnType<typeof vi.fn>).mock.calls[0];
     // start(agentDef, mounts, options) — third arg must include network: 'clawix-python-net-egress'
-    expect(startArgs[2]).toMatchObject({ network: 'clawix-python-net-egress' });
+    expect(startArgs[2]).toMatchObject({
+      network: 'clawix-python-net-egress',
+      egressFirewall: true,
+    });
+  });
+
+  it('runs every agent exec as uid 1000 (root-booted container drops to 1000)', async () => {
+    const deps = makeDeps();
+    await createPythonRunNetTool(deps).execute(
+      { code: 'print(1)' },
+      { abortSignal: new AbortController().signal },
+    );
+    const execMock = deps.runner.exec as ReturnType<typeof vi.fn>;
+    expect(execMock.mock.calls.length).toBeGreaterThan(0);
+    for (const call of execMock.mock.calls) {
+      expect(call[2]).toMatchObject({ user: '1000:1000' });
+    }
   });
 
   it('passes timeout to runner.exec in milliseconds', async () => {

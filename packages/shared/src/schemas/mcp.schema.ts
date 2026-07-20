@@ -101,6 +101,17 @@ export interface McpToolTiers {
   readonly off: string[];
 }
 
+/**
+ * Sparse per-tool approval overlay for an MCP connection, keyed by tool name.
+ * Unlike `McpToolTiers`, this is NOT rebalanced wholesale — an entry is only
+ * present for tools a human explicitly toggled; absent entries fall back to
+ * the annotation-derived default (see `mcpRequiresApproval`).
+ */
+export type McpApprovalOverrides = Readonly<Record<string, 'ask' | 'allow'>>;
+
+/** PUT /mcp/connections/:id/approval-overrides body. */
+export const setMcpApprovalOverridesSchema = z.record(z.string(), z.enum(['ask', 'allow']));
+
 export type ImportMcpServerInput = z.infer<typeof importMcpServerSchema>;
 export type UpdateMcpServerInput = z.infer<typeof updateMcpServerSchema>;
 export type ConnectMcpInput = z.infer<typeof connectMcpSchema>;

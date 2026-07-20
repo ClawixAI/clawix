@@ -29,6 +29,7 @@ function makeServer(over: Partial<McpServerForRun> = {}): McpServerForRun {
         lastDiscoveredAt: new Date(),
         createdAt: new Date(),
         updatedAt: new Date(),
+        approvalOverrides: null,
         tools: [
           {
             id: 't1',
@@ -36,6 +37,9 @@ function makeServer(over: Partial<McpServerForRun> = {}): McpServerForRun {
             name: 'search',
             description: 'Search repos',
             inputSchema: { type: 'object', properties: { q: { type: 'string' } } },
+            // Declared read-only so it loosens to allow by default (spec §3);
+            // unrelated tests below exercise call mechanics, not approval gating.
+            annotations: { readOnlyHint: true },
             scanFlagged: false,
             scanReason: null,
             createdAt: new Date(),
@@ -46,6 +50,7 @@ function makeServer(over: Partial<McpServerForRun> = {}): McpServerForRun {
             name: 'create_issue',
             description: 'Create an issue',
             inputSchema: { type: 'object' },
+            annotations: null,
             scanFlagged: false,
             scanReason: null,
             createdAt: new Date(),
@@ -215,5 +220,63 @@ describe('registerMcpTools', () => {
       ...deps,
     } as never);
     expect(registry.has(`mcp__github__${longToolName}`)).toBe(false);
+  });
+
+  describe('approval derivation (Task 8, spec §3: ask-by-default)', () => {
+    const BOTH: import('@clawix/shared').McpBindings = {
+      servers: [{ serverId: 'srv1', enabledTools: ['search', 'create_issue'] }],
+    };
+
+    it('sets approvalScope "call" on every registered MCP tool', async () => {
+      await registerMcpTools(registry, {
+        servers: [makeServer()],
+        bindings: BOTH,
+        ...deps,
+      } as never);
+      expect(registry.get('mcp__github__search')?.approvalScope).toBe('call');
+      expect(registry.get('mcp__github__create_issue')?.approvalScope).toBe('call');
+    });
+
+    it('readOnlyHint: true annotation, no override → requiresApproval false', async () => {
+      await registerMcpTools(registry, {
+        servers: [makeServer()],
+        bindings: BOTH,
+        ...deps,
+      } as never);
+      expect(registry.get('mcp__github__search')?.requiresApproval).toBe(false);
+    });
+
+    it('no annotation, no override → requiresApproval true (fail closed)', async () => {
+      await registerMcpTools(registry, {
+        servers: [makeServer()],
+        bindings: BOTH,
+        ...deps,
+      } as never);
+      expect(registry.get('mcp__github__create_issue')?.requiresApproval).toBe(true);
+    });
+
+    it('explicit "allow" override loosens a non-read-only tool', async () => {
+      const server = makeServer();
+      server.connections[0]!.approvalOverrides = { create_issue: 'allow' };
+      await registerMcpTools(registry, { servers: [server], bindings: BOTH, ...deps } as never);
+      expect(registry.get('mcp__github__create_issue')?.requiresApproval).toBe(false);
+    });
+
+    it('explicit "ask" override wins even over readOnlyHint', async () => {
+      const server = makeServer();
+      server.connections[0]!.approvalOverrides = { search: 'ask' };
+      await registerMcpTools(registry, { servers: [server], bindings: BOTH, ...deps } as never);
+      expect(registry.get('mcp__github__search')?.requiresApproval).toBe(true);
+    });
+
+    it('malformed approvalOverrides JSON on the connection → treated as null (fail closed, no throw)', async () => {
+      const server = makeServer();
+      server.connections[0]!.approvalOverrides = 'not-an-object' as never;
+      await expect(
+        registerMcpTools(registry, { servers: [server], bindings: BOTH, ...deps } as never),
+      ).resolves.toBeUndefined();
+      expect(registry.get('mcp__github__create_issue')?.requiresApproval).toBe(true);
+      expect(registry.get('mcp__github__search')?.requiresApproval).toBe(false);
+    });
   });
 });

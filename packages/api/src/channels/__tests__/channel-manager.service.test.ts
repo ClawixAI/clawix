@@ -771,6 +771,229 @@ describe('ChannelManagerService', () => {
     });
   });
 
+  describe('approval frame delivery', () => {
+    it('subscribes to approvalFrame on module init', async () => {
+      mockChannelRepo.findActive.mockResolvedValue([]);
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      expect(mockPubsub.subscribe).toHaveBeenCalledWith(
+        PUBSUB_CHANNELS.approvalFrame,
+        expect.any(Function),
+      );
+    });
+
+    it('routes a prompt frame to the session adapter as approval.request', async () => {
+      const dbChannel = {
+        id: 'ch-telegram',
+        type: 'telegram',
+        name: 'Bot',
+        config: {},
+        isActive: true,
+      };
+      mockChannelRepo.findActive.mockResolvedValue([dbChannel]);
+
+      const channel = mockChannel({ id: 'ch-telegram' });
+      mockRegistry.create.mockReturnValue(channel);
+
+      mockSessionRepo.findById.mockResolvedValue({
+        id: 'sess-1',
+        userId: 'user-1',
+        channelId: 'ch-telegram',
+      });
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-1',
+        telegramId: '12345',
+      });
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      // approvalFrame is the third subscription (index 2)
+      const approvalCb = mockPubsub.subscribe.mock.calls[2]![1] as (msg: {
+        payload: Record<string, unknown>;
+      }) => Promise<void>;
+
+      const payload = {
+        kind: 'prompt',
+        sessionId: 'sess-1',
+        userId: 'user-1',
+        approvalId: 'apr-1',
+        toolName: 'wiki_delete',
+        paramsSummary: { pageId: 'p1' },
+        offeredScopes: ['allow_once', 'deny_once'],
+        reason: 'no_memory',
+        expiresAt: '2026-07-06T12:00:00.000Z',
+      };
+
+      await approvalCb({ payload });
+
+      expect(channel.sendMessage).toHaveBeenCalledWith({
+        recipientId: '12345',
+        text: 'Approval needed: agent wants to run wiki_delete. Open the dashboard to approve or deny.',
+        metadata: { event: 'approval.request', approval: payload },
+      });
+    });
+
+    it('routes a notice frame as approval.notice', async () => {
+      const dbChannel = {
+        id: 'ch-telegram',
+        type: 'telegram',
+        name: 'Bot',
+        config: {},
+        isActive: true,
+      };
+      mockChannelRepo.findActive.mockResolvedValue([dbChannel]);
+
+      const channel = mockChannel({ id: 'ch-telegram' });
+      mockRegistry.create.mockReturnValue(channel);
+
+      mockSessionRepo.findById.mockResolvedValue({
+        id: 'sess-1',
+        userId: 'user-1',
+        channelId: 'ch-telegram',
+      });
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-1',
+        telegramId: '12345',
+      });
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      const approvalCb = mockPubsub.subscribe.mock.calls[2]![1] as (msg: {
+        payload: Record<string, unknown>;
+      }) => Promise<void>;
+
+      const payload = {
+        kind: 'notice',
+        sessionId: 'sess-1',
+        userId: 'user-1',
+        approvalId: 'apr-2',
+        toolName: 'wiki_delete',
+        reason: 'standing_deny',
+      };
+
+      await approvalCb({ payload });
+
+      expect(channel.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // Notice fallback reports an automatic block, not an approve/deny CTA.
+          text: 'Blocked wiki_delete: a standing "always deny" rule denied it automatically. Manage standing decisions in the dashboard.',
+          metadata: { event: 'approval.notice', approval: payload },
+        }),
+      );
+    });
+
+    it('routes a resolved frame as approval.resolved', async () => {
+      const dbChannel = {
+        id: 'ch-telegram',
+        type: 'telegram',
+        name: 'Bot',
+        config: {},
+        isActive: true,
+      };
+      mockChannelRepo.findActive.mockResolvedValue([dbChannel]);
+
+      const channel = mockChannel({ id: 'ch-telegram' });
+      mockRegistry.create.mockReturnValue(channel);
+
+      mockSessionRepo.findById.mockResolvedValue({
+        id: 'sess-1',
+        userId: 'user-1',
+        channelId: 'ch-telegram',
+      });
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-1',
+        telegramId: '12345',
+      });
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      const approvalCb = mockPubsub.subscribe.mock.calls[2]![1] as (msg: {
+        payload: Record<string, unknown>;
+      }) => Promise<void>;
+
+      const payload = {
+        kind: 'resolved',
+        sessionId: 'sess-1',
+        userId: 'user-1',
+        approvalId: 'apr-1',
+        toolName: 'wiki_delete',
+        status: 'APPROVED',
+        scope: 'once',
+      };
+
+      await approvalCb({ payload });
+
+      expect(channel.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // Resolved fallback reports the outcome + scope, not an approve/deny CTA.
+          text: 'Approval for wiki_delete was approved (once).',
+          metadata: { event: 'approval.resolved', approval: payload },
+        }),
+      );
+    });
+
+    it('does not crash when sessionId has no active adapter', async () => {
+      mockChannelRepo.findActive.mockResolvedValue([]);
+      mockSessionRepo.findById.mockResolvedValue({
+        id: 'sess-1',
+        userId: 'user-1',
+        channelId: 'ch-gone',
+      });
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      const approvalCb = mockPubsub.subscribe.mock.calls[2]![1] as (msg: {
+        payload: Record<string, unknown>;
+      }) => Promise<void>;
+
+      await expect(
+        approvalCb({
+          payload: {
+            kind: 'prompt',
+            sessionId: 'sess-1',
+            userId: 'user-1',
+            approvalId: 'apr-1',
+            toolName: 'wiki_delete',
+          },
+        }),
+      ).resolves.not.toThrow();
+
+      expect(mockUserRepo.findById).not.toHaveBeenCalled();
+    });
+
+    it('skips delivery when the frame has no sessionId', async () => {
+      mockChannelRepo.findActive.mockResolvedValue([]);
+
+      const manager = createManager();
+      await manager.onModuleInit();
+
+      const approvalCb = mockPubsub.subscribe.mock.calls[2]![1] as (msg: {
+        payload: Record<string, unknown>;
+      }) => Promise<void>;
+
+      await expect(
+        approvalCb({
+          payload: {
+            kind: 'notice',
+            sessionId: null,
+            userId: 'user-1',
+            approvalId: 'apr-1',
+            toolName: 'wiki_delete',
+            reason: 'session_deny',
+          },
+        }),
+      ).resolves.not.toThrow();
+
+      expect(mockSessionRepo.findById).not.toHaveBeenCalled();
+    });
+  });
+
   it('stops all active channels', async () => {
     const dbChannel = {
       id: 'ch-1',

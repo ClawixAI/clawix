@@ -5,7 +5,8 @@ export type NotificationType =
   | 'MEMORY_REVOKED'
   | 'GROUP_INVITE'
   | 'GROUP_INVITE_RESPONSE'
-  | 'PRIMARY_AGENT_ASSIGNED';
+  | 'PRIMARY_AGENT_ASSIGNED'
+  | 'TOOL_APPROVAL';
 
 export interface NotificationPayload {
   inviteId?: string;
@@ -22,6 +23,15 @@ export interface NotificationPayload {
   responderId?: string;
   responderName?: string | null;
   responderEmail?: string | null;
+  // TOOL_APPROVAL (raised by ApprovalDeliveryService.deliverPrompt/deliverNotice —
+  // packages/api/src/approvals/approval-delivery.service.ts. `offeredScopes` and
+  // `expiresAt` are only present on prompt deliveries, not standing-deny notices.
+  approvalId?: string;
+  toolName?: string;
+  paramsSummary?: Record<string, string>;
+  offeredScopes?: string[];
+  reason?: string;
+  expiresAt?: string;
 }
 
 export interface Notification {

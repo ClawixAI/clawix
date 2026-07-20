@@ -8,6 +8,7 @@ import { useChat } from './use-chat';
 import { ChatThread } from './chat-thread';
 import { ChatInput, EmptyState } from './chat-input';
 import { SessionSidebar } from './session-sidebar';
+import { ApprovalCard } from './approval-card';
 
 const SIDEBAR_STORAGE_KEY = 'conversations-sidebar-open';
 
@@ -57,6 +58,8 @@ export default function ConversationsPage() {
     loadMoreSessions,
     refreshSessions,
     toolProgressMode,
+    pendingApprovals,
+    applyResolvedApproval,
   } = useChat();
 
   // Reset banner dismissal whenever a fresh error string arrives so it re-displays.
@@ -157,6 +160,18 @@ export default function ConversationsPage() {
             {isArchived && <span className="ml-2 text-xs opacity-60">(Archived)</span>}
           </span>
         </div>
+        {pendingApprovals.length > 0 && (
+          <div className="mx-auto flex w-full max-w-[768px] flex-col gap-3 px-6 pt-4">
+            {pendingApprovals.map((frame) => (
+              <ApprovalCard
+                key={frame.approvalId}
+                frame={frame}
+                onResolved={applyResolvedApproval}
+              />
+            ))}
+          </div>
+        )}
+
         {error && !errorDismissed && (
           <div
             role="alert"

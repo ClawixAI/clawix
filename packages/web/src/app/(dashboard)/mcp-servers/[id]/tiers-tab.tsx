@@ -12,16 +12,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   autoSortConnectionTiers,
+  getConnectionApprovalOverrides,
   getConnectionTiers,
   listMcpTools,
+  mcpApprovalDefault,
+  setConnectionApprovalOverrides,
   setConnectionTiers,
+  type McpApprovalOverride,
+  type McpApprovalOverrides,
   type McpToolDto,
   type McpToolTiers,
 } from '@/lib/mcp';
 
 type Tier = 'recommended' | 'optional' | 'off';
+
+const ASK_TOOLTIP =
+  'Chat approvals for MCP tools last at most a session — permanent allow lives here.';
 
 /** Build the serverId-keyed tier assignment from a tiers object. */
 function assignmentFromTiers(
@@ -51,6 +61,9 @@ export function TiersTab({
 }) {
   const [tools, setTools] = useState<McpToolDto[]>([]);
   const [assignment, setAssignment] = useState<Record<string, Tier>>({});
+  // Explicit per-tool approval overrides only; a tool absent here shows its
+  // derived default (`mcpApprovalDefault`). Persisted independently of tiers.
+  const [overrides, setOverrides] = useState<McpApprovalOverrides>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sorting, setSorting] = useState(false);
@@ -62,12 +75,14 @@ export function TiersTab({
     }
     void (async () => {
       try {
-        const [t, tiers] = await Promise.all([
+        const [t, tiers, ov] = await Promise.all([
           listMcpTools(serverId),
           getConnectionTiers(connectionId),
+          getConnectionApprovalOverrides(connectionId),
         ]);
         setTools(t);
         setAssignment(assignmentFromTiers(t, tiers));
+        setOverrides(ov);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to load tiers');
       } finally {
@@ -75,6 +90,23 @@ export function TiersTab({
       }
     })();
   }, [serverId, connectionId]);
+
+  /** Persist the "Ask before use" toggle for one tool, PUTing the full map. */
+  async function toggleApproval(toolName: string, ask: boolean) {
+    if (!connectionId) return;
+    const next: McpApprovalOverrides = {
+      ...overrides,
+      [toolName]: (ask ? 'ask' : 'allow') satisfies McpApprovalOverride,
+    };
+    const prev = overrides;
+    setOverrides(next); // optimistic
+    try {
+      await setConnectionApprovalOverrides(connectionId, next);
+    } catch (err) {
+      setOverrides(prev); // roll back
+      toast.error(err instanceof Error ? err.message : 'Failed to save approval setting');
+    }
+  }
 
   if (!connectionId)
     return (
@@ -141,19 +173,36 @@ export function TiersTab({
               <span className="font-mono text-xs">{tool.name}</span>
               {tool.scanFlagged && <Badge variant="destructive">flagged</Badge>}
             </span>
-            <Select
-              value={assignment[tool.name] ?? 'off'}
-              onValueChange={(v) => setAssignment((a) => ({ ...a, [tool.name]: v as Tier }))}
-            >
-              <SelectTrigger className="w-36">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="recommended">Recommended</SelectItem>
-                <SelectItem value="optional">Optional</SelectItem>
-                <SelectItem value="off">Off</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-4">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Switch
+                      checked={
+                        (overrides[tool.name] ?? mcpApprovalDefault(tool.annotations)) === 'ask'
+                      }
+                      onCheckedChange={(on) => void toggleApproval(tool.name, on)}
+                      aria-label={`Ask before use: ${tool.name}`}
+                    />
+                    Ask before use
+                  </label>
+                </TooltipTrigger>
+                <TooltipContent>{ASK_TOOLTIP}</TooltipContent>
+              </Tooltip>
+              <Select
+                value={assignment[tool.name] ?? 'off'}
+                onValueChange={(v) => setAssignment((a) => ({ ...a, [tool.name]: v as Tier }))}
+              >
+                <SelectTrigger className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="recommended">Recommended</SelectItem>
+                  <SelectItem value="optional">Optional</SelectItem>
+                  <SelectItem value="off">Off</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </li>
         ))}
         {tools.length === 0 && (

@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { AdminModule } from './admin/index.js';
 import { DashboardModule } from './dashboard/index.js';
 import { AgentsModule } from './agents/index.js';
+import { ApprovalsModule } from './approvals/approvals.module.js';
 import { AuditModule } from './audit/index.js';
 import { AuthModule } from './auth/index.js';
 import { JwtAuthGuard } from './auth/jwt-auth.guard.js';
@@ -55,6 +56,7 @@ import { WorkspaceModule } from './workspace/index.js';
     CacheModule,
     AuthModule,
     AgentsModule,
+    ApprovalsModule,
     TasksModule,
     SkillsModule,
     ChannelsModule,

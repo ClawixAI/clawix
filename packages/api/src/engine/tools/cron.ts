@@ -128,6 +128,20 @@ export function createCronTool(
       },
       required: ['action'],
     },
+    // Only the mutating actions (create/remove) require approval — list/runs/
+    // runDetail are reads and are exempt via requiresApprovalForParams. The
+    // resource key is action-composite (`${action}:${jobId}` or just
+    // `${action}` when there's no jobId yet, e.g. create) so an approval
+    // granted for one action/job can never leak into approving a different
+    // action or a different job (spec §2 amendment).
+    requiresApproval: true,
+    requiresApprovalForParams: (p) => ['create', 'remove'].includes(String(p['action'])),
+    approvalScope: 'resource',
+    resourceKeyFromParams: (p) => {
+      const action = String(p['action'] ?? '');
+      const jobId = String(p['jobId'] ?? '');
+      return jobId ? `${action}:${jobId}` : action;
+    },
 
     async execute(params: Record<string, unknown>): Promise<ToolResult> {
       const action = params['action'] as string;

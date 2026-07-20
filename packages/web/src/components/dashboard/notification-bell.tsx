@@ -7,9 +7,18 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
+import { authFetch } from '@/lib/auth';
 import { groupsApi } from '@/lib/api/groups';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
+import { CHOICE_LABELS, isApprovalChoice, type ApprovalChoice } from '@/lib/approval-labels';
 import { useNotificationsStream } from './use-notifications-stream';
+
+// Mirrors the (non-exported) map in `(dashboard)/conversations/approval-card.tsx` —
+// only the standing-deny reasons a TOOL_APPROVAL notice can carry.
+const REASON_TEXT: Record<string, string> = {
+  standing_deny: 'Blocked automatically by a standing "always deny" rule for this tool.',
+  session_deny: 'Blocked automatically by a "deny this session" rule for this tool.',
+};
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -52,6 +61,14 @@ export function NotificationBell() {
           description: `An admin has switched your primary agent to ${name}.`,
           duration: 8000,
         });
+        return;
+      }
+
+      if (n.type === 'TOOL_APPROVAL') {
+        // No toast here — the amber dashboard banner (pendingApprovals in
+        // unread-chat-provider.tsx, fed by the chat WS's approval.* frames)
+        // already surfaces live prompts. A second popup on top of the bell
+        // badge bump above would just be redundant noise.
         return;
       }
 
@@ -141,6 +158,47 @@ export function NotificationBell() {
     }
   };
 
+  const handleApprovalChoice = async (n: Notification, choice: ApprovalChoice) => {
+    const approvalId = n.payload.approvalId;
+    if (!approvalId) return;
+    setBusyId(n.id);
+    try {
+      const res = await authFetch<{ success: true; data: { downgraded: boolean } }>(
+        `/api/v1/chat/approvals/${encodeURIComponent(approvalId)}/resolve`,
+        { method: 'POST', body: JSON.stringify({ choice }) },
+      );
+      await notificationsApi.markRead(n.id);
+      dismiss(n.id);
+      if (res.data.downgraded) {
+        toast.info('Your choice exceeded what was offered — downgraded to a narrower scope.');
+      }
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to resolve approval');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleApprovalRevoke = async (n: Notification) => {
+    const approvalId = n.payload.approvalId;
+    if (!approvalId) return;
+    setBusyId(n.id);
+    try {
+      await authFetch<{ success: true }>(
+        `/api/v1/chat/approvals/${encodeURIComponent(approvalId)}/revoke`,
+        { method: 'POST' },
+      );
+      await notificationsApi.markRead(n.id);
+      dismiss(n.id);
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to revoke');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const handleMarkAll = async () => {
     setLoading(true);
     try {
@@ -204,6 +262,8 @@ export function NotificationBell() {
                 busy={busyId === n.id}
                 onAccept={() => handleAccept(n)}
                 onReject={() => handleReject(n)}
+                onApprovalChoice={(choice) => handleApprovalChoice(n, choice)}
+                onApprovalRevoke={() => handleApprovalRevoke(n)}
               />
             ))
           )}
@@ -218,12 +278,73 @@ function NotificationRow({
   busy,
   onAccept,
   onReject,
+  onApprovalChoice,
+  onApprovalRevoke,
 }: {
   notification: Notification;
   busy: boolean;
   onAccept: () => void;
   onReject: () => void;
+  onApprovalChoice: (choice: ApprovalChoice) => void;
+  onApprovalRevoke: () => void;
 }) {
+  if (notification.type === 'TOOL_APPROVAL') {
+    const { toolName, paramsSummary, offeredScopes, reason } = notification.payload;
+    // Honest-buttons rule: only the choices the server actually offered —
+    // never a hardcoded six.
+    const choices = (offeredScopes ?? []).filter(isApprovalChoice);
+    const paramsEntries = paramsSummary ? Object.entries(paramsSummary) : [];
+    return (
+      <div
+        className={`flex flex-col gap-2 border-b px-3 py-3 text-sm last:border-b-0 ${
+          notification.isRead ? 'opacity-60' : ''
+        }`}
+      >
+        <div>
+          <span className="font-medium">Tool approval</span>:{' '}
+          <code className="font-mono text-xs">{toolName ?? 'unknown'}</code>
+        </div>
+        {paramsEntries.length > 0 && (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+            {paramsEntries.map(([key, value]) => (
+              <div key={key} className="contents">
+                <dt className="text-muted-foreground">{key}</dt>
+                <dd className="truncate font-mono">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {choices.length === 0 && reason && (
+          <div className="text-xs text-muted-foreground">{REASON_TEXT[reason] ?? reason}</div>
+        )}
+        <div className="text-xs text-muted-foreground">
+          {new Date(notification.createdAt).toLocaleString()}
+        </div>
+        {choices.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {choices.map((choice) => (
+              <Button
+                key={choice}
+                size="sm"
+                variant={choice.startsWith('allow') ? 'default' : 'destructive'}
+                disabled={busy}
+                onClick={() => onApprovalChoice(choice)}
+              >
+                {CHOICE_LABELS[choice]}
+              </Button>
+            ))}
+          </div>
+        ) : (
+          <div>
+            <Button size="sm" variant="outline" disabled={busy} onClick={onApprovalRevoke}>
+              Revoke standing deny
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (notification.type === 'GROUP_INVITE') {
     const groupName = notification.payload.groupName ?? 'a group';
     return (

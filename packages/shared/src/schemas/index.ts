@@ -163,6 +163,7 @@ export {
   updateMcpConnectionSchema,
   mcpBindingsSchema,
   setMcpTiersSchema,
+  setMcpApprovalOverridesSchema,
   type ImportMcpServerInput,
   type UpdateMcpServerInput,
   type ConnectMcpInput,
@@ -170,4 +171,5 @@ export {
   type McpBindings,
   type McpToolTiers,
   type SetMcpTiersInput,
+  type McpApprovalOverrides,
 } from './mcp.schema.js';

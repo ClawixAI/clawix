@@ -66,6 +66,7 @@ export class AgentsService {
     // official/template agents) are exempt.
     if (createdById && userRole !== 'admin') {
       await this.enforceAgentLimit(createdById);
+      await this.assertProviderAllowed(createdById, input.provider);
     }
     return this.agentDefRepo.create({ ...input, createdById, isOfficial });
   }
@@ -85,6 +86,23 @@ export class AgentsService {
     }
   }
 
+  /**
+   * Throw `BadRequestException` if the given provider is not permitted by the
+   * user's policy (`Policy.allowedProviders`). This is the definition-time gate
+   * that stops a user persisting an agent naming an out-of-policy provider; the
+   * run-time provider check in `AgentRunnerService` remains the backstop.
+   */
+  private async assertProviderAllowed(userId: string, provider: string): Promise<void> {
+    const user = await this.userRepo.findById(userId);
+    const policy = await this.policyRepo.findById(user.policyId);
+    if (!policy.allowedProviders.includes(provider)) {
+      throw new BadRequestException(
+        `Provider '${provider}' is not allowed by your policy. ` +
+          `Allowed providers: ${policy.allowedProviders.join(', ') || '(none)'}.`,
+      );
+    }
+  }
+
   async updateAgent(
     id: string,
     input: UpdateAgentDefinitionInput & { readonly isActive?: boolean },
@@ -95,6 +113,11 @@ export class AgentsService {
       const existing = await this.agentDefRepo.findById(id);
       if (existing.isOfficial || existing.createdById !== userId) {
         throw new ForbiddenException('You can only edit your own custom agent definitions');
+      }
+      // `provider` is updatable via the partial update schema — gate a change to
+      // it against the owner's policy, same as at creation time.
+      if (input.provider !== undefined && userId) {
+        await this.assertProviderAllowed(userId, input.provider);
       }
     }
     return this.agentDefRepo.update(id, input);
@@ -139,6 +162,10 @@ export class AgentsService {
     },
     createdById?: string,
   ) {
+    // The sub-agent runs as `input.userId`, so gate its provider against that
+    // user's policy (not the caller's).
+    await this.assertProviderAllowed(input.userId, input.provider);
+
     // Find user's primary agent to get workspace path
     const primaryUserAgent = await this.userAgentRepo.findByUserId(input.userId);
     const workspacePath = primaryUserAgent?.workspacePath ?? `users/${input.userId}/workspace`;

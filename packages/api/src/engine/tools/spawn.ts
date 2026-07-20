@@ -46,6 +46,8 @@ interface TaskSubmitter {
  * @param userId            - The ID of the user initiating the spawn.
  * @param budgetTracker     - Optional shared budget tracker inherited by the sub-agent.
  * @param subAgentTimeoutMs - Wall-clock cap (ms) for the spawned run, from the user's policy.
+ * @param allowedProviders  - The caller's policy `allowedProviders`; used to resolve an
+ *                            in-policy provider for anonymous (default-worker) spawns.
  */
 export function createSpawnTool(
   agentDefRepo: AgentDefinitionRepository,
@@ -56,6 +58,7 @@ export function createSpawnTool(
   userId: string,
   budgetTracker?: BudgetTracker,
   subAgentTimeoutMs?: number,
+  allowedProviders?: string[],
 ): Tool {
   return {
     name: 'spawn',
@@ -113,8 +116,10 @@ export function createSpawnTool(
         agentDefId = agentDef.id;
         displayName = agentName;
       } else {
-        // Anonymous spawn: use the default worker
-        const defaultWorker = await agentDefRepo.findOrCreateDefaultWorker();
+        // Anonymous spawn: use a default worker whose provider is permitted by
+        // the caller's policy (auto-substituted if the org default is out-of-policy).
+        const defaultWorker =
+          await agentDefRepo.findOrCreateDefaultWorkerForPolicy(allowedProviders);
         agentDefId = defaultWorker.id;
         displayName = 'default-worker';
       }

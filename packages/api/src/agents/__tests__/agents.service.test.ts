@@ -44,6 +44,7 @@ function makeService(opts: {
   findByAgentDefinitionId?: ReturnType<typeof vi.fn>;
   agentCount?: number;
   maxAgents?: number;
+  allowedProviders?: string[];
   agentDefUpdate?: ReturnType<typeof vi.fn>;
 }) {
   const agentDefRepo = {
@@ -64,14 +65,22 @@ function makeService(opts: {
 
   const userAgentRepo = {
     existsForUser: vi.fn().mockResolvedValue(opts.existsForUser ?? false),
+    findByUserId: vi.fn().mockResolvedValue({ workspacePath: 'users/u/workspace' }),
+    create: vi
+      .fn()
+      .mockImplementation(async (data: Record<string, unknown>) => ({ id: 'ua-1', ...data })),
   } as unknown as UserAgentRepository;
 
   const userRepo = {
-    findById: vi.fn().mockResolvedValue({ id: ownerId, policyId: 'policy-1' }),
+    findById: vi.fn().mockImplementation(async (id: string) => ({ id, policyId: 'policy-1' })),
   } as unknown as UserRepository;
 
   const policyRepo = {
-    findById: vi.fn().mockResolvedValue({ id: 'policy-1', maxAgents: opts.maxAgents ?? 5 }),
+    findById: vi.fn().mockResolvedValue({
+      id: 'policy-1',
+      maxAgents: opts.maxAgents ?? 5,
+      allowedProviders: opts.allowedProviders ?? ['anthropic', 'openai'],
+    }),
   } as unknown as PolicyRepository;
 
   const prisma = {} as unknown as PrismaService;
@@ -201,6 +210,39 @@ describe('AgentsService.updateAgent', () => {
       service.updateAgent(agentId, { name: 'hacked' }, otherUserId, 'user'),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
+
+  it('rejects updating provider to one not in the owner’s policy', async () => {
+    const { service } = makeService({ allowedProviders: ['anthropic', 'openai'] });
+    await expect(
+      service.updateAgent(agentId, { provider: 'gemini' }, ownerId, 'user'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('allows updating provider to one in the owner’s policy', async () => {
+    const agentDefUpdate = vi.fn().mockResolvedValue(makeAgent());
+    const { service } = makeService({ allowedProviders: ['anthropic', 'openai'], agentDefUpdate });
+    await expect(
+      service.updateAgent(agentId, { provider: 'openai' }, ownerId, 'user'),
+    ).resolves.toBeDefined();
+    expect(agentDefUpdate).toHaveBeenCalled();
+  });
+
+  it('does not check the provider when the update omits it', async () => {
+    const agentDefUpdate = vi.fn().mockResolvedValue(makeAgent());
+    const { service, policyRepo } = makeService({ agentDefUpdate });
+    await service.updateAgent(agentId, { name: 'renamed' }, ownerId, 'user');
+    expect(policyRepo.findById).not.toHaveBeenCalled();
+    expect(agentDefUpdate).toHaveBeenCalled();
+  });
+
+  it('exempts admins from the provider check on update', async () => {
+    const agentDefUpdate = vi.fn().mockResolvedValue(makeAgent());
+    const { service } = makeService({ allowedProviders: ['anthropic'], agentDefUpdate });
+    await expect(
+      service.updateAgent(agentId, { provider: 'gemini' }, adminId, 'admin'),
+    ).resolves.toBeDefined();
+    expect(agentDefUpdate).toHaveBeenCalled();
+  });
 });
 
 describe('AgentsService.listAgentRuns', () => {
@@ -238,5 +280,79 @@ describe('AgentsService.listAgentRuns', () => {
       { page: 1, limit: 10 },
       undefined,
     );
+  });
+});
+
+describe('AgentsService.createAgent — provider policy enforcement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const baseInput = {
+    name: 'My Worker',
+    description: '',
+    systemPrompt: 'sys',
+    provider: 'gemini',
+    model: 'gemini-2.5-pro',
+    role: 'worker' as const,
+    maxTokensPerRun: 50000,
+  };
+
+  it('rejects a provider not in the creator’s policy allowedProviders', async () => {
+    const { service } = makeService({ allowedProviders: ['anthropic', 'openai'] });
+
+    await expect(service.createAgent(baseInput, ownerId, 'user')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('allows a provider that is in the creator’s policy allowedProviders', async () => {
+    const { service, agentDefRepo } = makeService({ allowedProviders: ['anthropic', 'openai'] });
+
+    await expect(
+      service.createAgent({ ...baseInput, provider: 'openai' }, ownerId, 'user'),
+    ).resolves.toBeDefined();
+    expect(agentDefRepo.create).toHaveBeenCalled();
+  });
+
+  it('exempts admins (official/template agents) from the provider check', async () => {
+    const { service, agentDefRepo } = makeService({ allowedProviders: ['anthropic'] });
+
+    await expect(
+      service.createAgent({ ...baseInput, provider: 'gemini' }, adminId, 'admin'),
+    ).resolves.toBeDefined();
+    expect(agentDefRepo.create).toHaveBeenCalled();
+  });
+});
+
+describe('AgentsService.createSubAgent — provider policy enforcement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const baseSubInput = {
+    userId: otherUserId,
+    name: 'Sub Worker',
+    systemPrompt: 'sys',
+    provider: 'gemini',
+    model: 'gemini-2.5-pro',
+    maxTokensPerRun: 50000,
+  };
+
+  it('rejects a provider not in the target user’s policy allowedProviders', async () => {
+    const { service } = makeService({ allowedProviders: ['anthropic', 'openai'] });
+
+    await expect(service.createSubAgent(baseSubInput, ownerId)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('allows a provider that is in the target user’s policy allowedProviders', async () => {
+    const { service, agentDefRepo } = makeService({ allowedProviders: ['anthropic', 'openai'] });
+
+    await expect(
+      service.createSubAgent({ ...baseSubInput, provider: 'anthropic' }, ownerId),
+    ).resolves.toBeDefined();
+    expect(agentDefRepo.create).toHaveBeenCalled();
   });
 });

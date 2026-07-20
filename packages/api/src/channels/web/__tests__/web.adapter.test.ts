@@ -187,6 +187,91 @@ describe('createWebAdapter', () => {
         }),
       ).resolves.toBe('m1');
     });
+
+    describe('approval.* frames', () => {
+      it('emits an approval.request frame (not message.create) for a prompt', async () => {
+        const socket = makeMockSocket();
+        adapter.addConnection('user-1', socket as never);
+
+        const approval = {
+          kind: 'prompt',
+          approvalId: 'apr-1',
+          sessionId: 'sess-1',
+          userId: 'user-1',
+          toolName: 'wiki_delete',
+        };
+
+        await adapter.sendMessage({
+          recipientId: 'user-1',
+          text: 'Approval needed: agent wants to run wiki_delete. Open the dashboard to approve or deny.',
+          metadata: { event: 'approval.request', approval },
+        });
+
+        expect(socket.send).toHaveBeenCalledOnce();
+        const payload = JSON.parse(socket.send.mock.calls[0]![0] as string) as {
+          type: string;
+          payload: unknown;
+        };
+        expect(payload.type).toBe('approval.request');
+        expect(payload.payload).toEqual(approval);
+      });
+
+      it('emits an approval.notice frame', async () => {
+        const socket = makeMockSocket();
+        adapter.addConnection('user-1', socket as never);
+
+        const approval = {
+          kind: 'notice',
+          approvalId: 'apr-2',
+          sessionId: 'sess-1',
+          userId: 'user-1',
+          toolName: 'wiki_delete',
+          reason: 'standing_deny',
+        };
+
+        await adapter.sendMessage({
+          recipientId: 'user-1',
+          text: 'irrelevant fallback text',
+          metadata: { event: 'approval.notice', approval },
+        });
+
+        expect(socket.send).toHaveBeenCalledOnce();
+        const payload = JSON.parse(socket.send.mock.calls[0]![0] as string) as {
+          type: string;
+          payload: unknown;
+        };
+        expect(payload.type).toBe('approval.notice');
+        expect(payload.payload).toEqual(approval);
+      });
+
+      it('emits an approval.resolved frame', async () => {
+        const socket = makeMockSocket();
+        adapter.addConnection('user-1', socket as never);
+
+        const approval = {
+          kind: 'resolved',
+          approvalId: 'apr-1',
+          sessionId: 'sess-1',
+          userId: 'user-1',
+          status: 'APPROVED',
+          scope: 'once',
+        };
+
+        await adapter.sendMessage({
+          recipientId: 'user-1',
+          text: 'irrelevant fallback text',
+          metadata: { event: 'approval.resolved', approval },
+        });
+
+        expect(socket.send).toHaveBeenCalledOnce();
+        const payload = JSON.parse(socket.send.mock.calls[0]![0] as string) as {
+          type: string;
+          payload: unknown;
+        };
+        expect(payload.type).toBe('approval.resolved');
+        expect(payload.payload).toEqual(approval);
+      });
+    });
   });
 
   describe('sendError()', () => {

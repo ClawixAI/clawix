@@ -35,6 +35,8 @@ export interface CatalogToolData {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: Prisma.InputJsonValue;
+  /** MCP spec tool annotations captured at discovery — untrusted hints. */
+  readonly annotations?: Prisma.NullableJsonNullValueInput | Prisma.InputJsonValue;
   readonly scanFlagged: boolean;
   readonly scanReason?: string | null;
 }
@@ -229,15 +231,37 @@ export class McpServerRepository {
     }
   }
 
-  /** Persist a connection's curated tool tiers (normalized by the service). */
+  /**
+   * Persist a connection's curated tool tiers (normalized by the service).
+   * Auto-sort additionally proposes per-tool approval overlays in the same
+   * LLM call — when supplied, `approvalOverrides` is written in the same
+   * update (a single query is inherently atomic, so both columns land or
+   * neither does).
+   */
   async updateConnectionTiers(
     connectionId: string,
     tiers: Prisma.InputJsonValue,
+    approvalOverrides?: Prisma.InputJsonValue,
   ): Promise<McpConnection> {
     try {
       return await this.prisma.mcpConnection.update({
         where: { id: connectionId },
-        data: { tiers },
+        data: { tiers, ...(approvalOverrides !== undefined ? { approvalOverrides } : {}) },
+      });
+    } catch (error) {
+      handlePrismaError(error, 'McpConnection');
+    }
+  }
+
+  /** Persist a human-curated per-tool approval overlay (sparse map, replaces wholesale). */
+  async updateConnectionApprovalOverrides(
+    connectionId: string,
+    approvalOverrides: Prisma.InputJsonValue,
+  ): Promise<McpConnection> {
+    try {
+      return await this.prisma.mcpConnection.update({
+        where: { id: connectionId },
+        data: { approvalOverrides },
       });
     } catch (error) {
       handlePrismaError(error, 'McpConnection');

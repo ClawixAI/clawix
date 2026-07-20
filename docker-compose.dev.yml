@@ -268,3 +268,8 @@ networks:
     name: clawix-python-net-egress
     driver: bridge
     internal: false
+    # RFC1918/metadata egress is blocked PER-CONTAINER by the egress-firewall
+    # entrypoint baked into the runner images (routed private ranges + gateway +
+    # 169.254.169.254 dropped; public egress + DNS preserved). Used by
+    # python_run_net and shell_net ephemeral runners.
+    # See docs/specs/2026-07-16-egress-filter-design.md.

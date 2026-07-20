@@ -29,6 +29,7 @@ export const PUBSUB_CHANNELS = {
   agentResultReady: `${REDIS_KEY_PREFIX}agent:result-ready`,
   channelResponseReady: `${REDIS_KEY_PREFIX}channel:response-ready`,
   cronResultReady: `${REDIS_KEY_PREFIX}cron:result-ready`,
+  approvalFrame: `${REDIS_KEY_PREFIX}approval:frame`,
 } as const;
 
 /** Connection timeout in milliseconds. */
