@@ -101,6 +101,7 @@ import type { UserAgentRepository } from '../../db/user-agent.repository.js';
 import type { MemoryConsolidationService } from '../memory-consolidation.service.js';
 import type { ContainerPoolService } from '../container-pool.service.js';
 import { createProvider } from '../providers/provider-factory.js';
+import { PUBSUB_CHANNELS } from '../../cache/cache.constants.js';
 import { ReasoningLoop } from '../reasoning-loop.js';
 import { registerBuiltinTools } from '../tools/index.js';
 import { createSpawnTool } from '../tools/spawn.js';
@@ -205,6 +206,9 @@ const mockPolicy = {
   allowBrowserCdp: false,
   maxConcurrentBrowserSessions: 2,
   maxSubAgentRunMs: 300000,
+  maxConcurrentSubAgents: 3,
+  maxPendingSubAgents: 20,
+  maxConcurrentPrimaryRuns: 2,
   allowMcp: false,
   isActive: true,
   createdAt: new Date(),
@@ -280,9 +284,11 @@ function buildMocks() {
   const mockAgentRunRepo: {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
+    countActivePrimaryRunsForUser: ReturnType<typeof vi.fn>;
   } = {
     create: vi.fn().mockResolvedValue(mockAgentRun),
     update: vi.fn().mockResolvedValue({ ...mockAgentRun, status: 'completed' }),
+    countActivePrimaryRunsForUser: vi.fn().mockResolvedValue(0),
   };
 
   const mockAgentDefRepo: {
@@ -454,6 +460,38 @@ function buildMocks() {
     clearSessionMemory: vi.fn(),
   };
 
+  const mockEngineRedis: {
+    llen: ReturnType<typeof vi.fn>;
+    get: ReturnType<typeof vi.fn>;
+    set: ReturnType<typeof vi.fn>;
+    lrange: ReturnType<typeof vi.fn>;
+    lrem: ReturnType<typeof vi.fn>;
+  } = {
+    llen: vi.fn().mockResolvedValue(0),
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue(undefined),
+    lrange: vi.fn().mockResolvedValue([]),
+    lrem: vi.fn().mockResolvedValue(0),
+  };
+
+  const mockResultPubsub: {
+    publish: ReturnType<typeof vi.fn>;
+  } = {
+    publish: vi.fn().mockResolvedValue(1),
+  };
+
+  const mockCapacityLedger: {
+    tryAcquireSubAgent: ReturnType<typeof vi.fn>;
+    releaseSubAgent: ReturnType<typeof vi.fn>;
+    snapshot: ReturnType<typeof vi.fn>;
+  } = {
+    tryAcquireSubAgent: vi.fn().mockReturnValue(true),
+    releaseSubAgent: vi.fn(),
+    snapshot: vi
+      .fn()
+      .mockReturnValue({ ceiling: 40, pooled: { total: 40 }, subAgentActive: 0, total: 40 }),
+  };
+
   return {
     mockSessionManager,
     mockContainerRunner,
@@ -480,6 +518,9 @@ function buildMocks() {
     mockMcpClientService,
     mockMcpTokenManager,
     mockToolApprovalService,
+    mockEngineRedis,
+    mockResultPubsub,
+    mockCapacityLedger,
   };
 }
 
@@ -555,6 +596,11 @@ function buildService(mocks: ReturnType<typeof buildMocks>): AgentRunnerService 
     mocks.mockRunActivity as unknown as import('../run-activity.registry.js').RunActivityRegistry,
     // 44: tool approval service (approval gate bound into the ToolRegistry's approval context)
     mocks.mockToolApprovalService as unknown as import('../../approvals/tool-approval.service.js').ToolApprovalService,
+    // 45-46: engine redis + result pubsub (WS-C: task tools + deferred-delivery wake-up)
+    mocks.mockEngineRedis as unknown as import('../../cache/redis.service.js').RedisService,
+    mocks.mockResultPubsub as unknown as import('../../cache/redis-pubsub.service.js').RedisPubSubService,
+    // 47: container capacity ledger (#198 host-wide ceiling for sub-agent containers)
+    mocks.mockCapacityLedger as unknown as import('../container-capacity.ledger.js').ContainerCapacityLedger,
   );
 }
 
@@ -613,6 +659,110 @@ describe('AgentRunnerService', () => {
     });
     // The last assistant message ID from saveMessages should be threaded through
     expect(result.responseMessageId).toBe('saved-msg-1');
+  });
+
+  // ---------------------------------------------------------------- //
+  //  WS-C: hidden reinvocation injection (D5) + delivery wake-up (D4) //
+  // ---------------------------------------------------------------- //
+
+  it('saves the reinvocation injection hidden from visible history (D5)', async () => {
+    await service.run({ ...defaultOptions, isReinvocation: true });
+
+    const userSave = mocks.mockSessionManager.saveMessages.mock.calls.find(
+      (c: unknown[]) => (c[1] as { role: string }[])[0]?.role === 'user',
+    );
+    expect(userSave).toBeDefined();
+    expect(userSave![2]).toEqual({ hiddenInHistory: [true] });
+  });
+
+  it('saves a normal user turn without the hidden flag', async () => {
+    await service.run(defaultOptions);
+
+    const userSave = mocks.mockSessionManager.saveMessages.mock.calls.find(
+      (c: unknown[]) => (c[1] as { role: string }[])[0]?.role === 'user',
+    );
+    expect(userSave).toBeDefined();
+    expect(userSave![2]).toBeUndefined();
+  });
+
+  it('re-triggers deferred result delivery when results are queued at completion (D4)', async () => {
+    mocks.mockEngineRedis.llen.mockResolvedValue(3);
+
+    await service.run(defaultOptions);
+
+    expect(mocks.mockResultPubsub.publish).toHaveBeenCalledWith(
+      PUBSUB_CHANNELS.agentResultReady,
+      'sess-1',
+    );
+  });
+
+  it('does not publish a delivery wake-up when no results are queued', async () => {
+    mocks.mockEngineRedis.llen.mockResolvedValue(0);
+
+    await service.run(defaultOptions);
+
+    expect(mocks.mockResultPubsub.publish).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------- //
+  //  WS-D: primary admission control (D17)                            //
+  // ---------------------------------------------------------------- //
+
+  it('rejects a user-initiated primary when the plan primary cap is reached (D17)', async () => {
+    mocks.mockAgentRunRepo.countActivePrimaryRunsForUser.mockResolvedValue(2); // cap = 2 in mockPolicy
+
+    await expect(service.run(defaultOptions)).rejects.toThrow(/concurrent run/);
+    expect(mocks.mockAgentRunRepo.countActivePrimaryRunsForUser).toHaveBeenCalledWith('user-1');
+  });
+
+  it('admits a primary when under the plan cap', async () => {
+    mocks.mockAgentRunRepo.countActivePrimaryRunsForUser.mockResolvedValue(1);
+
+    const result = await service.run(defaultOptions);
+    expect(result.status).toBe('completed');
+  });
+
+  it('delivery reinvocations bypass the primary admission cap', async () => {
+    mocks.mockAgentRunRepo.countActivePrimaryRunsForUser.mockResolvedValue(99);
+
+    const result = await service.run({ ...defaultOptions, isReinvocation: true });
+    expect(result.status).toBe('completed');
+  });
+
+  it('sub-agent runs bypass the primary admission cap', async () => {
+    mocks.mockAgentRunRepo.countActivePrimaryRunsForUser.mockResolvedValue(99);
+
+    const result = await service.run({ ...defaultOptions, isSubAgent: true });
+    expect(result.status).toBe('completed');
+    expect(mocks.mockAgentRunRepo.countActivePrimaryRunsForUser).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------- //
+  //  #198: host-wide container capacity ledger                        //
+  // ---------------------------------------------------------------- //
+
+  it('fails a sub-agent run fast when the host container ceiling is reached', async () => {
+    mocks.mockCapacityLedger.tryAcquireSubAgent.mockReturnValue(false);
+
+    await expect(service.run({ ...defaultOptions, isSubAgent: true })).rejects.toThrow(
+      /container capacity/,
+    );
+    // Nothing acquired → nothing to release.
+    expect(mocks.mockCapacityLedger.releaseSubAgent).not.toHaveBeenCalled();
+  });
+
+  it('acquires and releases a capacity slot around a sub-agent container lifecycle', async () => {
+    await service.run({ ...defaultOptions, isSubAgent: true });
+
+    expect(mocks.mockCapacityLedger.tryAcquireSubAgent).toHaveBeenCalledTimes(1);
+    expect(mocks.mockCapacityLedger.releaseSubAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('primary pooled runs never touch the sub-agent capacity ledger', async () => {
+    await service.run(defaultOptions);
+
+    expect(mocks.mockCapacityLedger.tryAcquireSubAgent).not.toHaveBeenCalled();
+    expect(mocks.mockCapacityLedger.releaseSubAgent).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------- //
@@ -721,18 +871,25 @@ describe('AgentRunnerService', () => {
   //  Test 6: Updates AgentRun to failed on error                      //
   // ---------------------------------------------------------------- //
 
-  it('updates AgentRun to failed status on error', async () => {
+  it('updates AgentRun to failed status on error, guarded so it cannot clobber a reaper/watchdog write (D8)', async () => {
     const loopError = new Error('LLM explosion');
     mockLoopInstance.run.mockRejectedValue(loopError);
 
     await expect(service.run(defaultOptions)).rejects.toThrow('LLM explosion');
 
-    expect(mocks.mockAgentRunRepo.update).toHaveBeenCalledWith(
-      'run-1',
-      expect.objectContaining({
+    // The failure write is fenced on status='running' — same as the completed
+    // path — so a row the reaper/watchdog already flipped (with its own error
+    // text) is left untouched.
+    expect(mocks.mockPrisma.agentRun.updateMany).toHaveBeenCalledWith({
+      where: { id: 'run-1', status: 'running' },
+      data: expect.objectContaining({
         status: 'failed',
         error: 'LLM explosion',
       }),
+    });
+    expect(mocks.mockAgentRunRepo.update).not.toHaveBeenCalledWith(
+      'run-1',
+      expect.objectContaining({ status: 'failed' }),
     );
   });
 
@@ -1116,6 +1273,7 @@ describe('AgentRunnerService', () => {
       undefined, // budgetTracker — none in this test (no tokenBudget passed)
       300000, // subAgentTimeoutMs from policy.maxSubAgentRunMs
       ['openai', 'anthropic'], // allowedProviders from policy, for anonymous default-worker resolution
+      { maxConcurrent: 3, maxPending: 20 }, // userQuota from policy (WS-D)
     );
   });
 
@@ -1529,9 +1687,9 @@ describe('AgentRunnerService — recovery integration', () => {
       name: 'LoopAbortedError',
     });
 
-    expect(mocks.mockAgentRunRepo.update).toHaveBeenCalledWith(
-      'run-1',
-      expect.objectContaining({ status: 'failed' }),
-    );
+    expect(mocks.mockPrisma.agentRun.updateMany).toHaveBeenCalledWith({
+      where: { id: 'run-1', status: 'running' },
+      data: expect.objectContaining({ status: 'failed' }),
+    });
   });
 });

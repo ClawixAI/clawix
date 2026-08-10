@@ -78,6 +78,22 @@ import { BudgetTracker } from './budget-tracker.js';
 import { ToolRegistry } from './tool-registry.js';
 import { registerBuiltinTools, registerCronTools } from './tools/index.js';
 import { createSpawnTool } from './tools/spawn.js';
+import {
+  createSpawnBatchTool,
+  createTaskStatusTool,
+  createTaskWaitTool,
+  type TaskToolDeps,
+} from './tools/task-tools.js';
+import {
+  createTaskCancelTool,
+  createTaskResultTool,
+  type TaskLifecycleDeps,
+} from './tools/task-lifecycle-tools.js';
+import { createReportProgressTool } from './tools/progress-tool.js';
+import { ContainerCapacityLedger } from './container-capacity.ledger.js';
+import { RedisService } from '../cache/redis.service.js';
+import { RedisPubSubService } from '../cache/redis-pubsub.service.js';
+import { KEY_PREFIXES, PUBSUB_CHANNELS } from '../cache/cache.constants.js';
 import { CronGuardService } from './cron-guard.service.js';
 import { ContextBuilderService } from './context-builder.service.js';
 import { WorkspaceSeederService } from './workspace-seeder.service.js';
@@ -192,6 +208,9 @@ export class AgentRunnerService {
     private readonly mcpTokenManager: McpTokenManager,
     private readonly runActivity: RunActivityRegistry,
     private readonly toolApprovalService: ToolApprovalService,
+    private readonly redis: RedisService,
+    private readonly resultPubsub: RedisPubSubService,
+    private readonly capacityLedger: ContainerCapacityLedger,
   ) {}
 
   /** Lazy accessor to break circular dependency with TaskExecutorService. */
@@ -243,6 +262,24 @@ export class AgentRunnerService {
     const user = await this.userRepo.findById(userId);
     const { policyId } = user;
     const policy = await this.policyRepo.findById(policyId);
+
+    // ── Step 2b: Primary admission control (WS-D D17) ──────────────
+    // User-initiated primaries only: sub-agents are capped by the executor,
+    // delivery reinvocations are system-triggered and already serialized
+    // behind the live run (D4), and scheduled tasks are governed by cron
+    // policy knobs. Soft cap (count is not atomic) — honest backpressure,
+    // not a hard isolation boundary.
+    const isUserInitiatedPrimary =
+      !isSubAgent && options.isReinvocation !== true && options.isScheduledTask !== true;
+    if (isUserInitiatedPrimary) {
+      const activePrimaries = await this.agentRunRepo.countActivePrimaryRunsForUser(userId);
+      if (activePrimaries >= policy.maxConcurrentPrimaryRuns) {
+        throw new Error(
+          `You already have ${activePrimaries} agent run(s) in progress — your plan allows ` +
+            `${policy.maxConcurrentPrimaryRuns} concurrent run(s). Please wait for one to finish and try again.`,
+        );
+      }
+    }
 
     // ── Step 3: Check budget ────────────────────────────────────────
     const budget = await this.tokenCounter.checkBudget(userId, policyId);
@@ -334,6 +371,7 @@ export class AgentRunnerService {
 
     // ── Steps 7–19: Execution block (container + loop) ─────────────
     let containerId: string | null = null;
+    let capacitySlotHeld = false;
     // Pool is only meaningful when a session exists to key the warm container.
     const usePool = !isSubAgent && session !== null;
     // Hoisted so the finally block can close any opened MCP connections.
@@ -376,7 +414,12 @@ export class AgentRunnerService {
 
       // Step 9: Save user message to store (skip for sub-agents — they don't own the session)
       if (!isSubAgent) {
-        await store.saveMessages([{ role: 'user', content: input, senderId: userId }]);
+        // Delivery reinvocations inject a [Sub-Agent Results] frame — keep it
+        // in LLM history but hidden from the visible chat transcript (D5).
+        await store.saveMessages(
+          [{ role: 'user', content: input, senderId: userId }],
+          options.isReinvocation ? { hiddenInHistory: [true] } : undefined,
+        );
       }
 
       // Step 10: Resolve provider credentials (DB first, env var fallback)
@@ -474,6 +517,18 @@ export class AgentRunnerService {
       const skillMounts = { builtinHostPath: skillsBuiltinHostDir };
 
       if (!usePool) {
+        // Sub-agent containers start outside pool accounting — admit them
+        // through the capacity ledger so the host-wide ceiling is real (#198).
+        if (isSubAgent) {
+          if (!this.capacityLedger.tryAcquireSubAgent()) {
+            const snap = this.capacityLedger.snapshot();
+            throw new Error(
+              `Host is at container capacity (${snap.total}/${snap.ceiling} containers active) — ` +
+                'sub-agent cannot start now. Retry shortly or reduce parallel fan-out.',
+            );
+          }
+          capacitySlotHeld = true;
+        }
         containerId = await this.containerRunner.start(sharedAgentDef, [], {
           workspaceHostPath: workspacePaths?.hostPath,
           skillMounts,
@@ -519,6 +574,11 @@ export class AgentRunnerService {
       registerSessionTools(registry, { searchService: this.sessionSearchService }, userId);
 
       if (!isSubAgent && session) {
+        // Per-user executor fairness quota from the caller's plan (WS-D).
+        const userQuota = {
+          maxConcurrent: policy.maxConcurrentSubAgents,
+          maxPending: policy.maxPendingSubAgents,
+        };
         registry.register(
           createSpawnTool(
             this.agentDefRepo,
@@ -530,7 +590,51 @@ export class AgentRunnerService {
             budgetTracker,
             policy.maxSubAgentRunMs,
             policy.allowedProviders,
+            userQuota,
           ),
+        );
+
+        // Cooperation tools: wave fan-out + bounded in-run fan-in (WS-C).
+        const taskToolDeps: TaskToolDeps = {
+          agentDefRepo: this.agentDefRepo,
+          agentRunRepo: this.agentRunRepo,
+          taskExecutor: this.taskExecutor,
+          redis: this.redis,
+          parentSessionId: session.id,
+          parentAgentRunId: agentRun.id,
+          userId,
+          ...(budgetTracker ? { budgetTracker } : {}),
+          ...(policy.maxSubAgentRunMs != null
+            ? { subAgentTimeoutMs: policy.maxSubAgentRunMs }
+            : {}),
+          ...(policy.allowedProviders ? { allowedProviders: policy.allowedProviders } : {}),
+          userQuota,
+        };
+        registry.register(createSpawnBatchTool(taskToolDeps));
+        registry.register(createTaskStatusTool(taskToolDeps));
+        registry.register(createTaskWaitTool(taskToolDeps));
+
+        // Lifecycle tools: cancel a spawned task / fetch a settled result.
+        const lifecycleDeps: TaskLifecycleDeps = {
+          agentRunRepo: this.agentRunRepo,
+          redis: this.redis,
+          taskExecutor: this.taskExecutor,
+          agentRunRegistry: this.agentRunRegistry,
+          parentSessionId: session.id,
+        };
+        registry.register(createTaskCancelTool(lifecycleDeps));
+        registry.register(createTaskResultTool(lifecycleDeps));
+      }
+
+      // Sub-agents get a progress channel back to the user instead of the
+      // cooperation tools (they can never be prompted or re-invoked).
+      if (isSubAgent && inputSessionId) {
+        registry.register(
+          createReportProgressTool({
+            pubsub: this.resultPubsub,
+            sessionId: inputSessionId,
+            agentName: agentDef.name,
+          }),
         );
       }
 
@@ -897,11 +1001,16 @@ export class AgentRunnerService {
       const message = err instanceof Error ? err.message : String(err);
       logger.error({ agentRunId: agentRun.id, error: message }, 'Agent run failed');
 
-      // Update AgentRun to failed
-      await this.agentRunRepo.update(agentRun.id, {
-        status: 'failed',
-        error: message,
-        completedAt: new Date(),
+      // Update AgentRun to failed — guarded like the completed path so a
+      // status the reaper/watchdog already wrote (with its own error text)
+      // is never clobbered by this late overwrite (D8).
+      await this.prisma.agentRun.updateMany({
+        where: { id: agentRun.id, status: 'running' },
+        data: {
+          status: 'failed',
+          error: message,
+          completedAt: new Date(),
+        },
       });
 
       // Evict from pool on error (primary agents with a real session only)
@@ -919,11 +1028,32 @@ export class AgentRunnerService {
       } else if (usePool) {
         this.containerPool.release(session!.id);
       }
+      if (capacitySlotHeld) {
+        this.capacityLedger.releaseSubAgent();
+      }
       await this.browserSessionManager.releaseIfActive(agentRun.id).catch((err) => {
         logger.warn({ runId: agentRun.id, err }, 'browser session cleanup failed');
       });
       this.agentRunRegistry.unregister(agentRun.id);
       this.runActivity.unregister(agentRun.id);
+
+      // D4 wake-up: result delivery defers while this session has a live
+      // primary run. Now that this run has settled, re-trigger delivery if
+      // sub-agent results queued up in the meantime. Best-effort — the
+      // periodic sweep is the backstop.
+      if (!isSubAgent && session) {
+        try {
+          const queued = await this.redis.llen(KEY_PREFIXES.agentResults + session.id);
+          if (queued > 0) {
+            await this.resultPubsub.publish(PUBSUB_CHANNELS.agentResultReady, session.id);
+          }
+        } catch (wakeErr: unknown) {
+          logger.warn(
+            { sessionId: session.id, err: wakeErr },
+            'Failed to re-trigger deferred result delivery after run completion',
+          );
+        }
+      }
     }
   }
 

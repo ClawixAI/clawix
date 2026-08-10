@@ -17,12 +17,15 @@ import { SkillLoaderService } from './skill-loader.service.js';
 import { DEFAULT_MAX_SKILLS_PER_USER } from './skill-loader.types.js';
 import { ContainerRunner } from './container-runner.js';
 import { ContainerPoolService } from './container-pool.service.js';
+import { ContainerCapacityLedger } from './container-capacity.ledger.js';
+import { CapacityService } from './capacity.service.js';
 import { PythonProxyHealthService } from './python-proxy-health.service.js';
 import { PythonContainerPoolService } from './python-container-pool.service.js';
 import { SessionManagerService } from './session-manager.service.js';
 import { TokenCounterService } from './token-counter.service.js';
 import { MemoryConsolidationService } from './memory-consolidation.service.js';
 import { TaskExecutorService } from './task-executor.service.js';
+import { SubAgentResultPublisher } from './sub-agent-result.publisher.js';
 import { ContextBuilderService } from './context-builder.service.js';
 import { BootstrapFileService } from './bootstrap-file.service.js';
 import { WorkspaceSeederService } from './workspace-seeder.service.js';
@@ -76,12 +79,15 @@ import { SessionSearchService } from './session-recall/session-search.service.js
     TokenCounterService,
     ContainerRunner,
     ContainerPoolService,
+    ContainerCapacityLedger,
+    CapacityService,
     PythonProxyHealthService,
     PythonContainerPoolService,
     PythonConcurrencyLimiter,
     ShellNetConcurrencyLimiter,
     InstallMutex,
     MemoryConsolidationService,
+    SubAgentResultPublisher,
     TaskExecutorService,
     CronGuardService,
     CronTaskProcessorService,
@@ -157,6 +163,8 @@ import { SessionSearchService } from './session-recall/session-search.service.js
     PythonProxyHealthService,
     PythonContainerPoolService,
     WikiBootstrapService,
+    ContainerCapacityLedger,
+    CapacityService,
   ],
 })
 export class EngineModule implements OnModuleInit, OnModuleDestroy {

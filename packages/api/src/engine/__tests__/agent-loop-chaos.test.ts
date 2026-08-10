@@ -22,6 +22,7 @@ vi.mock('@clawix/shared', async (importOriginal) => {
 // ------------------------------------------------------------------ //
 
 import { TaskExecutorService } from '../task-executor.service.js';
+import { SubAgentResultPublisher } from '../sub-agent-result.publisher.js';
 import { agentActiveSlots, agentWatchdogFiredTotal } from '../agent-loop-metrics.js';
 import type { AgentRunnerService } from '../agent-runner.service.js';
 import type { AgentRunRepository } from '../../db/agent-run.repository.js';
@@ -144,15 +145,22 @@ describe('agent-loop chaos harness', () => {
     mockAgentRunRegistry = { abort: vi.fn().mockReturnValue(true) };
     const mockRunActivity = { snapshot: vi.fn().mockReturnValue(undefined) };
 
+    const resultPublisher = new SubAgentResultPublisher(
+      mockAgentRunRepo as unknown as AgentRunRepository,
+      mockAgentDefRepo as unknown as AgentDefinitionRepository,
+      mockRedis as unknown as RedisService,
+      mockPubsub as unknown as RedisPubSubService,
+    );
+
     service = new TaskExecutorService(
       mockAgentRunner as unknown as AgentRunnerService,
       mockAgentRunRepo as unknown as AgentRunRepository,
       mockSessionRepo as unknown as SessionRepository,
       mockRedis as unknown as RedisService,
       mockPubsub as unknown as RedisPubSubService,
-      mockAgentDefRepo as unknown as AgentDefinitionRepository,
       mockAgentRunRegistry as unknown as import('../agent-run-registry.service.js').AgentRunRegistry,
       mockRunActivity as unknown as import('../run-activity.registry.js').RunActivityRegistry,
+      resultPublisher,
     );
   });
 

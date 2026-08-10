@@ -129,6 +129,42 @@ export class AgentRunRepository {
   }
 
   /**
+   * The session's currently-running primary run (a user turn or a delivery
+   * reinvocation — anything without a parent), or null. Used by the result
+   * delivery path to defer reinvocation until the live turn settles, so two
+   * runs never write the same session concurrently.
+   */
+  async findActivePrimaryRun(sessionId: string): Promise<AgentRun | null> {
+    return this.prisma.agentRun.findFirst({
+      where: { sessionId, status: 'running', parentAgentRunId: null },
+      orderBy: { startedAt: 'desc' },
+    });
+  }
+
+  /**
+   * Flip a run to 'cancelled' only while it is still pending/running, so a
+   * status the watchdog/reaper/loop already wrote is never overwritten.
+   * Returns true when this call performed the flip.
+   */
+  async cancelIfActive(id: string): Promise<boolean> {
+    const result = await this.prisma.agentRun.updateMany({
+      where: { id, status: { in: ['pending', 'running'] } },
+      data: { status: 'cancelled', completedAt: new Date() },
+    });
+    return result.count > 0;
+  }
+
+  /**
+   * Count a user's currently-running primary runs across all their sessions.
+   * Backs the per-plan primary admission cap (`Policy.maxConcurrentPrimaryRuns`).
+   */
+  async countActivePrimaryRunsForUser(userId: string): Promise<number> {
+    return this.prisma.agentRun.count({
+      where: { status: 'running', parentAgentRunId: null, session: { userId } },
+    });
+  }
+
+  /**
    * Sum the input+output tokens already recorded across every run in a session.
    *
    * Used on crash recovery to seed a fresh shared {@link BudgetTracker} so

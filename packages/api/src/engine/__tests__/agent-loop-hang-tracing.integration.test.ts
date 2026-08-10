@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { LLMProvider, LLMResponse } from '@clawix/shared';
 
 import { TaskExecutorService } from '../task-executor.service.js';
+import { SubAgentResultPublisher } from '../sub-agent-result.publisher.js';
 import { RunActivityRegistry } from '../run-activity.registry.js';
 import { ReasoningLoop } from '../reasoning-loop.js';
 import { ToolRegistry } from '../tool-registry.js';
@@ -141,15 +142,22 @@ describe('agent-loop hang tracing (end-to-end)', () => {
       findById: vi.fn().mockResolvedValue({ id: 'agent-def-1', name: 'worker' }),
     };
 
+    const resultPublisher = new SubAgentResultPublisher(
+      mockAgentRunRepo as unknown as AgentRunRepository,
+      mockAgentDefRepo as unknown as AgentDefinitionRepository,
+      mockRedis as unknown as RedisService,
+      mockPubsub as unknown as RedisPubSubService,
+    );
+
     return new TaskExecutorService(
       runner as unknown as AgentRunnerService,
       mockAgentRunRepo as unknown as AgentRunRepository,
       mockSessionRepo as unknown as SessionRepository,
       mockRedis as unknown as RedisService,
       mockPubsub as unknown as RedisPubSubService,
-      mockAgentDefRepo as unknown as AgentDefinitionRepository,
       mockAgentRunRegistry as unknown as import('../agent-run-registry.service.js').AgentRunRegistry,
       runActivity,
+      resultPublisher,
     );
   }
 

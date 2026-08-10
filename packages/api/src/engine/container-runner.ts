@@ -39,6 +39,13 @@ export const DEFAULT_EXEC_TIMEOUT_MS = 60_000;
 /** Maximum allowed exec timeout in milliseconds. */
 export const MAX_EXEC_TIMEOUT_MS = 600_000;
 
+/**
+ * Cap on accumulated stdout/stderr for the stdin exec path. The execFile path
+ * is implicitly capped by Node's default 1 MB maxBuffer; this bound keeps a
+ * chatty command from ballooning API-process memory on the spawn path.
+ */
+export const MAX_STDIO_BUFFER_BYTES = 10 * 1024 * 1024;
+
 /** Grace period in seconds given to `docker stop` before a kill. */
 export const STOP_GRACE_SECONDS = 10;
 
@@ -210,7 +217,7 @@ export class ContainerRunner implements IContainerRunner {
     logger.debug({ containerId, command, workdir, user }, 'Executing command in container');
 
     if (stdin !== undefined) {
-      return this.execWithStdin(args, stdin, signal);
+      return this.execWithStdin(args, stdin, timeoutMs, signal);
     }
 
     return this.execWithTimeout(args, timeoutMs, signal);
@@ -312,10 +319,14 @@ export class ContainerRunner implements IContainerRunner {
    * Run `docker exec -i` via spawn to support piping stdin.
    * Collects stdout/stderr buffers, writes stdin, and resolves on 'close'.
    * When `signal` fires, the spawned child is killed and resolves with exitCode -1.
+   * Enforces the clamped exec timeout (exitCode 124, matching the execFile
+   * path) and caps accumulated output at MAX_STDIO_BUFFER_BYTES — an
+   * over-cap process is killed and its output truncated with a marker.
    */
   private execWithStdin(
     args: string[],
     stdinData: string,
+    timeoutMs: number,
     signal?: AbortSignal,
   ): Promise<ExecResult> {
     return new Promise((resolve) => {
@@ -323,31 +334,62 @@ export class ContainerRunner implements IContainerRunner {
       const proc = spawn('docker', args, spawnOptions);
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
+      let bufferedBytes = 0;
+      let truncated = false;
+      let timedOut = false;
 
-      proc.stdout.on('data', (chunk: Buffer) => {
-        stdoutChunks.push(chunk);
-      });
+      const timer = setTimeout(() => {
+        timedOut = true;
+        proc.kill();
+      }, timeoutMs);
 
-      proc.stderr.on('data', (chunk: Buffer) => {
-        stderrChunks.push(chunk);
-      });
+      const collect =
+        (chunks: Buffer[]) =>
+        (chunk: Buffer): void => {
+          if (truncated) return;
+          const remaining = MAX_STDIO_BUFFER_BYTES - bufferedBytes;
+          if (chunk.length >= remaining) {
+            chunks.push(chunk.subarray(0, remaining));
+            bufferedBytes = MAX_STDIO_BUFFER_BYTES;
+            truncated = true;
+            proc.kill();
+            return;
+          }
+          chunks.push(chunk);
+          bufferedBytes += chunk.length;
+        };
+
+      proc.stdout.on('data', collect(stdoutChunks));
+      proc.stderr.on('data', collect(stderrChunks));
 
       proc.on('close', (code: number | null) => {
+        clearTimeout(timer);
+        const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+        const stderr = Buffer.concat(stderrChunks).toString('utf8');
+
         // The close handler is the sole resolver for the abort case so that
         // buffered stdout/stderr collected before the kill is preserved.
         if (signal?.aborted === true) {
+          resolve({ exitCode: -1, stdout, stderr: stderr || 'exec aborted' });
+          return;
+        }
+        if (timedOut) {
           resolve({
-            exitCode: -1,
-            stdout: Buffer.concat(stdoutChunks).toString('utf8'),
-            stderr: Buffer.concat(stderrChunks).toString('utf8') || 'exec aborted',
+            exitCode: 124,
+            stdout,
+            stderr: `${stderr}${stderr ? '\n' : ''}Command timed out after ${timeoutMs}ms`,
           });
           return;
         }
-        resolve({
-          exitCode: code ?? 1,
-          stdout: Buffer.concat(stdoutChunks).toString('utf8'),
-          stderr: Buffer.concat(stderrChunks).toString('utf8'),
-        });
+        if (truncated) {
+          resolve({
+            exitCode: code ?? 1,
+            stdout,
+            stderr: `${stderr}${stderr ? '\n' : ''}[output truncated at ${MAX_STDIO_BUFFER_BYTES} bytes — process killed]`,
+          });
+          return;
+        }
+        resolve({ exitCode: code ?? 1, stdout, stderr });
       });
 
       proc.on('error', (err: NodeJS.ErrnoException) => {
@@ -358,6 +400,7 @@ export class ContainerRunner implements IContainerRunner {
           return;
         }
         // Genuine spawn errors only (ENOENT, EACCES, etc.).
+        clearTimeout(timer);
         resolve({
           exitCode: 1,
           stdout: Buffer.concat(stdoutChunks).toString('utf8'),

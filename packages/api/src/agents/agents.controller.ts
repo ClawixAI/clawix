@@ -15,6 +15,7 @@ import { Roles } from '../auth/roles.decorator.js';
 import { UserRole } from '../generated/prisma/enums.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { AgentsService } from './agents.service.js';
+import { CapacityService } from '../engine/capacity.service.js';
 
 const createUserAgentSchema = z.object({
   userId: z.string().cuid(),
@@ -38,7 +39,10 @@ interface AuthRequest {
 @ApiTags('agents')
 @Controller('api/v1/agents')
 export class AgentsController {
-  constructor(private readonly agentsService: AgentsService) {}
+  constructor(
+    private readonly agentsService: AgentsService,
+    private readonly capacityService: CapacityService,
+  ) {}
 
   @Get()
   findAll(
@@ -67,14 +71,17 @@ export class AgentsController {
 
   @Post('user-agents')
   @Roles(UserRole.admin)
-  createUserAgent(
+  async createUserAgent(
     @Body(new ZodValidationPipe(createUserAgentSchema))
     body: {
       userId: string;
       agentDefinitionId: string;
     },
   ) {
-    return this.agentsService.assignUserAgent(body);
+    const userAgent = await this.agentsService.assignUserAgent(body);
+    // Warn-and-allow onboarding guard (#198).
+    const capacityWarning = await this.capacityService.onboardingWarning();
+    return capacityWarning ? { ...userAgent, capacityWarning } : userAgent;
   }
 
   @Patch('user-agents/:id')
