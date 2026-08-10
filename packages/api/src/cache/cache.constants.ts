@@ -11,6 +11,7 @@ export const KEY_PREFIXES = {
   agentLock: `${REDIS_KEY_PREFIX}lock:agent:`,
   agentProcessing: `${REDIS_KEY_PREFIX}agent:processing:`,
   agentReinvokeCount: `${REDIS_KEY_PREFIX}agent:reinvoke-count:`,
+  agentWave: `${REDIS_KEY_PREFIX}agent:wave:`,
 } as const;
 
 /** Default TTL values in seconds. */
@@ -22,6 +23,7 @@ export const DEFAULT_TTL = {
   agentResults: 86400,
   agentLock: 300,
   agentReinvokeCount: 3600,
+  agentWave: 86400,
 } as const;
 
 /** Pub/sub channel names. */

@@ -30,12 +30,22 @@ import { Roles } from '../auth/roles.decorator.js';
 import { UserRole } from '../generated/prisma/enums.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { AdminService } from './admin.service.js';
+import { CapacityService } from '../engine/capacity.service.js';
 
 @ApiTags('admin')
 @Controller('admin')
 @Roles(UserRole.admin)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly capacityService: CapacityService,
+  ) {}
+
+  /** Pool capacity vs committed load — over-commit visibility (#198). */
+  @Get('capacity')
+  capacity() {
+    return this.capacityService.report();
+  }
 
   @Get('users')
   listUsers(@Query(new ZodValidationPipe(paginationSchema)) query: PaginationInput) {
@@ -48,8 +58,12 @@ export class AdminController {
   }
 
   @Post('users')
-  createUser(@Body(new ZodValidationPipe(createUserSchema)) body: CreateUserInput) {
-    return this.adminService.createUser(body);
+  async createUser(@Body(new ZodValidationPipe(createUserSchema)) body: CreateUserInput) {
+    const user = await this.adminService.createUser(body);
+    // Warn-and-allow onboarding guard (#198): surfacing over-commit here,
+    // at decision time, instead of as a runtime capacity lottery.
+    const capacityWarning = await this.capacityService.onboardingWarning();
+    return capacityWarning ? { ...user, capacityWarning } : user;
   }
 
   @Patch('users/:id')

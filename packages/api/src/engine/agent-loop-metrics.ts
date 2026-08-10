@@ -20,6 +20,12 @@ export const agentActiveSlots = new Gauge({
   help: 'Sub-agent executor slots currently running.',
 });
 
+/** Sub-agent containers currently admitted by the capacity ledger. */
+export const containersSubAgentActive = new Gauge({
+  name: 'clawix_containers_subagent_active',
+  help: 'Sub-agent containers currently running (outside the pool), per the capacity ledger.',
+});
+
 /** Sub-agent tasks queued, waiting for a free slot. */
 export const agentPendingQueue = new Gauge({
   name: 'clawix_agent_pending_queue',

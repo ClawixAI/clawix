@@ -165,6 +165,9 @@ async function main(): Promise<void> {
       maxShellNetCpuCores: 1,
       maxConcurrentShellNetRuns: 2,
       maxSubAgentRunMs: 300000, // 5 min
+      maxConcurrentSubAgents: 2,
+      maxPendingSubAgents: 10,
+      maxConcurrentPrimaryRuns: 2,
     },
     create: {
       name: 'Standard',
@@ -189,6 +192,9 @@ async function main(): Promise<void> {
       maxShellNetCpuCores: 1,
       maxConcurrentShellNetRuns: 2,
       maxSubAgentRunMs: 300000, // 5 min
+      maxConcurrentSubAgents: 2,
+      maxPendingSubAgents: 10,
+      maxConcurrentPrimaryRuns: 2,
       allowMcp: false,
     },
   });
@@ -210,6 +216,9 @@ async function main(): Promise<void> {
       maxShellNetCpuCores: 2,
       maxConcurrentShellNetRuns: 3,
       maxSubAgentRunMs: 480000, // 8 min
+      maxConcurrentSubAgents: 5,
+      maxPendingSubAgents: 30,
+      maxConcurrentPrimaryRuns: 4,
     },
     create: {
       name: 'Extended',
@@ -234,6 +243,9 @@ async function main(): Promise<void> {
       maxShellNetCpuCores: 2,
       maxConcurrentShellNetRuns: 3,
       maxSubAgentRunMs: 480000, // 8 min
+      maxConcurrentSubAgents: 5,
+      maxPendingSubAgents: 30,
+      maxConcurrentPrimaryRuns: 4,
       allowMcp: true,
     },
   });
@@ -255,6 +267,9 @@ async function main(): Promise<void> {
       maxShellNetCpuCores: 4,
       maxConcurrentShellNetRuns: 5,
       maxSubAgentRunMs: 540000, // 9 min (kept under the 10-min stale-run reaper)
+      maxConcurrentSubAgents: 10,
+      maxPendingSubAgents: 100,
+      maxConcurrentPrimaryRuns: 8,
     },
     create: {
       name: 'Unrestricted',
@@ -279,6 +294,9 @@ async function main(): Promise<void> {
       maxShellNetCpuCores: 4,
       maxConcurrentShellNetRuns: 5,
       maxSubAgentRunMs: 540000, // 9 min (kept under the 10-min stale-run reaper)
+      maxConcurrentSubAgents: 10,
+      maxPendingSubAgents: 100,
+      maxConcurrentPrimaryRuns: 8,
       allowMcp: true,
     },
   });

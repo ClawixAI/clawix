@@ -96,6 +96,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.incr(key);
   }
 
+  /** Atomically decrement a key by 1. Returns the new value. */
+  async decr(key: string): Promise<number> {
+    return this.client.decr(key);
+  }
+
   /** Atomically increment a key by a given amount. Returns the new value. */
   async incrBy(key: string, amount: number): Promise<number> {
     return this.client.incrby(key, amount);
@@ -196,6 +201,38 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   /** Release a lock acquired via acquireLock. */
   async releaseLock(key: string): Promise<void> {
     await this.client.del(key);
+  }
+
+  /**
+   * Extend a token-fenced lock's TTL, but only while we still hold it.
+   * Returns false when the lock expired or another holder took it —
+   * the caller has lost the fence and must not assume exclusivity.
+   */
+  async extendFencedLock(key: string, token: string, ttlSeconds: number): Promise<boolean> {
+    const result = await this.client.eval(
+      `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end`,
+      1,
+      key,
+      token,
+      ttlSeconds,
+    );
+    return result === 1;
+  }
+
+  /**
+   * Release a token-fenced lock via atomic compare-and-delete. A plain DEL
+   * would remove a lock a second holder legitimately acquired after ours
+   * expired; the token compare deletes only our own. Returns true when our
+   * token was still the holder.
+   */
+  async releaseFencedLock(key: string, token: string): Promise<boolean> {
+    const result = await this.client.eval(
+      `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`,
+      1,
+      key,
+      token,
+    );
+    return result === 1;
   }
 
   /** Returns the underlying ioredis client for advanced operations. Use sparingly. */

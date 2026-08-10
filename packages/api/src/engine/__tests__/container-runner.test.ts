@@ -42,7 +42,7 @@ vi.mock('../mount-security.js', () => ({
 }));
 
 // Dynamic import after mocks are in place
-const { ContainerRunner, buildDockerRunArgs, buildDockerExecArgs } =
+const { ContainerRunner, buildDockerRunArgs, buildDockerExecArgs, MAX_STDIO_BUFFER_BYTES } =
   await import('../container-runner.js');
 
 // ------------------------------------------------------------------ //
@@ -437,6 +437,67 @@ describe('exec with AbortSignal', () => {
     expect(result.exitCode).toBe(-1);
     expect(result.stdout).toBe('partial output');
     expect(result.stderr).toMatch(/exec aborted|aborted/i);
+  });
+
+  it('applies the clamped timeout to the stdin exec path (exitCode 124)', async () => {
+    const { EventEmitter } = await import('events');
+
+    const listeners: Record<string, ((...args: unknown[]) => void)[]> = {};
+    const fakeChild = {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      stdin: { write: vi.fn(), end: vi.fn() },
+      on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+        listeners[event] ??= [];
+        listeners[event]!.push(cb);
+      }),
+      // The kill from the timeout timer terminates the child, which then closes.
+      kill: vi.fn(() => {
+        for (const cb of listeners['close'] ?? []) cb(null, 'SIGTERM');
+      }),
+    };
+    mockSpawn.mockReturnValue(fakeChild);
+
+    const runner = new ContainerRunner();
+    const result = await runner.exec('container-1', ['sleep', 'infinity'], {
+      stdin: 'input',
+      timeout: 30,
+    });
+
+    expect(fakeChild.kill).toHaveBeenCalled();
+    expect(result.exitCode).toBe(124);
+    expect(result.stderr).toContain('timed out after 30ms');
+  });
+
+  it('caps accumulated stdin-path output at MAX_STDIO_BUFFER_BYTES and kills the process', async () => {
+    const { EventEmitter } = await import('events');
+
+    const listeners: Record<string, ((...args: unknown[]) => void)[]> = {};
+    const fakeChild = {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      stdin: { write: vi.fn(), end: vi.fn() },
+      on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+        listeners[event] ??= [];
+        listeners[event]!.push(cb);
+      }),
+      kill: vi.fn(() => {
+        for (const cb of listeners['close'] ?? []) cb(null, 'SIGKILL');
+      }),
+    };
+    mockSpawn.mockReturnValue(fakeChild);
+
+    const runner = new ContainerRunner();
+    const execPromise = runner.exec('container-1', ['yes'], { stdin: 'input' });
+
+    // One chunk larger than the cap: buffered output must be cut at the cap.
+    fakeChild.stdout.emit('data', Buffer.alloc(MAX_STDIO_BUFFER_BYTES + 4096, 0x61));
+
+    const result = await execPromise;
+
+    expect(fakeChild.kill).toHaveBeenCalled();
+    expect(result.stdout.length).toBe(MAX_STDIO_BUFFER_BYTES);
+    expect(result.stderr).toContain(`truncated at ${MAX_STDIO_BUFFER_BYTES} bytes`);
   });
 });
 

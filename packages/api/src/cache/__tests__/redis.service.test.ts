@@ -365,4 +365,39 @@ describe('RedisService', () => {
       expect(mockClient.del).toHaveBeenCalledWith('k');
     });
   });
+
+  describe('fenced locks', () => {
+    it('extendFencedLock evals a compare-and-expire script with the token', async () => {
+      mockClient.eval.mockResolvedValue(1);
+      expect(await service.extendFencedLock('lock:k', 'tok-1', 300)).toBe(true);
+      const [script, numKeys, key, token, ttl] = mockClient.eval.mock.calls[0]!;
+      expect(script).toContain("redis.call('get', KEYS[1]) == ARGV[1]");
+      expect(script).toContain("redis.call('expire'");
+      expect(numKeys).toBe(1);
+      expect(key).toBe('lock:k');
+      expect(token).toBe('tok-1');
+      expect(ttl).toBe(300);
+    });
+
+    it('extendFencedLock returns false when the token no longer matches', async () => {
+      mockClient.eval.mockResolvedValue(0);
+      expect(await service.extendFencedLock('lock:k', 'stale-token', 300)).toBe(false);
+    });
+
+    it('releaseFencedLock deletes only when the token matches', async () => {
+      mockClient.eval.mockResolvedValue(1);
+      expect(await service.releaseFencedLock('lock:k', 'tok-1')).toBe(true);
+      const [script, numKeys, key, token] = mockClient.eval.mock.calls[0]!;
+      expect(script).toContain("redis.call('get', KEYS[1]) == ARGV[1]");
+      expect(script).toContain("redis.call('del'");
+      expect(numKeys).toBe(1);
+      expect(key).toBe('lock:k');
+      expect(token).toBe('tok-1');
+    });
+
+    it('releaseFencedLock returns false when another holder owns the lock', async () => {
+      mockClient.eval.mockResolvedValue(0);
+      expect(await service.releaseFencedLock('lock:k', 'stale-token')).toBe(false);
+    });
+  });
 });

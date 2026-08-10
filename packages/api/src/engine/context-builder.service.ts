@@ -242,6 +242,9 @@ export class ContextBuilderService {
       '',
       'To spawn a named agent: spawn(agent_name="<name>", prompt="<task>")',
       'If none of these agents fit your needs, spawn an anonymous agent: spawn(prompt="<task>")',
+      '',
+      'Spawning is asynchronous: the result arrives in a FUTURE turn as a [Sub-Agent Result] message.',
+      'After spawning, do not wait, poll, or sleep — finish your current response now.',
     );
 
     return lines.join('\n');

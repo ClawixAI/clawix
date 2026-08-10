@@ -15,8 +15,38 @@ import type { BudgetTracker } from '../budget-tracker.js';
 
 const logger = createLogger('engine:tools:spawn');
 
+/** Resolved spawn target, or a user-facing error message. */
+export type SpawnTarget = { agentDefId: string; displayName: string } | { error: string };
+
+/**
+ * Resolve the AgentDefinition a spawn should run: a named worker when
+ * `agentName` is given, otherwise the policy-compatible default worker.
+ * Shared by the `spawn` and `spawn_batch` tools.
+ */
+export async function resolveSpawnTarget(
+  agentDefRepo: AgentDefinitionRepository,
+  agentName: string | undefined,
+  allowedProviders?: string[],
+): Promise<SpawnTarget> {
+  if (agentName) {
+    const agentDef = await agentDefRepo.findByName(agentName);
+    if (!agentDef) {
+      return { error: `Agent not found: "${agentName}". Verify the agent name and try again.` };
+    }
+    if (agentDef.role !== 'worker') {
+      return {
+        error: `Agent "${agentName}" is not a worker agent and cannot be spawned as a sub-agent.`,
+      };
+    }
+    return { agentDefId: agentDef.id, displayName: agentName };
+  }
+
+  const defaultWorker = await agentDefRepo.findOrCreateDefaultWorkerForPolicy(allowedProviders);
+  return { agentDefId: defaultWorker.id, displayName: 'default-worker' };
+}
+
 /** Minimal interface for TaskExecutorService (avoids circular import). */
-interface TaskSubmitter {
+export interface TaskSubmitter {
   submit(
     agentRunId: string,
     options: {
@@ -31,8 +61,21 @@ interface TaskSubmitter {
       readonly timeoutMs?: number;
       /** Human-readable agent label, used for progress messages to the parent. */
       readonly displayName?: string;
+      /** Per-user fairness quota resolved from the spawning user's policy. */
+      readonly userQuota?: { readonly maxConcurrent: number; readonly maxPending: number };
     },
   ): void;
+  /**
+   * Remove a still-queued task (task_cancel). Optional so lean test doubles
+   * and the stub-mode `null` executor stay valid.
+   */
+  cancelQueued?(agentRunId: string): boolean;
+}
+
+/** Per-user executor quota shape passed from policy into spawn submissions. */
+export interface SpawnUserQuota {
+  readonly maxConcurrent: number;
+  readonly maxPending: number;
 }
 
 /**
@@ -59,6 +102,7 @@ export function createSpawnTool(
   budgetTracker?: BudgetTracker,
   subAgentTimeoutMs?: number,
   allowedProviders?: string[],
+  userQuota?: SpawnUserQuota,
 ): Tool {
   return {
     name: 'spawn',
@@ -90,39 +134,12 @@ export function createSpawnTool(
         'Spawning sub-agent',
       );
 
-      let agentDefId: string;
-      let displayName: string;
-
-      if (agentName) {
-        // Named spawn: look up the worker by name
-        const agentDef = await agentDefRepo.findByName(agentName);
-
-        if (!agentDef) {
-          logger.warn({ agentName }, 'Agent definition not found');
-          return {
-            output: `Agent not found: "${agentName}". Verify the agent name and try again.`,
-            isError: true,
-          };
-        }
-
-        if (agentDef.role !== 'worker') {
-          logger.warn({ agentName, role: agentDef.role }, 'Cannot spawn non-worker agent');
-          return {
-            output: `Agent "${agentName}" is not a worker agent and cannot be spawned as a sub-agent.`,
-            isError: true,
-          };
-        }
-
-        agentDefId = agentDef.id;
-        displayName = agentName;
-      } else {
-        // Anonymous spawn: use a default worker whose provider is permitted by
-        // the caller's policy (auto-substituted if the org default is out-of-policy).
-        const defaultWorker =
-          await agentDefRepo.findOrCreateDefaultWorkerForPolicy(allowedProviders);
-        agentDefId = defaultWorker.id;
-        displayName = 'default-worker';
+      const target = await resolveSpawnTarget(agentDefRepo, agentName, allowedProviders);
+      if ('error' in target) {
+        logger.warn({ agentName }, 'Spawn target resolution failed');
+        return { output: target.error, isError: true };
       }
+      const { agentDefId, displayName } = target;
 
       const agentRun = await agentRunRepo.create({
         agentDefinitionId: agentDefId,
@@ -152,11 +169,16 @@ export function createSpawnTool(
           ...(budgetTracker ? { budgetTracker } : {}),
           ...(ctx?.abortSignal ? { abortSignal: ctx.abortSignal } : {}),
           ...(subAgentTimeoutMs != null ? { timeoutMs: subAgentTimeoutMs } : {}),
+          ...(userQuota ? { userQuota } : {}),
         });
       }
 
       return {
-        output: `Spawned agent "${displayName}" as task ${agentRun.id}. It will be processed asynchronously.`,
+        output:
+          `Spawned agent "${displayName}" as task ${agentRun.id}. It will be processed asynchronously. ` +
+          'The result arrives in a FUTURE turn as a [Sub-Agent Results] message — ' +
+          'do not shell-sleep or busy-poll for it. To gather results within THIS turn, ' +
+          'use task_wait (bounded) or check progress with task_status; otherwise finish your response now.',
         isError: false,
       };
     },

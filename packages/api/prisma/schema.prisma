@@ -49,6 +49,9 @@ model Policy {
   maxShellNetCpuCores          Int      @default(1)
   maxConcurrentShellNetRuns    Int      @default(2)
   maxSubAgentRunMs             Int      @default(300000) // wall-clock cap per spawned sub-agent run (ms)
+  maxConcurrentSubAgents       Int      @default(3) // per-user concurrent sub-agent executor slots
+  maxPendingSubAgents          Int      @default(20) // per-user sub-agent queue depth
+  maxConcurrentPrimaryRuns     Int      @default(2) // per-user concurrent primary (user-initiated) runs
   allowMcp                     Boolean  @default(false)
   isActive                     Boolean  @default(true)
   createdAt                    DateTime @default(now())
