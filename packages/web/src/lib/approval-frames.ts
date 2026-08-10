@@ -14,6 +14,8 @@ export interface IncomingApprovalFrame {
   readonly paramsSummary?: Record<string, string>;
   readonly offeredScopes?: readonly string[];
   readonly reason?: string;
+  /** Tool-authored caveats surfaced in the prompt UI; only on `prompt` frames. */
+  readonly warnings?: readonly string[];
   readonly expiresAt?: string; // ISO
   readonly status?: string; // resolved only: APPROVED | DENIED | EXPIRED | CANCELLED | REVOKED (client-synthesized)
   readonly scope?: string; // resolved only: once | session | always
@@ -29,6 +31,8 @@ export interface ApprovalFrame {
   readonly paramsSummary?: Record<string, string>;
   readonly offeredScopes?: readonly ApprovalChoice[];
   readonly reason?: string;
+  /** Tool-authored caveats surfaced in the prompt UI; only on `prompt` frames. */
+  readonly warnings?: readonly string[];
   readonly expiresAt?: string;
   readonly status: ApprovalFrameStatus;
   readonly scope?: string;
@@ -108,6 +112,7 @@ export function applyApprovalFrame(
     paramsSummary: frame.paramsSummary,
     offeredScopes: toOfferedScopes(frame.offeredScopes),
     reason: frame.reason,
+    ...(frame.warnings && frame.warnings.length > 0 ? { warnings: frame.warnings } : {}),
     expiresAt: frame.expiresAt,
     status: 'pending',
   };

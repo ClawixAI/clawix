@@ -444,7 +444,11 @@ export class ChannelManagerService implements OnModuleInit, OnModuleDestroy {
       const scope = payload.scope ? ` (${payload.scope})` : '';
       return `Approval for ${toolName} was ${outcome}${scope}.`;
     }
-    return `Approval needed: agent wants to run ${toolName}. Open the dashboard to approve or deny.`;
+    return `Approval needed: agent wants to run ${toolName}.${
+      payload.warnings && payload.warnings.length > 0
+        ? `\n\n⚠ ${payload.warnings.join('\n\n⚠ ')}`
+        : ''
+    } Open the dashboard to approve or deny.`;
   }
 
   // ---------------------------------------------------------------- //

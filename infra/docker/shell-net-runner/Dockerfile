@@ -1,11 +1,20 @@
-# shell_net runner — the agent image plus outbound tooling.
-# Mirrors infra/docker/agent/Dockerfile except for the added network binaries
-# and the git-hang fixes (writable HOME + GIT_TERMINAL_PROMPT=0).
+# shell_net runner — shell-only outbound tooling.
+#
+# ⚠ Deliberately NOT based on the python image. shell_net is a separate tool
+# from python_run / python_run_net with its own policy caps, package allowlist,
+# pip proxy, and audit path (see shell-net.ts + python-run-net.ts). If this
+# image shipped python/pip, an agent could call `python …` or `pip install …`
+# through shell_net and bypass all of that — package allowlist, mutex,
+# concurrency limiter, proxy, audit. Keeping the image python-free closes the
+# leak at the boundary: there is no interpreter to call. If a shell_net task
+# ever genuinely needs python, that's what python_run_net is for.
+#
 # Build with the shared egress-firewall.sh in context:
 #   docker build -f infra/docker/shell-net-runner/Dockerfile infra/docker
-FROM python:3.12-slim
+FROM debian:bookworm-slim
 
 # iptables + gosu back the egress-firewall entrypoint (see egress-firewall.sh).
+# curl/wget/git/jq/ssh are the intended shell_net surface. No python, no pip.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git jq curl wget ca-certificates openssh-client iptables gosu \
     && rm -rf /var/lib/apt/lists/*

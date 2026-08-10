@@ -138,6 +138,19 @@ export function ApprovalCard({ frame, onResolved }: ApprovalCardProps) {
           <p className="text-muted-foreground">{REASON_TEXT[frame.reason] ?? frame.reason}</p>
         )}
 
+        {frame.warnings && frame.warnings.length > 0 && (
+          <div
+            role="alert"
+            className="rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400"
+          >
+            {frame.warnings.map((w, i) => (
+              <p key={i} className={i > 0 ? 'mt-1' : undefined}>
+                <span className="font-medium">⚠ Warning:</span> {w}
+              </p>
+            ))}
+          </div>
+        )}
+
         {paramsEntries.length > 0 && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
             {paramsEntries.map(([key, value]) => (

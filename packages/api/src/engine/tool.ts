@@ -67,6 +67,27 @@ export interface Tool {
    */
   readonly requiresApprovalForParams?: (params: Record<string, unknown>) => boolean;
 
+  /**
+   * Optional per-call warnings the registry surfaces to the human reviewer in
+   * the approval prompt (Task/`ToolApprovalService.gate` → `deliverPrompt` →
+   * the dashboard ApprovalCard).
+   *
+   * Unlike `requiresApprovalForParams`, this does NOT change whether the call
+   * is gated — it only annotates the prompt with caveats the reviewer should
+   * see before rubber-stamping. The motivating case: `shell_net` reusing the
+   * `clawix-python-net-egress` network can host a freshly-downloaded Python
+   * interpreter even though the runner image is python-free, so a `python …`
+   * / `pip install …` call escapes the `python_run[_net]` policy surface. The
+   * runner image is a nudge, the human is the real boundary, and warnings make
+   * that last boundary honest instead of depending on the approver noticing a
+   * buried command line.
+   *
+   * Returns non-empty when the call is suspicious; `[]` (or absent) otherwise.
+   * Throw is contained (a thrown hook is logged and produces no warnings — it
+   * never inflates the prompt or blocks the call).
+   */
+  readonly approvalWarningsForParams?: (params: Record<string, unknown>) => readonly string[];
+
   execute(params: Record<string, unknown>, ctx?: ToolExecuteContext): Promise<ToolResult>;
 }
 

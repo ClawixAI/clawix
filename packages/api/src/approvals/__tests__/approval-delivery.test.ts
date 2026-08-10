@@ -16,6 +16,17 @@ const promptInput = {
   offeredScopes: ['allow_once', 'deny_once'] as const,
   reason: 'no_memory',
   expiresAt: new Date('2026-07-06T12:00:00Z'),
+} as const;
+
+const promptInputWithWarnings = {
+  ...promptInput,
+  toolName: 'shell_net',
+  paramsSummary: { command: 'python3 -c pass' },
+  warnings: [
+    'command contains python tooling (python / pip / poetry / conda / uv). ' +
+      'Use python_run or python_run_net instead — they enforce the package allowlist, pip proxy, install mutex, and per-run cpu/memory caps. ' +
+      'Approving this lets the agent bypass those controls.',
+  ] as const,
 };
 
 describe('ApprovalDeliveryService', () => {
@@ -45,6 +56,34 @@ describe('ApprovalDeliveryService', () => {
     await expect(svc.deliverPrompt({ ...promptInput, sessionId: null })).rejects.toThrow();
     expect(d.pubsub.publish).not.toHaveBeenCalled();
     expect(d.fanout.create).not.toHaveBeenCalled();
+  });
+
+  it('deliverPrompt forwards warnings to both the pubsub frame and the bell notification', async () => {
+    const d = deps();
+    const svc = new ApprovalDeliveryService(d.pubsub as never, d.fanout as never);
+    await svc.deliverPrompt(promptInputWithWarnings);
+    expect(d.pubsub.publish).toHaveBeenCalledWith(
+      expect.stringContaining('approval:frame'),
+      expect.objectContaining({ kind: 'prompt', warnings: promptInputWithWarnings.warnings }),
+    );
+    expect(d.fanout.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientId: 'u1',
+        type: 'TOOL_APPROVAL',
+        payload: expect.objectContaining({
+          approvalId: 'apr1',
+          warnings: promptInputWithWarnings.warnings,
+        }),
+      }),
+    );
+  });
+
+  it('deliverPrompt omits the warnings field when none are supplied (no empty array on the wire)', async () => {
+    const d = deps();
+    const svc = new ApprovalDeliveryService(d.pubsub as never, d.fanout as never);
+    await svc.deliverPrompt(promptInput);
+    const publishArgs = (d.pubsub.publish as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(publishArgs).not.toHaveProperty('warnings');
   });
 
   it('deliverNotice publishes a notice frame and a TOOL_APPROVAL bell notification', async () => {

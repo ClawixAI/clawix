@@ -138,7 +138,11 @@ function formatParamsSummaryLines(paramsSummary?: Record<string, string>): strin
 
 function formatPromptText(payload: ApprovalFramePayload): string {
   const toolName = payload.toolName ?? 'a tool';
-  return `\u{1F510} Approval needed: run ${toolName}?${formatParamsSummaryLines(payload.paramsSummary)}`;
+  const warnings =
+    payload.warnings && payload.warnings.length > 0
+      ? '\n\u{26A0}\u{FE0F} ' + payload.warnings.join('\n\u{26A0}\u{FE0F} ')
+      : '';
+  return `\u{1F510} Approval needed: run ${toolName}?${formatParamsSummaryLines(payload.paramsSummary)}${warnings}`;
 }
 
 function formatNoticeText(payload: ApprovalFramePayload): string {

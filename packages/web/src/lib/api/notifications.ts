@@ -26,11 +26,14 @@ export interface NotificationPayload {
   // TOOL_APPROVAL (raised by ApprovalDeliveryService.deliverPrompt/deliverNotice —
   // packages/api/src/approvals/approval-delivery.service.ts. `offeredScopes` and
   // `expiresAt` are only present on prompt deliveries, not standing-deny notices.
+  // `warnings` is tool-authored (e.g. shell_net flagging a python/pip call as a
+  // python_run[_net] policy bypass) and only ever set on prompt deliveries.
   approvalId?: string;
   toolName?: string;
   paramsSummary?: Record<string, string>;
   offeredScopes?: string[];
   reason?: string;
+  warnings?: string[];
   expiresAt?: string;
 }
 

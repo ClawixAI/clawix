@@ -20,6 +20,8 @@ export interface ApprovalFramePayload {
   readonly paramsSummary?: Record<string, string>;
   readonly offeredScopes?: readonly string[];
   readonly reason?: string;
+  /** Tool-authored caveats surfaced in the prompt UI; only on `prompt` frames. */
+  readonly warnings?: readonly string[];
   readonly expiresAt?: string; // ISO
   readonly status?: string;
   readonly scope?: string;
@@ -53,6 +55,7 @@ export class ApprovalDeliveryService implements ApprovalDeliveryPort {
     offeredScopes: readonly ApprovalChoice[];
     reason: string;
     expiresAt: Date;
+    warnings?: readonly string[];
   }): Promise<void> {
     if (req.sessionId === null) {
       // No delivery channel for this run — the caller (ToolApprovalService.gate)
@@ -69,6 +72,7 @@ export class ApprovalDeliveryService implements ApprovalDeliveryPort {
       paramsSummary: req.paramsSummary,
       offeredScopes: req.offeredScopes,
       reason: req.reason,
+      ...(req.warnings && req.warnings.length > 0 ? { warnings: req.warnings } : {}),
       expiresAt: req.expiresAt.toISOString(),
     };
     await this.pubsub.publish(PUBSUB_CHANNELS.approvalFrame, payload);
@@ -81,6 +85,7 @@ export class ApprovalDeliveryService implements ApprovalDeliveryPort {
         paramsSummary: req.paramsSummary,
         offeredScopes: req.offeredScopes,
         reason: req.reason,
+        ...(req.warnings && req.warnings.length > 0 ? { warnings: req.warnings } : {}),
         expiresAt: payload.expiresAt,
       },
     });
