@@ -127,10 +127,14 @@ function makeAuditLogRepo() {
 /*  Scripted provider + response builders                              */
 /* ------------------------------------------------------------------ */
 
-function toolCallResponse(toolName: string, id: string): LLMResponse {
+function toolCallResponse(
+  toolName: string,
+  id: string,
+  args: Record<string, unknown> = {},
+): LLMResponse {
   return {
     content: null,
-    toolCalls: [{ id, name: toolName, arguments: {} }],
+    toolCalls: [{ id, name: toolName, arguments: args }],
     thinkingBlocks: null,
     usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     finishReason: 'tool_use',
@@ -356,5 +360,64 @@ describe('tool-call approval — end-to-end (ReasoningLoop + ToolRegistry + Tool
     expect(h.requestRepo.rows[0]).toMatchObject({ status: 'APPROVED', scope: 'session' });
     expect(iterations).toBe(3);
     expect(content).toBe('both done');
+  });
+
+  it('6. approvalWarningsForParams: tool-authored warnings flow to deliverPrompt as `warnings`', async () => {
+    const h = buildHarness({ autoResolveChoice: 'allow_once' });
+    // Attach a warning hook after build (mimicking what shell_net's factory does).
+    // We need the underlying tool instance — pull it via a register+rewrite.
+    // Simpler: build a fresh harness variant by re-registering before run.
+    const warnedTool: Tool = {
+      name: SENSITIVE_TOOL,
+      description: 'A tool that requires approval and emits reviewer warnings.',
+      // `suspicious` must be a declared property — `stripUnknownKeys` runs
+      // before `approvalWarningsForParams`, so undeclared keys are stripped
+      // and the hook would see an empty object.
+      parameters: {
+        type: 'object',
+        properties: { suspicious: { type: 'boolean' } },
+        required: [],
+      },
+      requiresApproval: true,
+      approvalWarningsForParams: (params) =>
+        params['suspicious'] === true
+          ? ['(test) python-like call detected — prefer python_run']
+          : [],
+      async execute(): Promise<ToolResult> {
+        return { output: 'ok', isError: false };
+      },
+    };
+    // Replace the registry's wiring by registering over the same name (ToolRegistry
+    // overwrites). Re-bind the same approval context.
+    h.toolRegistry.register(warnedTool);
+    h.toolRegistry.setApprovalContext({
+      userId: USER_ID,
+      agentRunId: AGENT_RUN_ID,
+      sessionId: 'sess-1',
+      isSubAgent: false,
+      gate: (input) => h.approvalService.gate(input),
+    });
+
+    await runLoop(h.toolRegistry, [
+      toolCallResponse(SENSITIVE_TOOL, 'tc-1', { suspicious: true }),
+      finalResponse('done'),
+    ]);
+
+    expect(h.delivery.deliverPrompt).toHaveBeenCalledTimes(1);
+    // Warnings forwarded verbatim; warnings field IS present (non-empty array).
+    const promptReq = (h.delivery.deliverPrompt as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      warnings?: readonly string[];
+    };
+    expect(promptReq.warnings).toEqual(['(test) python-like call detected — prefer python_run']);
+  });
+
+  it('7. approvalWarningsForParams absent or returning []: no warnings field on the prompt at all', async () => {
+    const h = buildHarness({ autoResolveChoice: 'allow_once' });
+    await runLoop(h.toolRegistry, [toolCallResponse(SENSITIVE_TOOL, 'tc-1'), finalResponse('ok')]);
+    expect(h.delivery.deliverPrompt).toHaveBeenCalledTimes(1);
+    const promptReq = (h.delivery.deliverPrompt as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      warnings?: readonly string[];
+    };
+    expect(promptReq.warnings).toBeUndefined();
   });
 });

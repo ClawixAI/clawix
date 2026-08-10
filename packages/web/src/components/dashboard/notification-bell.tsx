@@ -289,7 +289,7 @@ function NotificationRow({
   onApprovalRevoke: () => void;
 }) {
   if (notification.type === 'TOOL_APPROVAL') {
-    const { toolName, paramsSummary, offeredScopes, reason } = notification.payload;
+    const { toolName, paramsSummary, offeredScopes, reason, warnings } = notification.payload;
     // Honest-buttons rule: only the choices the server actually offered —
     // never a hardcoded six.
     const choices = (offeredScopes ?? []).filter(isApprovalChoice);
@@ -304,6 +304,11 @@ function NotificationRow({
           <span className="font-medium">Tool approval</span>:{' '}
           <code className="font-mono text-xs">{toolName ?? 'unknown'}</code>
         </div>
+        {warnings && warnings.length > 0 && (
+          <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+            <span className="font-medium">⚠ Warning:</span> {warnings.join(' ')}
+          </div>
+        )}
         {paramsEntries.length > 0 && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
             {paramsEntries.map(([key, value]) => (

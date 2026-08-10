@@ -51,6 +51,8 @@ export interface ApprovalDeliveryPort {
     offeredScopes: readonly ApprovalChoice[];
     reason: string;
     expiresAt: Date;
+    /** Tool-authored caveats surfaced in the prompt UI; absent = none. */
+    warnings?: readonly string[];
   }): Promise<void>;
   deliverNotice(req: {
     approvalId: string;
@@ -81,6 +83,12 @@ export interface GateInput {
   readonly resourceKey: string; // '' unless resource-scoped
   readonly extractorFailed: boolean;
   readonly params: Readonly<Record<string, unknown>>;
+  /**
+   * Tool-authored caveats surfaced in the approval prompt (see
+   * `Tool.approvalWarningsForParams`). Absent or empty = no banner. Forwarded
+   * verbatim to `deliverPrompt`; never gates or blocks the call.
+   */
+  readonly warnings?: readonly string[];
   readonly abortSignal?: AbortSignal;
 }
 export type GateResult =
@@ -302,6 +310,7 @@ export class ToolApprovalService implements OnModuleInit {
         offeredScopes: offered,
         reason: lookup.reason,
         expiresAt,
+        ...(input.warnings && input.warnings.length > 0 ? { warnings: input.warnings } : {}),
       });
     } catch (err: unknown) {
       logger.warn({ err, approvalId: row.id }, 'Prompt delivery failed — fail-closed');

@@ -27,6 +27,50 @@ const ALLOWLIST = process.env['SHELL_NET_INTERNAL_ALLOWLIST'] ?? '';
 const DEFAULT_WORKDIR = '/workspace';
 const MAX_COMMAND_BYTES = 8192;
 
+/**
+ * Detect commands that try to do Python work via `shell_net` instead of
+ * `python_run` / `python_run_net`. The runner image is python-free (see
+ * `infra/docker/shell-net-runner/Dockerfile`), but `shell_net` has outbound
+ * network, so a determined agent can `apt-get install -y python3` or
+ * `curl … | tar xz` a static interpreter and then run Python — bypassing
+ * `pythonPackageAllowlist`, the pip proxy, `pythonInstallMutex`, the python
+ * concurrency/memory/CPU caps, and the python audit categorization.
+ *
+ * The hard boundary is still the human reviewer (shell_net is run-scoped
+ * approval-gated). This regex surfaces a `⚠ python work detected` warning in
+ * the prompt so the reviewer doesn't have to spot a buried `python` token in a
+ * 100-char pipeline. It is heuristic, not a deny (the agent could genuinely
+ * need a python one-liner that the `python_run` path can't serve); it can't be
+ * exhaustive (shebangs, hex, `$(...)`, multi-stage), and we don't try to make
+ * it so — fail-closed deny would block legitimate ops, and the human is the
+ * boundary anyway.
+ *
+ * Match patterns are intentionally noisy. False positives (e.g. `grep pip
+ * readme.md` — `pip` is the literal search token) are acceptable: the warning
+ * surfaces a buried token the reviewer should look twice at, never blocks the
+ * call. The regex is lowercase-only and case-sensitive: shell interpreter names
+ * are lowercase, and catching `PYTHON` (uppercase) is irrelevant — bash looks up
+ * lowercase binaries.
+ */
+const PYTHON_TOKEN_RE =
+  /(^|[^A-Za-z0-9_])(python|python3|python3\.[0-9]+|pip|pip3|pipx|poetry|conda|uv)\b/;
+
+/**
+ * Build the human-readable warnings for a shell_net call. Exported for unit
+ * testing — the tool factory wires it through `approvalWarningsForParams`.
+ */
+export function shellNetApprovalWarnings(params: Record<string, unknown>): readonly string[] {
+  const cmd = typeof params['command'] === 'string' ? params['command'] : '';
+  if (cmd.length === 0) return [];
+  return PYTHON_TOKEN_RE.test(cmd)
+    ? [
+        'command contains python tooling (python / pip / poetry / conda / uv). ' +
+          'Use python_run or python_run_net instead — they enforce the package allowlist, pip proxy, install mutex, and per-run cpu/memory caps. ' +
+          'Approving this lets the agent bypass those controls.',
+      ]
+    : [];
+}
+
 export interface ShellNetPolicy {
   readonly allowShellNet: boolean;
   readonly maxShellNetMemoryMb: number;
@@ -59,6 +103,10 @@ export function createShellNetTool(deps: ShellNetDeps): Tool {
       'Execute a shell command in a fresh ephemeral container WITH outbound network access. ' +
       'USE THIS FOR: curl/wget HTTP calls, git clone/fetch, ssh/scp — anything needing the network. ' +
       "DON'T USE THIS WHEN: no network is needed — prefer the plain `shell` tool. " +
+      'NEVER run python / pip / poetry / conda / uv here — that escapes the python policy ' +
+      '(package allowlist, pip proxy, per-run caps). Use `python_run` (no network) or ' +
+      '`python_run_net` (network) instead — every call through this tool that reaches a ' +
+      'python interpreter is a policy bypass and will be flagged in the approval prompt. ' +
       'Only available when allowShellNet is enabled in the active policy. Slower than `shell` (fresh container per call).',
     parameters: {
       type: 'object',
@@ -78,6 +126,7 @@ export function createShellNetTool(deps: ShellNetDeps): Tool {
     },
     requiresApproval: true,
     approvalScope: 'run',
+    approvalWarningsForParams: shellNetApprovalWarnings,
 
     async execute(
       rawInput: Record<string, unknown>,

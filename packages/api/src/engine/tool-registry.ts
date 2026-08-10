@@ -370,6 +370,21 @@ export class ToolRegistry {
           logger.error({ tool: tool.name }, 'resourceKeyFromParams failed on validated params');
         }
       }
+
+      // Tool-authored reviewer warnings (e.g. shell_net flagging a python /
+      // pip call as a python_run[_net] policy bypass). Heuristic, best-effort:
+      // a thrown hook is logged and yields no warnings — it never blocks.
+      let warnings: readonly string[] = [];
+      if (tool.approvalWarningsForParams) {
+        try {
+          const w = tool.approvalWarningsForParams(params);
+          warnings = Array.isArray(w) ? w : [];
+        } catch (warnErr: unknown) {
+          const msg = warnErr instanceof Error ? warnErr.message : String(warnErr);
+          logger.warn({ tool: tool.name, err: msg }, 'approvalWarningsForParams threw');
+        }
+      }
+
       const gateResult = await this.approvalContext.gate({
         userId: this.approvalContext.userId,
         agentRunId: this.approvalContext.agentRunId,
@@ -380,6 +395,7 @@ export class ToolRegistry {
         resourceKey,
         extractorFailed,
         params,
+        ...(warnings.length > 0 ? { warnings } : {}),
         abortSignal: ctx?.abortSignal,
       });
       if (!gateResult.allowed) {

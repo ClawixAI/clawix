@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createShellNetTool, ShellNetDeps } from '../tools/shell-net.js';
+import { createShellNetTool, shellNetApprovalWarnings, ShellNetDeps } from '../tools/shell-net.js';
 
 const policy = {
   allowShellNet: true,
@@ -99,5 +99,77 @@ describe('shell_net tool', () => {
     });
     await createShellNetTool(deps).execute({ command: 'curl x', timeoutSecs: 30 }, sig());
     expect(execMock.mock.calls[0][2]).toMatchObject({ timeout: 30_000 });
+  });
+});
+
+describe('shellNetApprovalWarnings', () => {
+  const warnsFor = (command: string): readonly string[] => shellNetApprovalWarnings({ command });
+
+  it('flags python / pip / poetry / conda / uv tokens', () => {
+    expect(warnsFor('python script.py').length).toBeGreaterThan(0);
+    expect(warnsFor('python3 -m venv /tmp/v').length).toBeGreaterThan(0);
+    expect(warnsFor('pip install requests').length).toBeGreaterThan(0);
+    expect(warnsFor('pip3 install -r requirements.txt').length).toBeGreaterThan(0);
+    expect(warnsFor('pipx run httpx').length).toBeGreaterThan(0);
+    expect(warnsFor('poetry add fastapi').length).toBeGreaterThan(0);
+    expect(warnsFor('conda install numpy').length).toBeGreaterThan(0);
+    expect(warnsFor('uv pip install -r requirements.txt').length).toBeGreaterThan(0);
+  });
+
+  it('catches a python invocation buried in a multi-stage pipeline', () => {
+    expect(
+      warnsFor('apt-get update && apt-get install -y python3 && python3 -c "print(1)"').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('catches a venv-activation + pip pattern', () => {
+    expect(
+      warnsFor('. venv/bin/activate && pip install -r requirements.txt').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('catches a curl-pipe-python-tarball download interpreter', () => {
+    expect(
+      warnsFor('curl -L https://.../python3.tar.gz | tar xz && ./python/bin/python3 script.py')
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('does NOT flag legitimate shell network ops (curl/git/ssh/jq)', () => {
+    expect(warnsFor('curl -s -o /dev/null -w "%{http_code}" https://example.com')).toEqual([]);
+    expect(warnsFor('git clone https://example.com/repo.git')).toEqual([]);
+    expect(warnsFor('ssh -t host.example.com ./deploy.sh')).toEqual([]);
+    expect(warnsFor('echo {} | jq .field')).toEqual([]);
+  });
+
+  it('does NOT flag a word that merely contains "python" as a substring', () => {
+    expect(warnsFor('echo montypython_fan')).toEqual([]);
+    expect(warnsFor('echo MYPYTHON_ENV')).toEqual([]);
+    expect(warnsFor('cat /etc/passwd')).toEqual([]);
+  });
+
+  it('DOES flag a python invocation that uses a full path', () => {
+    expect(warnsFor('/usr/local/bin/python3 -c pass').length).toBeGreaterThan(0);
+    expect(warnsFor('/usr/bin/pip3 install requests').length).toBeGreaterThan(0);
+  });
+
+  it('does NOT uppercase-match tokens (regex is case-sensitive by design)', () => {
+    expect(warnsFor('PYTHON script.py')).toEqual([]);
+    expect(warnsFor('echo $PYTHONPATH')).toEqual([]);
+  });
+
+  it('returns [] when command is missing or non-string', () => {
+    expect(shellNetApprovalWarnings({})).toEqual([]);
+    expect(shellNetApprovalWarnings({ command: 42 })).toEqual([]);
+    expect(shellNetApprovalWarnings({ command: '' })).toEqual([]);
+  });
+
+  it('is wired on the tool as approvalWarningsForParams', () => {
+    const tool = createShellNetTool(makeDeps());
+    expect(typeof tool.approvalWarningsForParams).toBe('function');
+    expect(tool.approvalWarningsForParams?.({ command: 'python3 -c pass' }).length).toBeGreaterThan(
+      0,
+    );
+    expect(tool.approvalWarningsForParams?.({ command: 'curl example.com' })).toEqual([]);
   });
 });
