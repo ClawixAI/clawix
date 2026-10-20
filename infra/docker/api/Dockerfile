@@ -74,8 +74,10 @@ COPY --from=builder /app/packages/api/src/generated/prisma ./src/generated/prism
 # Copy production prisma.config.ts (doesn't need dotenv - reads from env vars)
 COPY infra/docker/api/prisma.config.ts ./prisma.config.ts
 
-# Install prisma CLI for migrations only (client already generated)
-RUN npm install -g prisma
+# Install prisma CLI for migrations only (client already generated).
+# Pinned to the lockfile version — an unpinned install pulls npm `latest`
+# (Prisma 8), whose CLI renamed `migrate` and breaks `migrate deploy` in entrypoint.sh.
+RUN npm install -g prisma@7.4.2
 
 # Create directories
 RUN mkdir -p /data /app/skills
