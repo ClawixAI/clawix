@@ -40,7 +40,7 @@ Configuring more than one provider gives your organization several concrete adva
 
 ## Built-in Provider Types
 
-Clawix ships with first-class support for five provider types. A `custom` type is also available for OpenAI-compatible endpoints.
+Clawix ships with first-class support for six provider types. A `custom` type is also available for OpenAI-compatible endpoints.
 
 ### Anthropic
 
@@ -80,6 +80,15 @@ Clawix ships with first-class support for five provider types. A `custom` type i
 - **Default endpoint:** `https://api.kimi.com/coding`
 - **Environment seed variable:** `KIMI_CODE_API_KEY`
 
+### DeepSeek
+
+- **Provider ID:** `deepseek`
+- **Models:** `deepseek-flash` (served by DeepSeek-V4.1-Flash-1017), `deepseek-v4-pro`. Legacy `deepseek-v4-flash*` names are still accepted and billed at the Flash price.
+- **Capabilities:** Tool calling
+- **Default endpoint:** `https://api.deepseek.com`
+- **Environment seed variable:** `DEEPSEEK_API_KEY`
+- **Cost tracking:** uses DeepSeek's peak cache-miss rates (off-peak is half price), so estimates err high. Only applies when the provider ID is exactly `deepseek`.
+
 ### Custom (OpenAI-compatible)
 
 - **Provider ID:** any name matching `^[a-z0-9-]+$` that is not one of the above
@@ -93,7 +102,6 @@ The following providers are on the roadmap but not yet implemented:
 | Provider     | Detection                    | Notes                  |
 | ------------ | ---------------------------- | ---------------------- |
 | Azure OpenAI | config key "azure_openai"    | Enterprise deployments |
-| DeepSeek     | model contains "deepseek"    | Cost-effective         |
 | OpenRouter   | API key starts with "sk-or-" | Gateway                |
 
 ---
@@ -228,6 +236,7 @@ On first startup (when the `ProviderConfig` table is empty), Clawix automaticall
 | `ZAI_CODING_API_KEY` | `zai-coding`    |
 | `GEMINI_API_KEY`     | `gemini`        |
 | `KIMI_CODE_API_KEY`  | `kimi-code`     |
+| `DEEPSEEK_API_KEY`   | `deepseek`      |
 
 The **first** variable found becomes the default provider. Once records exist in the database, the seed step is skipped on subsequent restarts. All future credential management should be done via the UI or admin API.
 
