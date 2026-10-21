@@ -304,7 +304,7 @@ describe('MessageRouterService', () => {
       agentDefinitionId: 'agent-1',
     });
     mockAgentRunner.run.mockRejectedValue(
-      new Error("Provider 'openai' is not allowed by policy 'standard'"),
+      new Error("Token budget exceeded for user 'user-1': $1.0000 used of $1.0000 budget"),
     );
 
     const channel: ChannelAdapter = {
@@ -323,6 +323,34 @@ describe('MessageRouterService', () => {
     // No empty session leaked into the DB.
     expect(mockSessionManager.getOrCreate).not.toHaveBeenCalled();
     // Fallback path is not used when sendError exists.
+    expect(channel.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('routes provider allowlist rejections with PROVIDER_NOT_ALLOWED naming the provider', async () => {
+    mockUserRepo.findByTelegramId.mockResolvedValue({
+      id: 'user-1',
+      isActive: true,
+    });
+    mockUserAgentRepo.findByUserId.mockResolvedValue({
+      agentDefinitionId: 'agent-1',
+    });
+    mockAgentRunner.run.mockRejectedValue(
+      new Error("Provider 'openai' is not allowed by policy 'standard'"),
+    );
+
+    const channel: ChannelAdapter = {
+      ...mockChannel(),
+      sendError: vi.fn().mockResolvedValue(undefined),
+    };
+    const router = createRouter();
+
+    await router.handleInbound(mockInbound(), channel);
+
+    expect(channel.sendError).toHaveBeenCalledWith(
+      '123456',
+      'PROVIDER_NOT_ALLOWED',
+      expect.stringContaining("'openai'"),
+    );
     expect(channel.sendMessage).not.toHaveBeenCalled();
   });
 

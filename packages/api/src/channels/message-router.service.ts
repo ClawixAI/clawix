@@ -36,6 +36,7 @@ const ERROR_CODE_BY_CATEGORY: Record<ErrorCategory, string> = {
   payload_too_large: 'PAYLOAD_TOO_LARGE',
   bad_request: 'BAD_REQUEST',
   policy: 'POLICY_DENIED',
+  provider_not_allowed: 'PROVIDER_NOT_ALLOWED',
   loop_aborted: 'LOOP_ABORTED',
   unknown: 'AGENT_ERROR',
 };

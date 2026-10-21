@@ -127,15 +127,19 @@ const DEEPSEEK_SPEC: ProviderSpec = {
   modelPrefixes: ['deepseek-'],
   envKey: 'DEEPSEEK_API_KEY',
   defaultBaseUrl: 'https://api.deepseek.com',
-  defaultModel: 'deepseek-v4-flash',
+  defaultModel: 'deepseek-flash',
   supportsTools: true,
   supportsThinking: false,
   pricing: [
-    // Cache-miss input + output rates (USD/M tokens). estimateCost does not
+    // Peak cache-miss input + output rates (USD/M tokens). Off-peak is half
+    // price; peak is used so budgets never under-count. estimateCost does not
     // model DeepSeek's cache-hit discount. Source: DeepSeek pricing page
-    // (https://api-docs.deepseek.com/quick_start/pricing), fetched 2026-06-05.
-    { model: 'deepseek-v4-pro', inputPerMillion: 0.435, outputPerMillion: 0.87 },
-    { model: 'deepseek-v4-flash', inputPerMillion: 0.14, outputPerMillion: 0.28 },
+    // (https://api-docs.deepseek.com/quick_start/pricing/), fetched 2026-10-21.
+    // `deepseek-flash` is served by DeepSeek-V4.1-Flash-1017; the retired
+    // `deepseek-v4-flash*` names are still accepted and billed at the Flash price.
+    { model: 'deepseek-flash', inputPerMillion: 0.3, outputPerMillion: 1.2 },
+    { model: 'deepseek-v4-flash', inputPerMillion: 0.3, outputPerMillion: 1.2 },
+    { model: 'deepseek-v4-pro', inputPerMillion: 1.32, outputPerMillion: 3.96 },
   ],
 };
 

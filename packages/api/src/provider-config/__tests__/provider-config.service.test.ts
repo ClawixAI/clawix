@@ -32,6 +32,10 @@ function createPrismaMock() {
       updateMany: vi.fn(),
       count: vi.fn(),
     },
+    policy: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      update: vi.fn(),
+    },
   };
 }
 
@@ -163,6 +167,56 @@ describe('ProviderConfigService', () => {
           apiKey: 'encrypted:sk-zai-key',
         }),
       });
+    });
+
+    it('adds the new provider to the Unrestricted policy allowlist', async () => {
+      prisma.providerConfig.create.mockResolvedValueOnce({
+        id: 'cfg1',
+        provider: 'deepseek-open-ai',
+        displayName: 'DeepSeek',
+        apiKey: 'encrypted:sk-x',
+        apiBaseUrl: 'https://api.deepseek.com',
+        isEnabled: true,
+        isDefault: false,
+        sortOrder: 0,
+      });
+      prisma.policy.findUnique.mockResolvedValueOnce({
+        id: 'pol-unrestricted',
+        allowedProviders: ['openai'],
+      });
+
+      await service.create({
+        provider: 'deepseek-open-ai',
+        displayName: 'DeepSeek',
+        apiKey: 'sk-x',
+      });
+
+      expect(prisma.policy.findUnique).toHaveBeenCalledWith({ where: { name: 'Unrestricted' } });
+      expect(prisma.policy.update).toHaveBeenCalledWith({
+        where: { id: 'pol-unrestricted' },
+        data: { allowedProviders: { push: 'deepseek-open-ai' } },
+      });
+    });
+
+    it('does not duplicate a provider already in the Unrestricted allowlist', async () => {
+      prisma.providerConfig.create.mockResolvedValueOnce({
+        id: 'cfg1',
+        provider: 'openai',
+        displayName: 'OpenAI',
+        apiKey: 'encrypted:sk-x',
+        apiBaseUrl: null,
+        isEnabled: true,
+        isDefault: false,
+        sortOrder: 0,
+      });
+      prisma.policy.findUnique.mockResolvedValueOnce({
+        id: 'pol-unrestricted',
+        allowedProviders: ['openai'],
+      });
+
+      await service.create({ provider: 'openai', displayName: 'OpenAI', apiKey: 'sk-x' });
+
+      expect(prisma.policy.update).not.toHaveBeenCalled();
     });
 
     it('clears other defaults when isDefault is true', async () => {

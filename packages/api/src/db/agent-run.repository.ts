@@ -165,6 +165,23 @@ export class AgentRunRepository {
   }
 
   /**
+   * Whether the user has a running primary run in a web-channel session.
+   * Lets the web gateway restore the "Thinking…" indicator for a client that
+   * reconnects (page reload / re-entry) mid-run, since `typing.start` is only
+   * emitted once when the run begins.
+   */
+  async hasActiveWebPrimaryRunForUser(userId: string): Promise<boolean> {
+    const count = await this.prisma.agentRun.count({
+      where: {
+        status: 'running',
+        parentAgentRunId: null,
+        session: { userId, channel: { type: 'web' } },
+      },
+    });
+    return count > 0;
+  }
+
+  /**
    * Sum the input+output tokens already recorded across every run in a session.
    *
    * Used on crash recovery to seed a fresh shared {@link BudgetTracker} so

@@ -247,12 +247,13 @@ describe('DeepSeek provider spec', () => {
     expect(spec?.displayName).toBe('DeepSeek');
     expect(spec?.envKey).toBe('DEEPSEEK_API_KEY');
     expect(spec?.defaultBaseUrl).toBe('https://api.deepseek.com');
-    expect(spec?.defaultModel).toBe('deepseek-v4-flash');
+    expect(spec?.defaultModel).toBe('deepseek-flash');
     expect(spec?.supportsTools).toBe(true);
     expect(spec?.supportsThinking).toBe(false);
   });
 
   it('detects deepseek from the deepseek- model prefix', () => {
+    expect(findProviderByModel('deepseek-flash')?.name).toBe('deepseek');
     expect(findProviderByModel('deepseek-v4-flash')?.name).toBe('deepseek');
     expect(findProviderByModel('deepseek-v4-pro')?.name).toBe('deepseek');
   });
@@ -261,14 +262,24 @@ describe('DeepSeek provider spec', () => {
     expect(listProviders().some((p) => p.name === 'deepseek')).toBe(true);
   });
 
-  it('estimates cost for deepseek-v4-flash', () => {
-    const cost = estimateCost('deepseek', 'deepseek-v4-flash', 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.14 + 0.28, 5);
+  it('estimates cost for deepseek-flash at peak cache-miss rates', () => {
+    const cost = estimateCost('deepseek', 'deepseek-flash', 1_000_000, 1_000_000);
+    expect(cost).toBeCloseTo(0.3 + 1.2, 5);
   });
 
-  it('estimates cost for deepseek-v4-pro', () => {
+  it('bills legacy deepseek-v4-flash names at the Flash price', () => {
+    expect(estimateCost('deepseek', 'deepseek-v4-flash', 1_000_000, 1_000_000)).toBeCloseTo(
+      0.3 + 1.2,
+      5,
+    );
+    expect(
+      estimateCost('deepseek', 'deepseek-v4-flash-vision-exp', 1_000_000, 1_000_000),
+    ).toBeCloseTo(0.3 + 1.2, 5);
+  });
+
+  it('estimates cost for deepseek-v4-pro at peak cache-miss rates', () => {
     const cost = estimateCost('deepseek', 'deepseek-v4-pro', 1_000_000, 1_000_000);
-    expect(cost).toBeCloseTo(0.435 + 0.87, 5);
+    expect(cost).toBeCloseTo(1.32 + 3.96, 5);
   });
 
   it('returns null cost for a legacy/unknown deepseek model (no pricing entry)', () => {
