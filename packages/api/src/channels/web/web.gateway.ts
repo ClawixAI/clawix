@@ -10,6 +10,7 @@ import { createLogger } from '@clawix/shared';
 import type { WebAdapterExtended } from './web.adapter.js';
 import { serializeServerMessage } from './web.protocol.js';
 import { getAllowedOrigins } from '../../common/security.config.js';
+import { AgentRunRepository } from '../../db/agent-run.repository.js';
 
 const logger = createLogger('channels:web:gateway');
 
@@ -51,6 +52,7 @@ export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly httpAdapterHost: HttpAdapterHost,
+    private readonly agentRunRepo: AgentRunRepository,
   ) {}
 
   onModuleInit(): void {
@@ -145,6 +147,17 @@ export class WebChatGateway implements OnModuleInit, OnModuleDestroy {
         payload: { userId },
       }),
     );
+
+    // Restore the typing indicator for a client reconnecting mid-run —
+    // `typing.start` is only sent once, when the run begins.
+    try {
+      if (await this.agentRunRepo.hasActiveWebPrimaryRunForUser(userId)) {
+        socket.send(serializeServerMessage({ type: 'typing.start', payload: {} }));
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ userId, error: msg }, 'Failed to check for in-flight run on connect');
+    }
 
     // Server-side heartbeat to detect dead connections
     extSocket.isAlive = true;

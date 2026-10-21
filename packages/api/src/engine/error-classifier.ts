@@ -48,6 +48,7 @@ const FLAGS_BY_CATEGORY: Record<ErrorCategory, RecoveryFlags> = {
   payload_too_large: NO_FLAGS,
   bad_request: NO_FLAGS,
   policy: NO_FLAGS,
+  provider_not_allowed: NO_FLAGS,
   loop_aborted: NO_FLAGS,
   unknown: NO_FLAGS,
 };
@@ -70,6 +71,8 @@ const USER_MESSAGES: Record<ErrorCategory, string> = {
   bad_request: "I couldn't process that — the provider rejected the request shape.",
   policy:
     "This request isn't allowed by your account's plan or has exceeded its budget. Please contact your administrator.",
+  provider_not_allowed:
+    "The agent's AI provider isn't enabled for your policy. An admin can add it under Settings → Policies.",
   loop_aborted:
     'I got stuck retrying the same step. Please rephrase your request or try a different approach.',
   unknown: 'Something went wrong while processing your message. Please try again.',
@@ -171,6 +174,9 @@ const BAD_REQUEST_PATTERNS = [
   'bad request',
 ];
 
+/** Matches the agent runner's provider allowlist rejection; captures the provider ID. */
+const PROVIDER_NOT_ALLOWED_RE = /provider '([^']+)' is not allowed by policy/i;
+
 const POLICY_PATTERNS = ['is not allowed by policy', 'token budget exceeded', 'is inactive'];
 
 /* ----------------------------- Helpers ----------------------------- */
@@ -229,6 +235,13 @@ export function classifyError(err: unknown): ClassifiedError {
   const lower = shape.message.toLowerCase();
   const code = shape.code;
 
+  const providerNotAllowed = PROVIDER_NOT_ALLOWED_RE.exec(shape.message);
+  if (providerNotAllowed) {
+    return {
+      ...build('provider_not_allowed', err),
+      text: `The AI provider '${providerNotAllowed[1]}' isn't enabled for your policy. An admin can add it under Settings → Policies.`,
+    };
+  }
   if (matchesAny(lower, POLICY_PATTERNS)) return build('policy', err);
   if (matchesAny(lower, CONTEXT_OVERFLOW_PATTERNS)) return build('context_overflow', err);
   if (matchesAny(lower, PAYLOAD_TOO_LARGE_PATTERNS) || shape.status === 413) {

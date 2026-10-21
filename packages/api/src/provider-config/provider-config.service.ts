@@ -8,6 +8,7 @@ import { encrypt, decrypt, maskApiKey } from '../common/crypto.js';
 const logger = createLogger('provider-config');
 
 const CACHE_TTL_MS = 60_000;
+const UNRESTRICTED_POLICY_NAME = 'Unrestricted';
 
 interface CachedEntry {
   readonly apiKey: string;
@@ -159,7 +160,34 @@ export class ProviderConfigService {
 
     this.invalidateCache(config.provider);
     logger.info({ provider: config.provider }, 'Provider config created');
+    await this.allowInUnrestrictedPolicy(config.provider);
     return { ...config, apiKey: maskApiKey(input.apiKey) };
+  }
+
+  /**
+   * Add a newly created provider to the Unrestricted policy's allowlist.
+   * The allowlist is only seeded from env-configured providers at bootstrap,
+   * so without this a provider added via the UI is rejected at run time even
+   * for Unrestricted users. Best-effort: failure never blocks the create.
+   */
+  private async allowInUnrestrictedPolicy(providerName: string): Promise<void> {
+    try {
+      const policy = await this.prisma.policy.findUnique({
+        where: { name: UNRESTRICTED_POLICY_NAME },
+      });
+      if (!policy || policy.allowedProviders.includes(providerName)) return;
+      await this.prisma.policy.update({
+        where: { id: policy.id },
+        data: { allowedProviders: { push: providerName } },
+      });
+      logger.info({ provider: providerName }, 'Provider added to Unrestricted policy allowlist');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { provider: providerName, error: msg },
+        'Failed to add provider to Unrestricted policy allowlist',
+      );
+    }
   }
 
   /**

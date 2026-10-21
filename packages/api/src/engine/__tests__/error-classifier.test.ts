@@ -87,6 +87,15 @@ describe('classifyError', () => {
       const r = classifyError(err('action is not allowed by policy'));
       expect(r.category).toBe('policy');
     });
+    it('classifies a provider-not-allowed error as provider_not_allowed and names the provider', () => {
+      const r = classifyError(
+        err("Provider 'deepseek-open-ai' is not allowed by policy 'cmabc123'"),
+      );
+      expect(r.category).toBe('provider_not_allowed');
+      expect(r.text).toContain('deepseek-open-ai');
+      expect(r.text).not.toContain('cmabc123');
+      expect(r.text).not.toContain('budget');
+    });
     it('classifies LoopAbortedError as loop_aborted', () => {
       const r = classifyError(new LoopAbortedError('web_search', { q: 'x' }));
       expect(r.category).toBe('loop_aborted');
@@ -151,6 +160,7 @@ describe('classifyError', () => {
         payload_too_large: err('413 request too large'),
         bad_request: err('400 invalid'),
         policy: err('not allowed by policy'),
+        provider_not_allowed: err("Provider 'x' is not allowed by policy 'p'"),
         unknown: err('boom'),
       };
       for (const e of Object.values(samples)) {

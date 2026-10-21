@@ -39,6 +39,9 @@ const mockAdapter = {
   removeConnection: vi.fn(),
   handleClientMessage: vi.fn().mockResolvedValue(true),
 };
+const mockAgentRunRepo = {
+  hasActiveWebPrimaryRunForUser: vi.fn().mockResolvedValue(false),
+};
 const mockHttpAdapterHost = {
   httpAdapter: {
     getHttpServer: vi.fn().mockReturnValue({}),
@@ -54,10 +57,12 @@ describe('WebChatGateway', () => {
     mockConfigService.getOrThrow.mockReturnValue('test-jwt-secret');
     mockAdapter.addConnection.mockReturnValue(true);
     mockAdapter.handleClientMessage.mockResolvedValue(true);
+    mockAgentRunRepo.hasActiveWebPrimaryRunForUser.mockResolvedValue(false);
     gateway = new WebChatGateway(
       mockJwtService as never,
       mockConfigService as never,
       mockHttpAdapterHost as never,
+      mockAgentRunRepo as never,
     );
     gateway.setAdapter(mockAdapter as never);
   });
@@ -95,6 +100,31 @@ describe('WebChatGateway', () => {
       const sent = JSON.parse(socket.send.mock.calls[0]![0] as string);
       expect(sent.type).toBe('connection.ack');
       expect(sent.payload.userId).toBe('user-1');
+    });
+  });
+
+  describe('handleConnection — in-flight run restore', () => {
+    it('sends typing.start after connection.ack when a web primary run is running', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: 'user-1', email: 'a@b.c', role: 'admin' });
+      mockAgentRunRepo.hasActiveWebPrimaryRunForUser.mockResolvedValue(true);
+
+      const socket = mockSocket();
+      await gateway.handleConnection(socket as never, mockRequest('/ws/chat?token=t'));
+
+      expect(mockAgentRunRepo.hasActiveWebPrimaryRunForUser).toHaveBeenCalledWith('user-1');
+      const types = socket.send.mock.calls.map((c) => JSON.parse(c[0] as string).type);
+      expect(types).toEqual(['connection.ack', 'typing.start']);
+    });
+
+    it('does not send typing.start when the lookup fails', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: 'user-1', email: 'a@b.c', role: 'admin' });
+      mockAgentRunRepo.hasActiveWebPrimaryRunForUser.mockRejectedValue(new Error('db down'));
+
+      const socket = mockSocket();
+      await gateway.handleConnection(socket as never, mockRequest('/ws/chat?token=t'));
+
+      const types = socket.send.mock.calls.map((c) => JSON.parse(c[0] as string).type);
+      expect(types).toEqual(['connection.ack']);
     });
   });
 

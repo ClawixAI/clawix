@@ -28,6 +28,7 @@ export type ErrorCategory =
   | 'bad_request'
   // Non-provider
   | 'policy'
+  | 'provider_not_allowed'
   | 'loop_aborted'
   | 'unknown';
 
