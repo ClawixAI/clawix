@@ -105,7 +105,11 @@ describe('WebChatGateway', () => {
 
   describe('handleConnection — in-flight run restore', () => {
     it('sends typing.start after connection.ack when a web primary run is running', async () => {
-      mockJwtService.verifyAsync.mockResolvedValue({ sub: 'user-1', email: 'a@b.c', role: 'admin' });
+      mockJwtService.verifyAsync.mockResolvedValue({
+        sub: 'user-1',
+        email: 'a@b.c',
+        role: 'admin',
+      });
       mockAgentRunRepo.hasActiveWebPrimaryRunForUser.mockResolvedValue(true);
 
       const socket = mockSocket();
@@ -117,7 +121,11 @@ describe('WebChatGateway', () => {
     });
 
     it('does not send typing.start when the lookup fails', async () => {
-      mockJwtService.verifyAsync.mockResolvedValue({ sub: 'user-1', email: 'a@b.c', role: 'admin' });
+      mockJwtService.verifyAsync.mockResolvedValue({
+        sub: 'user-1',
+        email: 'a@b.c',
+        role: 'admin',
+      });
       mockAgentRunRepo.hasActiveWebPrimaryRunForUser.mockRejectedValue(new Error('db down'));
 
       const socket = mockSocket();
